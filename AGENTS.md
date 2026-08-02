@@ -36,6 +36,46 @@ At completion, return a milestone receipt with the outcome, acceptance-check
 status, tests, critic findings, rework, unresolved risks, and delivery state.
 Never treat lifecycle completion alone as proof that the milestone is correct.
 
+### Policy stability and improvement gate
+
+Treat orchestration controls as testable hypotheses, not permanent complexity.
+Do not continuously tune a working policy. Hold a declared policy version
+stable long enough to collect comparable accepted-outcome evidence, and
+consider changes only at a predeclared checkpoint or when a documented,
+observed correctness or security failure or a predeclared quality kill
+criterion fires.
+
+During an observational pilot:
+
+- Predeclare the comparison window, policy assignment, acceptance criteria,
+  and kill criteria. For M4, the window is 10 registered milestone starts
+  spanning at least three task families.
+- Freeze the assignment schedule, routing contract, root instructions, role
+  files, owned config, and measurement rate card until every registered start
+  is terminal or overdue, unless a kill criterion stops the window earlier.
+- Record optimization ideas in a backlog without applying them mid-window.
+- Treat different control-bundle, routing-policy, or rate-card hashes as
+  incomparable; never aggregate their top-level efficiency metric.
+- If an urgent intervention is required, record the observed failure and its
+  evidence, stop or mark the current window non-comparable, make the smallest
+  repair, capture a new immutable policy snapshot and hashes, and begin a fresh
+  window. Never combine before-and-after observations as one policy.
+- At a checkpoint, change at most one policy variable at a time and predeclare
+  its hypothesis, baseline, acceptance threshold, overhead budget, and
+  rollback condition.
+- Promote a change only with calibrated or replicated evidence and quality and
+  latency non-inferiority. Otherwise keep the stable policy, simplify, or
+  revert.
+
+Do not begin an M4 comparison or promote a policy unless the registered-start
+and assignment evidence, overdue deadline, whole-workflow cross-policy
+aggregation method, and quality and latency metrics are predeclared and
+available. If any is missing, report M4 and its metrics as blocked or unknown;
+do not fill the gap with manual estimates or additional controls.
+
+Do not add a control merely because further optimization is possible or a
+proxy metric improves.
+
 ### Delegation gate
 
 Delegate only when a genuinely independent, bounded workstream materially
