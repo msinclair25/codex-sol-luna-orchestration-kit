@@ -1,0 +1,223 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "milestone-receipt.v1",
+  "title": "Sol Luna milestone receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "receipt_id",
+    "project_id",
+    "codex_task_id",
+    "milestone_id",
+    "family",
+    "size_risk_band",
+    "started_at",
+    "closed_at",
+    "disposition",
+    "decision_owner",
+    "accepted_by",
+    "user_confirmation",
+    "root_runtime",
+    "repository",
+    "delegated_lanes",
+    "acceptance_checks",
+    "rework_count",
+    "risks",
+    "usage",
+    "origin"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "receipt_id": {"type": "string", "pattern": "^mr1-[0-9a-f]{64}$"},
+    "project_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._/-]{0,63}$"},
+    "codex_task_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$"},
+    "milestone_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$"},
+    "family": {"type": "string", "enum": ["foundation", "routing", "receipts", "feature", "bugfix", "integration", "release", "security", "other"]},
+    "size_risk_band": {"type": "string", "enum": ["small", "medium", "large", "high-risk", "critical"]},
+    "started_at": {"type": "string", "pattern": "^20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "closed_at": {"type": "string", "pattern": "^20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "disposition": {"type": "string", "enum": ["accepted", "rejected", "abandoned"]},
+    "decision_owner": {"const": "sol"},
+    "accepted_by": {"type": ["string", "null"], "enum": ["sol", null]},
+    "user_confirmation": {"type": ["boolean", "null"]},
+    "root_runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "reasoning", "service_tier", "service_tier_provenance"],
+      "properties": {
+        "model": {"type": "string", "enum": ["gpt-5.6-sol"]},
+        "reasoning": {"type": "string", "enum": ["low", "medium", "high", "xhigh", "max", "ultra"]},
+        "service_tier": {"type": "string", "enum": ["standard", "default"]},
+        "service_tier_provenance": {"type": "string", "enum": ["global-unset-standard", "explicit-standard"]}
+      }
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["base_commit", "dirty", "hashes", "bundle_version", "rate_card_version"],
+      "properties": {
+        "base_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "dirty": {"type": "boolean"},
+        "hashes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["agents", "policy", "config", "rate_card", "roles"],
+          "properties": {
+            "agents": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "policy": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "config": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "rate_card": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "roles": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["luna_scout_fast", "luna_worker_fast", "luna_critic_fast", "luna_tester_fast", "luna_max_fast"],
+              "properties": {
+                "luna_scout_fast": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "luna_worker_fast": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "luna_critic_fast": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "luna_tester_fast": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "luna_max_fast": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+              }
+            }
+          }
+        },
+        "bundle_version": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,31}$"},
+        "rate_card_version": {"const": "rate-card.v1"}
+      }
+    },
+    "delegated_lanes": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["lane_id", "role", "reasoning", "tier", "attempts", "retries", "escalation", "max_reason", "outcome", "useful"],
+        "properties": {
+          "lane_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$"},
+          "role": {"type": "string", "enum": ["luna_scout_fast", "luna_worker_fast", "luna_critic_fast", "luna_tester_fast", "luna_max_fast"]},
+          "reasoning": {"type": "string", "enum": ["medium", "high", "max"]},
+          "tier": {"type": "string", "enum": ["fast"]},
+          "attempts": {"type": "integer", "minimum": 1, "maximum": 100},
+          "retries": {"type": "integer", "minimum": 0, "maximum": 99},
+          "escalation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["target", "reason"],
+            "properties": {
+              "target": {"type": ["string", "null"], "enum": ["sol", "luna_scout_fast", "luna_worker_fast", "luna_critic_fast", "luna_tester_fast", "luna_max_fast", null]},
+              "reason": {
+                "type": ["string", "null"],
+                "enum": ["genuine_ambiguity", "cross_cutting_risk", "failed_high_attempt", "high_impact_adversarial_review", null]
+              }
+            }
+          },
+          "max_reason": {
+            "type": ["string", "null"],
+            "enum": ["genuine_ambiguity", "cross_cutting_risk", "failed_high_attempt", "high_impact_adversarial_review", null]
+          },
+          "outcome": {"type": "string", "enum": ["completed", "failed", "blocked", "skipped"]},
+            "useful": {"type": "boolean"}
+        },
+        "allOf": [
+          {
+            "if": {"properties": {"role": {"const": "luna_max_fast"}}},
+            "then": {"properties": {"max_reason": {"type": "string"}}},
+            "else": {"properties": {"max_reason": {"const": null}}}
+          },
+          {
+            "if": {"properties": {"escalation": {"properties": {"target": {"const": null}}}}},
+            "then": {"properties": {"escalation": {"properties": {"reason": {"const": null}}}}}
+          },
+          {
+            "if": {"properties": {"escalation": {"properties": {"target": {"enum": ["sol", "luna_scout_fast", "luna_worker_fast", "luna_critic_fast", "luna_tester_fast", "luna_max_fast"]}}}}},
+            "then": {"properties": {"escalation": {"properties": {"reason": {"type": "string"}}}}}
+          }
+        ]
+      }
+    },
+    "acceptance_checks": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "result", "evidence_refs", "provenance"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$"},
+          "result": {"type": "string", "enum": ["pass", "fail", "unknown"]},
+          "evidence_refs": {"type": "array", "maxItems": 16, "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._:/-]{0,127}$"}},
+          "provenance": {"type": "array", "maxItems": 16, "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._:/-]{0,127}$"}}
+        }
+      }
+    },
+    "rework_count": {"type": "integer", "minimum": 0, "maximum": 1000},
+    "risks": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "severity", "status"],
+        "properties": {
+          "code": {"type": "string", "enum": ["none", "runtime_drift", "scope", "security", "privacy", "validation", "availability", "cost", "data_loss", "unknown"]},
+          "severity": {"type": "string", "enum": ["low", "medium", "high", "critical"]},
+          "status": {"type": "string", "enum": ["open", "mitigated", "accepted"]}
+        }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["coverage", "provenance", "total_tokens", "weighted_usage", "source_refs", "rate_card_version"],
+      "properties": {
+        "coverage": {"type": "string", "enum": ["complete-full-workflow", "incomplete", "unknown"]},
+        "provenance": {"type": "string", "enum": ["usage_reporter", "none", "unknown"]},
+        "total_tokens": {"type": ["integer", "null"], "minimum": 0},
+        "weighted_usage": {"type": ["number", "null"], "minimum": 0},
+        "source_refs": {"type": "array", "maxItems": 16, "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._:/-]{0,127}$"}},
+        "rate_card_version": {"type": ["string", "null"], "enum": ["rate-card.v1", null]}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"coverage": {"const": "complete-full-workflow"}}},
+          "then": {
+            "properties": {
+              "provenance": {"const": "usage_reporter"},
+              "total_tokens": {"type": "integer", "minimum": 0},
+              "weighted_usage": {"type": "number", "minimum": 0},
+              "source_refs": {"minItems": 1},
+              "rate_card_version": {"const": "rate-card.v1"}
+            }
+          },
+          "else": {
+            "properties": {
+              "provenance": {"enum": ["none", "unknown"]},
+              "total_tokens": {"const": null},
+              "weighted_usage": {"const": null},
+              "rate_card_version": {"const": null}
+            }
+          }
+        }
+      ]
+    },
+    "origin": {"const": "unsigned-local-audit"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"disposition": {"const": "accepted"}}},
+      "then": {
+        "properties": {"accepted_by": {"const": "sol"}},
+        "allOf": [
+          {"not": {"properties": {"acceptance_checks": {"contains": {"properties": {"result": {"enum": ["fail", "unknown"]}}}}}}},
+          {"not": {"properties": {"risks": {"contains": {"allOf": [{"properties": {"status": {"const": "open"}}}, {"properties": {"severity": {"enum": ["high", "critical"]}}}]}}}}}
+        ]
+      }
+    },
+    {
+      "if": {"properties": {"disposition": {"enum": ["rejected", "abandoned"]}}},
+      "then": {"properties": {"accepted_by": {"const": null}}}
+    }
+  ]
+}

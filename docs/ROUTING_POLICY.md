@@ -1,0 +1,106 @@
+# Dynamic routing policy
+
+`config/routing-policy.v1.json` is the public, versioned contract for the
+Sol-root and Luna-role runtime policy. It is descriptive and advisory: it does
+not spawn agents, change Codex configuration, or replace Sol's judgment.
+The verifier requires Python 3.11 or newer for stdlib `tomllib`; older
+versions fail closed with a diagnostic instead of guessing at TOML semantics.
+
+## Runtime contract
+
+The root uses `gpt-5.6-sol`, the user's selected reasoning level, and Standard
+service by leaving the global `service_tier` unset. The role table is:
+
+| Work kind | Role | Reasoning | Tier | Sandbox |
+| --- | --- | --- | --- | --- |
+| `scout` | `luna_scout_fast` | `medium` | `fast` | `read-only` |
+| `worker` | `luna_worker_fast` | `high` | `fast` | `workspace-write` |
+| `critic` | `luna_critic_fast` | `high` | `fast` | `read-only` |
+| `tester` | `luna_tester_fast` | `medium` | `fast` | `workspace-write` |
+| `max` | `luna_max_fast` | `max` | `fast` | `read-only` |
+
+Routine kinds include `scout`, `mapping`, `worker`, `implementation`, `write`,
+`critic`, `review`, `tester`, `test`, and `validation`. General `analysis` is
+the Max path. Every route to Max, including general analysis, requires one
+exact reason code from the contract: `genuine_ambiguity`,
+`cross_cutting_risk`, `failed_high_attempt`, or
+`high_impact_adversarial_review`.
+
+## SPLIT gate
+
+Before delegation, all five checks must be true:
+
+1. **Separate**: the outcome is independently separable from Sol and every
+   other lane.
+2. **Provable**: acceptance checks and expected evidence are explicit.
+3. **Large enough**: the work justifies delegation overhead.
+4. **Isolated**: ownership is non-overlapping, including exact and
+   directory-prefix conflicts; dependent writes are serialized.
+5. **Tier-appropriate**: role model, reasoning, tier, and sandbox match the
+   work kind.
+
+The evaluator routes any failed, missing, malformed, unsupported, or stale
+check directly to Sol. At most three delegated lanes may be active
+concurrently. Process dependent work in waves and serialize those dependencies;
+the policy does not cap the total number of lanes or waves. Each delegated lane
+must return compact evidence with exactly `scope`, `files_or_surfaces`,
+`commands_or_checks`, `assumptions`, `failures`, `risks`, `confidence`, and
+`recommendation`.
+
+## Static verification
+
+Run from the repository root:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/routing_policy.py verify --format json
+```
+
+The verifier checks the JSON schema, safe repository-relative paths, SHA-256
+hashes for `AGENTS.md` and all five role files, role TOML settings, and the
+config snippet's concurrency setting. `runtime_root_match` is true only when
+the checked-in runtime files match the contract. Any malformed contract or
+runtime drift fails closed; no files are written.
+
+To compare an installed active root (which need only contain `AGENTS.md` and
+the five role TOMLs) with this repository's contract, run:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/routing_policy.py active-root \
+  --active-root /path/to/active-root \
+  --active-config /path/to/config.toml \
+  --format json
+```
+
+The comparison is read-only and checks both hashes and role prompt semantics;
+it does not require `config-snippet.toml` in the active root. When
+`--active-config` is supplied, it reports only pass/fail for the owned,
+non-sensitive keys: Sol model, configured reasoning, absent global tier,
+required feature flags, concurrency three, and absent default child model.
+
+## Advisory routing
+
+The evaluator accepts a bounded JSON request and returns a deterministic
+decision. For example:
+
+```sh
+python3 scripts/routing_policy.py route \
+  --request '{"kind":"scout","separate":true,"provable":true,"large_enough":true,"isolated":true,"tier_appropriate":true,"ownership":{"scout":["docs/spec.md"]}}'
+```
+
+The result identifies the selected role or the Sol fallback and gives compact
+reason codes. It is an evaluator, not an orchestrator: it never launches a
+role or edits the worktree. `lane_count` means simultaneously active lanes and
+must not exceed three; `wave_count` is not capped by this policy. A lane's
+evidence packet is valid only when it contains exactly `scope`,
+`files_or_surfaces`, `commands_or_checks`, `assumptions`, `failures`, `risks`,
+`confidence`, and `recommendation`.
+
+The SHA-256 values are local audit and drift signals anchored by Git history
+and human review, not cryptographic authenticity. A coordinated edit to the
+contract and its runtime files is an accepted limitation until automation
+requires signing. The evaluator is advisory and non-universal; account,
+workspace, model availability, and launcher behavior remain external runtime
+concerns.
+Sensitive ownership-name filtering is deliberately conservative but heuristic;
+Sol must still inspect scope and keep credentials, private/customer data, and
+production logs out of delegation.

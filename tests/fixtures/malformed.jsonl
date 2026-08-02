@@ -1,0 +1,4 @@
+{"timestamp":"2026-08-01T10:00:00Z","type":"session_meta","payload":{"session_id":"malformed-secret","timestamp":"2026-08-01T10:00:00Z","agent_role":"luna_tester_fast"}}
+not valid json containing prompt secret /private/project/should-not-print
+{"timestamp":"2026-08-01T10:00:01Z","type":"event_msg","payload":{"type":"task_started","turn_id":"malformed-turn","started_at":1020}}
+{"timestamp":"2026-08-01T10:00:02Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"malformed-turn","started_at":1020,"completed_at":1021,"duration_ms":1000}}

@@ -1,0 +1,12 @@
+{"timestamp":"2026-08-01T10:00:00Z","type":"session_meta","payload":{"session_id":"child-session-secret","id":"child-id-secret","forked_from_id":"root-id-secret","parent_thread_id":"parent-thread-secret","timestamp":"2026-08-01T10:00:00Z","agent_nickname":"Luna","agent_role":"luna_max_fast","agent_path":"/root/child/secret","cwd":"/private/project/should-not-print"}}
+{"timestamp":"2026-08-01T10:00:01Z","type":"event_msg","payload":{"type":"thread_settings_applied","thread_settings":{"model":"gpt-5.6-sol","reasoning_effort":"xhigh","service_tier":"default"}}}
+{"timestamp":"2026-08-01T10:00:02Z","type":"event_msg","payload":{"type":"task_started","turn_id":"inherited-turn-secret","started_at":990}}
+{"timestamp":"2026-08-01T10:00:03Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":80,"cached_input_tokens":10,"output_tokens":10,"reasoning_output_tokens":2,"total_tokens":90}}}}
+{"timestamp":"2026-08-01T10:00:04Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"inherited-turn-secret","started_at":990,"completed_at":995,"duration_ms":5000}}
+{"timestamp":"2026-08-01T10:00:05Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":20,"output_tokens":20,"reasoning_output_tokens":4,"total_tokens":120}}}}
+{"timestamp":"2026-08-01T10:00:06Z","type":"event_msg","payload":{"type":"thread_settings_applied","thread_settings":{"model":"gpt-5.6-luna","reasoning_effort":"max","service_tier":"priority"}}}
+{"timestamp":"2026-08-01T10:00:07Z","type":"event_msg","payload":{"type":"task_started","turn_id":"child-turn-secret","started_at":1002}}
+{"timestamp":"2026-08-01T10:00:08Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":150,"cached_input_tokens":30,"output_tokens":35,"reasoning_output_tokens":7,"total_tokens":185}}}}
+{"timestamp":"2026-08-01T10:00:09Z","type":"response_item","payload":{"type":"function_call","call_id":"call-child-secret","name":"send_message","arguments":"tool arguments secret /private/project/file.txt"}}
+{"timestamp":"2026-08-01T10:00:10Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call-child-secret","output":"child output secret"}}
+{"timestamp":"2026-08-01T10:00:11Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"child-turn-secret","started_at":1002,"completed_at":1006,"duration_ms":4000}}

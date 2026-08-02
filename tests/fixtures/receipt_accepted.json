@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "project_id": "codex-sol-luna-orchestration-kit",
+  "codex_task_id": "task-m2",
+  "milestone_id": "m2-receipts",
+  "family": "receipts",
+  "size_risk_band": "medium",
+  "started_at": "2026-08-02T10:00:00Z",
+  "closed_at": "2026-08-02T10:05:00Z",
+  "disposition": "accepted",
+  "decision_owner": "sol",
+  "accepted_by": "sol",
+  "user_confirmation": true,
+  "root_runtime": {"model": "gpt-5.6-sol", "reasoning": "xhigh", "service_tier": "standard", "service_tier_provenance": "global-unset-standard"},
+  "repository": {
+    "base_commit": "0123456789abcdef0123456789abcdef01234567",
+    "dirty": true,
+    "hashes": {
+      "agents": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "policy": "1123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "config": "2123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "rate_card": "3123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "roles": {
+        "luna_scout_fast": "4123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "luna_worker_fast": "5123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "luna_critic_fast": "6123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "luna_tester_fast": "7123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "luna_max_fast": "8123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      }
+    },
+    "bundle_version": "all-max-v1",
+    "rate_card_version": "rate-card.v1"
+  },
+  "delegated_lanes": [{"lane_id": "scout-1", "role": "luna_scout_fast", "reasoning": "medium", "tier": "fast", "attempts": 1, "retries": 0, "escalation": {"target": null, "reason": null}, "max_reason": null, "outcome": "completed", "useful": true}],
+  "acceptance_checks": [{"id": "tests", "result": "pass", "evidence_refs": ["test:unittest"], "provenance": ["local:test"]}],
+  "rework_count": 0,
+  "risks": [{"code": "none", "severity": "low", "status": "accepted"}],
+  "usage": {"coverage": "incomplete", "provenance": "unknown", "total_tokens": null, "weighted_usage": null, "source_refs": [], "rate_card_version": null},
+  "origin": "unsigned-local-audit"
+}

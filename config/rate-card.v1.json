@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "version": "rate-card.v1",
+  "owner": "ms",
+  "status": "uncalibrated",
+  "created_at": "2026-08-01T00:00:00Z",
+  "stale_after": "2026-09-01T00:00:00Z",
+  "expires_at": "2026-09-01T00:00:00Z",
+  "unit": "estimated-weighted-tokens",
+  "formula": "estimated_weighted_tokens = tokens.total * model_weight * reasoning_weight * service_tier_weight",
+  "provenance": {
+    "basis": "Official Codex manual: GPT-5.6 Fast consumes 2.5x Standard ChatGPT credits and runtime fast maps to priority.",
+    "source_type": "official-manual",
+    "source_url": "https://learn.chatgpt.com/docs/agent-configuration/speed",
+    "retrieved_at": "2026-08-01T00:00:00Z",
+    "calibration": "No local billing calibration has been performed; this is an estimated weighted-token planning unit, not observed/provider credits."
+  },
+  "atomic_input": {
+    "usage_reporter_field": "tokens.total",
+    "recorded_field": "total_tokens",
+    "scope": "full-workflow",
+    "coverage": "all-runs-required-or-unknown"
+  },
+  "weights": {
+    "model": {
+      "default": 1.0,
+      "gpt-5.6-luna": 1.0,
+      "gpt-5.6-sol": 1.0
+    },
+    "reasoning": {
+      "default": 1.0,
+      "medium": 1.0,
+      "high": 1.0,
+      "max": 1.0,
+      "xhigh": 1.0
+    },
+    "service_tier": {
+      "default": 1.0,
+      "standard": 1.0,
+      "fast": 2.5,
+      "priority": 2.5
+    }
+  }
+}

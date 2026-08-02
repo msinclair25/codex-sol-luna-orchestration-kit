@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "project_id": "codex-sol-luna-orchestration-kit",
+  "codex_task_id": "task-m2-reject",
+  "milestone_id": "m2-rejected",
+  "family": "feature",
+  "size_risk_band": "small",
+  "started_at": "2026-08-02T11:00:00Z",
+  "closed_at": "2026-08-02T11:01:00Z",
+  "disposition": "rejected",
+  "decision_owner": "sol",
+  "accepted_by": null,
+  "user_confirmation": false,
+  "root_runtime": {"model": "gpt-5.6-sol", "reasoning": "high", "service_tier": "standard", "service_tier_provenance": "global-unset-standard"},
+  "repository": {
+    "base_commit": "0123456789abcdef0123456789abcdef01234567",
+    "dirty": false,
+    "hashes": {"agents": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "policy": "1123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "config": "2123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "rate_card": "3123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "roles": {"luna_scout_fast": "4123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "luna_worker_fast": "5123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "luna_critic_fast": "6123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "luna_tester_fast": "7123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "luna_max_fast": "8123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}},
+    "bundle_version": "all-max-v1",
+    "rate_card_version": "rate-card.v1"
+  },
+  "delegated_lanes": [],
+  "acceptance_checks": [{"id": "scope", "result": "fail", "evidence_refs": [], "provenance": ["local:review"]}],
+  "rework_count": 1,
+  "risks": [{"code": "scope", "severity": "medium", "status": "open"}],
+  "usage": {"coverage": "unknown", "provenance": "none", "total_tokens": null, "weighted_usage": null, "source_refs": [], "rate_card_version": null},
+  "origin": "unsigned-local-audit"
+}

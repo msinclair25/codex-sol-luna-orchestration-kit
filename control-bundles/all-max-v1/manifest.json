@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "bundle_id": "all-max-v1",
+  "profile": "all-max",
+  "created_at": "2026-08-01T00:00:00Z",
+  "authority": {
+    "runtime": "active-root",
+    "bundle_role": "review-and-restore-input",
+    "automatic_restore": false
+  },
+  "source": {
+    "commit": "68f875a84b2c6bd3790889945f82fa67f61f00d4",
+    "commit_sha": "68f875a84b2c6bd3790889945f82fa67f61f00d4",
+    "dirty": true,
+    "dirty_paths": [
+      ".gitignore",
+      "AGENTS.md",
+      "README.md",
+      "SECURITY.md",
+      "docs/USAGE_METRICS.md",
+      "scripts/usage_report.py",
+      "tests/fixtures/luna_child.jsonl",
+      "tests/fixtures/malformed.jsonl",
+      "tests/fixtures/root.jsonl",
+      "tests/fixtures/unrecognized.jsonl",
+      "tests/test_usage_report.py"
+    ]
+  },
+  "parser": {
+    "path": "scripts/usage_report.py",
+    "version": "usage-report-schema-1",
+    "schema_version": 1,
+    "sha256": "060367cee734d2be3ece1de02248d1445b34fa2390d412236e4aba4e69ea43b2"
+  },
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "448be1a0db3ca464c21e0317e901bab584f9b8988ce793d41e53129a05d99060",
+      "size": 4693
+    },
+    {
+      "path": "agents/luna_critic_fast.toml",
+      "sha256": "19886017f3618f0edb59129189d6656a1f70b6d5f364bc29b076e1924b600538",
+      "size": 1169
+    },
+    {
+      "path": "agents/luna_max_fast.toml",
+      "sha256": "acd61bfb5cb1328edef12e58467ac491fbd9f6141674dff5514fec596d4cf1ef",
+      "size": 870
+    },
+    {
+      "path": "agents/luna_scout_fast.toml",
+      "sha256": "44e766d4c257277d72fb5c78bfb9b35db632f5d2050247e9252f329699398cac",
+      "size": 1015
+    },
+    {
+      "path": "agents/luna_tester_fast.toml",
+      "sha256": "49040a42684f59efbcba119275a426ca8cae2efec0235904152b02517cf5c880",
+      "size": 1503
+    },
+    {
+      "path": "agents/luna_worker_fast.toml",
+      "sha256": "d31af7e6ef3523607d5a564edadb55af2dce91bff4099408ba323d5e80533d1c",
+      "size": 1408
+    },
+    {
+      "path": "config/rate-card.v1.json",
+      "sha256": "60114b23a8fc361db5718fc13a644cd50c645a8b945e57d018aecd9ad5765db8",
+      "size": 1373
+    },
+    {
+      "path": "scripts/usage_report.py",
+      "sha256": "060367cee734d2be3ece1de02248d1445b34fa2390d412236e4aba4e69ea43b2",
+      "size": 26416
+    }
+  ]
+}

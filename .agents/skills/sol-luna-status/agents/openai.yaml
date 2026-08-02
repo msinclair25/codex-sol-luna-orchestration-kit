@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sol Luna Status"
+  short_description: "Read-only Sol/Luna milestone status"
+  default_prompt: "Use $sol-luna-status to report the current milestone status, provenance, budget, drift, and next routing recommendation."

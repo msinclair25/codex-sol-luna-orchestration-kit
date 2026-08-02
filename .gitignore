@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+
+# Local/private runtime artifacts
+.sol-luna/
+.codex/sessions/
+sessions/
+backups/
+*.bak
+*.backup
+*.log
+.env
+.env.*
+!.env.example

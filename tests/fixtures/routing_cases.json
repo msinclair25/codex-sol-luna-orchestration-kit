@@ -1,0 +1,87 @@
+{
+  "valid_delegation": {
+    "kind": "scout",
+    "separate": true,
+    "provable": true,
+    "large_enough": true,
+    "isolated": true,
+    "tier_appropriate": true,
+    "ownership": {
+      "scout": ["docs/spec.md"]
+    }
+  },
+  "direct_work": {
+    "kind": "worker",
+    "separate": true,
+    "provable": true,
+    "large_enough": false,
+    "isolated": true,
+    "tier_appropriate": true,
+    "ownership": {
+      "worker": ["src/tiny.py"]
+    }
+  },
+  "rejected_gate": {
+    "kind": "critic",
+    "separate": true,
+    "provable": false,
+    "large_enough": true,
+    "isolated": true,
+    "tier_appropriate": true,
+    "ownership": {
+      "critic": ["src/app.py"]
+    }
+  },
+  "reasoning_upgrade": {
+    "kind": "review",
+    "requested_role": "luna_max_fast",
+    "max_upgrade_reason": "genuine_ambiguity",
+    "separate": true,
+    "provable": true,
+    "large_enough": true,
+    "isolated": true,
+    "tier_appropriate": true,
+    "ownership": {
+      "review": ["docs/architecture.md"]
+    }
+  },
+  "overlapping_ownership": {
+    "kind": "worker",
+    "separate": true,
+    "provable": true,
+    "large_enough": true,
+    "isolated": true,
+    "tier_appropriate": true,
+    "ownership": {
+      "writer_a": ["src"],
+      "writer_b": ["src/app.py"]
+    }
+  },
+  "malformed_input": {
+    "kind": "scout",
+    "separate": true,
+    "provable": true,
+    "large_enough": true,
+    "isolated": true,
+    "tier_appropriate": true,
+    "ownership": {
+      "scout": ["../secret.txt"]
+    }
+  },
+  "multiple_waves": {
+    "kind": "tester",
+    "lane_count": 2,
+    "wave_count": 12,
+    "separate": true,
+    "provable": true,
+    "large_enough": true,
+    "isolated": true,
+    "tier_appropriate": true,
+    "ownership": {
+      "test_wave_a": ["tests/a.py"],
+      "test_wave_b": ["tests/b.py"],
+      "test_wave_c": ["tests/c.py"],
+      "test_wave_d": ["tests/d.py"]
+    }
+  }
+}
