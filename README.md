@@ -136,6 +136,7 @@ codex-sol-luna-orchestration-kit/
 │   └── social-preview.jpg
 ├── config-snippet.toml
 ├── config/
+│   ├── install-assets.v1.json
 │   ├── rate-card.v1.json
 │   └── routing-policy.v1.json
 ├── control-bundles/
@@ -260,8 +261,8 @@ python3 scripts/install.py
 
 It performs the following bounded flow:
 
-1. Verifies the checked-in routing policy and all five role files before any
-   write.
+1. Verifies the checked-in core routing policy and all five role files before
+   any write.
 2. Prints a JSON preview and asks whether to install the core roles,
    instructions, and owned configuration keys.
 3. Preserves unrelated `config.toml` settings and existing global instructions.
@@ -272,7 +273,8 @@ It performs the following bounded flow:
    receipt listing every created or replaced relative path, and verifies the
    installed active root.
 5. Separately asks whether to install the optional privacy-safe local
-   usage/status skill. It never enables OTLP or another telemetry exporter.
+   usage/status skill and hash-verifies its three installable assets. It never
+   enables OTLP or another telemetry exporter.
 
 Core and optional usage are separate transactions. If the optional phase is
 declined or blocked, the already verified core remains installed and the
@@ -284,6 +286,11 @@ Compare them before deliberately rerunning with `--approve-conflicts`. Use
 `--approve-agents-refresh` only to refresh a managed policy block installed by
 an earlier kit version. Neither flag bypasses symlink, malformed TOML, marker,
 size, source-integrity, or post-install verification checks.
+
+Source-integrity checks detect accidental or unreviewed drift against the
+manifests in a trusted checkout; they do not authenticate a maliciously
+modified repository. Obtain the checkout from the project repository and
+review the installer before running it.
 
 For a no-write preview:
 

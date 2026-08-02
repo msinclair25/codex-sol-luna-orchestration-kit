@@ -13,6 +13,7 @@ import importlib.util
 import json
 import os
 import re
+import stat
 import sys
 import tempfile
 import uuid
@@ -38,6 +39,8 @@ USAGE_SKILL_FILES = (
     "agents/openai.yaml",
     "scripts/sol_luna_status.py",
 )
+USAGE_ASSET_MANIFEST = "config/install-assets.v1.json"
+MAX_ASSET_MANIFEST_BYTES = 16 * 1024
 OWNED = {
     "model": '"gpt-5.6-sol"',
     "model_reasoning_effort": '"xhigh"',
@@ -137,12 +140,15 @@ def _atomic_write(path: Path, data: bytes) -> None:
     """Write bytes atomically, refusing symlink destinations and parents."""
     if path.exists() and path.is_symlink():
         raise InstallError("symlink_destination")
+    existing_mode = stat.S_IMODE(path.stat(follow_symlinks=False).st_mode) if path.exists() else None
     _ensure_safe_directory(path.parent)
     fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
     try:
         with os.fdopen(fd, "wb") as handle:
             handle.write(data)
             handle.flush()
+            if existing_mode is not None:
+                os.fchmod(handle.fileno(), existing_mode)
             os.fsync(handle.fileno())
         os.replace(temporary, path)
     except Exception:
@@ -388,10 +394,44 @@ def _usage_plan(
     destination = home / ".agents" / "skills" / "sol-luna-status"
     if not _safe_ancestors(destination):
         raise InstallError("usage_destination_unsafe")
-    source_files = {
-        name: _read(source_root.joinpath(*name.split("/")), MAX_CONFIG_BYTES)
+    manifest_data = _read(repo.joinpath(*USAGE_ASSET_MANIFEST.split("/")), MAX_ASSET_MANIFEST_BYTES)
+    def reject_duplicate_keys(pairs: List[Tuple[str, Any]]) -> Dict[str, Any]:
+        result: Dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate manifest key")
+            result[key] = value
+        return result
+
+    try:
+        manifest = json.loads(
+            manifest_data.decode("utf-8"),
+            object_pairs_hook=reject_duplicate_keys,
+        )
+    except (UnicodeError, ValueError, json.JSONDecodeError, MemoryError, OverflowError, RecursionError) as exc:
+        raise InstallError("usage_source_integrity") from exc
+    expected_paths = {
+        name: f".agents/skills/sol-luna-status/{name}"
         for name in USAGE_SKILL_FILES
     }
+    if (
+        not isinstance(manifest, dict)
+        or set(manifest) != {"schema_version", "assets"}
+        or manifest.get("schema_version") != 1
+        or not isinstance(manifest.get("assets"), dict)
+        or set(manifest["assets"]) != set(expected_paths.values())
+        or any(
+            not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            for digest in manifest["assets"].values()
+        )
+    ):
+        raise InstallError("usage_source_integrity")
+    source_files: Dict[str, bytes] = {}
+    for name, relative in expected_paths.items():
+        data = _read(repo.joinpath(*relative.split("/")), MAX_CONFIG_BYTES)
+        if hashlib.sha256(data).hexdigest() != manifest["assets"][relative]:
+            raise InstallError("usage_source_integrity")
+        source_files[name] = data
     if destination.exists() and (destination.is_symlink() or not destination.is_dir()):
         raise InstallError("usage_destination_unsafe")
     existing_files: Dict[str, bytes] = {}
@@ -431,10 +471,14 @@ def _load_routing_policy(repo: Path) -> Any:
         raise InstallError("routing_verifier_unavailable")
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
+    previous_dont_write_bytecode = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
     try:
         spec.loader.exec_module(module)
     except Exception as exc:
         raise InstallError("routing_verifier_unavailable") from exc
+    finally:
+        sys.dont_write_bytecode = previous_dont_write_bytecode
     return module
 
 
@@ -669,11 +713,23 @@ def main(argv: Optional[List[str]] = None) -> int:
                 plan = core
                 plan["usage"] = "declined"
         elif args.apply:
-            with_usage = args.with_usage
-            preview = install(repo, codex_home, home, apply=False, with_usage=with_usage, **options)
+            preview = install(repo, codex_home, home, apply=False, with_usage=False, **options)
             preview["status"] = "preview"
+            preview["phase"] = "core"
             print(json.dumps(preview, sort_keys=True, separators=(",", ":")))
-            plan = install(repo, codex_home, home, apply=True, with_usage=with_usage, **options)
+            core = install(repo, codex_home, home, apply=True, with_usage=False, **options)
+            core["phase"] = "core"
+            if args.with_usage:
+                print(json.dumps(core, sort_keys=True, separators=(",", ":")))
+                usage_preview = install(repo, codex_home, home, apply=False, with_usage=True, **options)
+                usage_preview["status"] = "preview"
+                usage_preview["phase"] = "optional-usage"
+                print(json.dumps(usage_preview, sort_keys=True, separators=(",", ":")))
+                plan = install(repo, codex_home, home, apply=True, with_usage=True, **options)
+                plan["phase"] = "optional-usage"
+            else:
+                plan = core
+                plan["usage"] = "declined"
         else:
             plan = install(repo, codex_home, home, apply=False, with_usage=args.with_usage, **options)
         print(json.dumps(plan, sort_keys=True, separators=(",", ":")))

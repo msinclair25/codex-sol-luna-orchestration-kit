@@ -3,6 +3,10 @@ import importlib.util
 import io
 import json
 import os
+import shutil
+import stat
+import subprocess
+import sys
 import tempfile
 import tomllib
 import unittest
@@ -45,6 +49,52 @@ class InstallerTests(unittest.TestCase):
         report = verify_active_root(self.codex, ROOT, self.codex / "config.toml")
         self.assertTrue(report["ok"], report)
 
+    def test_dry_run_does_not_write_bytecode_to_source_checkout(self):
+        checkout = self.base / "checkout"
+        shutil.copytree(
+            ROOT,
+            checkout,
+            ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"),
+        )
+        environment = os.environ.copy()
+        environment.pop("PYTHONDONTWRITEBYTECODE", None)
+        environment.pop("PYTHONPYCACHEPREFIX", None)
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(checkout / "scripts" / "install.py"),
+                "--dry-run",
+                "--without-usage",
+                "--repo-root",
+                str(checkout),
+                "--codex-home",
+                str(self.codex),
+                "--home",
+                str(self.home),
+            ],
+            capture_output=True,
+            check=False,
+            env=environment,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(list(checkout.rglob("*.pyc")), [])
+        self.assertEqual(list(checkout.rglob("__pycache__")), [])
+
+    def test_existing_destination_modes_are_preserved(self):
+        self.codex.mkdir()
+        agents = self.codex / "AGENTS.md"
+        config = self.codex / "config.toml"
+        agents.write_text("user instructions\n")
+        config.write_text("model = \"gpt-5.6-sol\"\n")
+        agents.chmod(0o755)
+        config.chmod(0o644)
+
+        install.install(ROOT, self.codex, self.home, apply=True, with_usage=False)
+
+        self.assertEqual(stat.S_IMODE(agents.stat().st_mode), 0o755)
+        self.assertEqual(stat.S_IMODE(config.stat().st_mode), 0o644)
+
     def test_optional_usage_installs_pointer_and_resolves_kit_root(self):
         plan = install.install(ROOT, self.codex, self.home, apply=True, with_usage=True)
         self.assertEqual(plan["usage"], "create")
@@ -61,6 +111,26 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual(module._resolve_root(None), ROOT.resolve())
         finally:
             os.chdir(previous)
+
+    def test_optional_usage_assets_are_hash_verified_without_blocking_core(self):
+        checkout = self.base / "checkout"
+        shutil.copytree(
+            ROOT,
+            checkout,
+            ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"),
+        )
+        status_script = checkout / ".agents" / "skills" / "sol-luna-status" / "scripts" / "sol_luna_status.py"
+        status_script.write_text(status_script.read_text() + "\n# unexpected drift\n")
+
+        core = install.install(checkout, self.codex, self.home, apply=False, with_usage=False)
+        self.assertEqual(core["status"], "dry-run")
+        with self.assertRaisesRegex(install.InstallError, "usage_source_integrity"):
+            install.install(checkout, self.codex, self.home, apply=False, with_usage=True)
+
+        manifest = checkout / install.USAGE_ASSET_MANIFEST
+        manifest.write_text('{"schema_version":1,"assets":' + "[" * 1100 + "0" + "]" * 1100 + "}")
+        with self.assertRaisesRegex(install.InstallError, "usage_source_integrity"):
+            install.install(checkout, self.codex, self.home, apply=False, with_usage=True)
 
     def test_nonempty_override_is_target_and_empty_override_does_not_suppress_agents(self):
         self.codex.mkdir()
@@ -210,6 +280,61 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(result, 2)
         self.assertIn("usage_choice_required", error.getvalue())
         self.assertFalse(self.codex.exists())
+
+    def test_noninteractive_optional_failure_keeps_verified_core(self):
+        destination = self.home / ".agents" / "skills" / "sol-luna-status"
+        destination.mkdir(parents=True)
+        conflicting = destination / "SKILL.md"
+        conflicting.write_text("user-owned conflict\n")
+        output = io.StringIO()
+        error = io.StringIO()
+
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+            result = install.main([
+                "--repo-root", str(ROOT),
+                "--codex-home", str(self.codex),
+                "--home", str(self.home),
+                "--apply",
+                "--with-usage",
+            ])
+
+        self.assertEqual(result, 2)
+        self.assertIn("usage_conflict", error.getvalue())
+        self.assertEqual(conflicting.read_text(), "user-owned conflict\n")
+        self.assertTrue(verify_active_root(self.codex, ROOT, self.codex / "config.toml")["ok"])
+        records = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual(records[0]["phase"], "core")
+        self.assertEqual(records[0]["status"], "preview")
+        self.assertEqual(records[1]["phase"], "core")
+        self.assertEqual(records[1]["status"], "applied")
+
+    def test_noninteractive_core_and_optional_success_use_separate_transactions(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = install.main([
+                "--repo-root", str(ROOT),
+                "--codex-home", str(self.codex),
+                "--home", str(self.home),
+                "--apply",
+                "--with-usage",
+            ])
+
+        self.assertEqual(result, 0)
+        records = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual(
+            [(record["phase"], record["status"]) for record in records],
+            [
+                ("core", "preview"),
+                ("core", "applied"),
+                ("optional-usage", "preview"),
+                ("optional-usage", "applied"),
+            ],
+        )
+        self.assertEqual(records[1]["write_count"], 7)
+        self.assertEqual(records[3]["write_count"], 4)
+        self.assertNotEqual(records[1]["receipt"], records[3]["receipt"])
+        self.assertTrue(records[1]["verification"]["ok"])
+        self.assertTrue(records[3]["verification"]["ok"])
 
     def test_broad_or_external_install_roots_are_rejected(self):
         with self.assertRaisesRegex(install.InstallError, "unsafe_broad_path"):
