@@ -154,6 +154,13 @@ Follow [the M4 protocol](docs/M4_PILOT.md), verify both isolated environments,
 and run an unmeasured smoke before registering slot 1. Policy promotion remains
 manual and requires calibrated or replicated evidence.
 
+For a clean-machine trial, use the [new Mac handoff](docs/NEW_MAC_HANDOFF.md).
+It provides a copy/paste Codex prompt plus a fail-closed preflight that verifies
+the trusted checkout, prepares both isolated roots without targeting ordinary
+`~/.codex`, and stops before measured slot `m4-01`. Authentication and the two
+small live smokes remain separate, explicit steps because they use account
+state and model quota.
+
 ## What you get
 
 ```text
@@ -182,6 +189,7 @@ codex-sol-luna-orchestration-kit/
 ├── docs/
 │   ├── CONTROL_BUNDLES.md
 │   ├── M4_PILOT.md
+│   ├── NEW_MAC_HANDOFF.md
 │   ├── RECEIPTS.md
 │   ├── PROVENANCE.md
 │   ├── ROUTING_POLICY.md
@@ -191,6 +199,7 @@ codex-sol-luna-orchestration-kit/
 │   └── m1-role-smoke-2026-08-02.json
 ├── scripts/
 │   ├── install.py
+│   ├── new_mac_preflight.py
 │   ├── pilot_tool.py
 │   ├── receipt_tool.py
 │   ├── routing_policy.py
@@ -200,6 +209,7 @@ codex-sol-luna-orchestration-kit/
 │   ├── test_control_bundle.py
 │   ├── test_install.py
 │   ├── test_m1_evidence.py
+│   ├── test_new_mac_preflight.py
 │   ├── test_pilot_tool.py
 │   ├── test_receipt_tool.py
 │   ├── test_routing_policy.py

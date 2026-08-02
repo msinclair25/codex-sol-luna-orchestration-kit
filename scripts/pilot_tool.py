@@ -18,6 +18,7 @@ import re
 import stat
 import sys
 import tempfile
+import unicodedata
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from statistics import median
@@ -190,12 +191,30 @@ def _pilot_home(value: Path | str, repo: Path) -> Path:
     """Require a dedicated container, never a home, repo, or CODEX_HOME root."""
     path = _root(value, must_exist=False)
     canonical = path.resolve(strict=False)
-    forbidden = {Path.home().resolve(), repo.resolve()}
-    codex_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")).expanduser()
-    if not codex_home.is_absolute():
-        codex_home = Path.cwd() / codex_home
-    forbidden.add(Path(os.path.abspath(codex_home)).resolve(strict=False))
-    if len(canonical.parts) < 4 or canonical in forbidden:
+
+    def folded_parts(candidate: Path) -> Tuple[str, ...]:
+        return tuple(unicodedata.normalize("NFKC", part).casefold() for part in candidate.parts)
+
+    def contains(parent: Path, child: Path) -> bool:
+        parent_parts = folded_parts(parent)
+        child_parts = folded_parts(child)
+        return len(parent_parts) <= len(child_parts) and child_parts[:len(parent_parts)] == parent_parts
+
+    def overlaps(left: Path, right: Path) -> bool:
+        return contains(left, right) or contains(right, left)
+
+    home = Path.home().resolve()
+    ordinary_codex_home = (home / ".codex").resolve(strict=False)
+    active_codex_home = Path(os.environ.get("CODEX_HOME", ordinary_codex_home)).expanduser()
+    if not active_codex_home.is_absolute():
+        active_codex_home = Path.cwd() / active_codex_home
+    protected = {
+        repo.resolve(),
+        ordinary_codex_home,
+        Path(os.path.abspath(active_codex_home)).resolve(strict=False),
+    }
+    broad_home_target = contains(canonical, home)
+    if len(canonical.parts) < 4 or broad_home_target or any(overlaps(canonical, root) for root in protected):
         raise PilotError("unsafe_pilot_home")
     return path
 

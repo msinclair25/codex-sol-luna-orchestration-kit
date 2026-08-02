@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest import mock
 
 from scripts import pilot_tool
 from scripts.receipt_tool import close_receipt
@@ -175,6 +176,21 @@ class PilotToolTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         with self.assertRaisesRegex(pilot_tool.PilotError, "unsafe_pilot_home"):
             pilot_tool.setup_environments(plan, repo, repo, apply=False)
+        with self.assertRaisesRegex(pilot_tool.PilotError, "unsafe_pilot_home"):
+            pilot_tool.setup_environments(plan, repo, repo / "nested-pilot", apply=False)
+        ordinary_codex_home = base / "ordinary" / ".codex"
+        ordinary_codex_home.mkdir(parents=True)
+        with mock.patch.dict(os.environ, {"CODEX_HOME": str(ordinary_codex_home)}):
+            with self.assertRaisesRegex(pilot_tool.PilotError, "unsafe_pilot_home"):
+                pilot_tool.setup_environments(plan, repo, ordinary_codex_home / "nested-pilot", apply=False)
+            with self.assertRaisesRegex(pilot_tool.PilotError, "unsafe_pilot_home"):
+                pilot_tool.setup_environments(plan, repo, ordinary_codex_home.parent / ".CODEX" / "nested-pilot", apply=False)
+            with self.assertRaisesRegex(pilot_tool.PilotError, "unsafe_pilot_home"):
+                pilot_tool.setup_environments(plan, repo, ordinary_codex_home.parent, apply=False)
+        with self.assertRaisesRegex(pilot_tool.PilotError, "unsafe_pilot_home"):
+            pilot_tool.setup_environments(plan, repo, repo.parent / repo.name.upper() / "nested-pilot", apply=False)
+        with self.assertRaisesRegex(pilot_tool.PilotError, "unsafe_pilot_home"):
+            pilot_tool.setup_environments(plan, repo, Path.home() / ".CODEX" / "nested-pilot", apply=False)
         pilot_home = base / "pilot"
         pilot_tool.setup_environments(plan, repo, pilot_home, apply=True)
         config = pilot_home / "dynamic" / ".codex" / "config.toml"

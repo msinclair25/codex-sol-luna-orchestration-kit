@@ -45,6 +45,11 @@ review only; automatic promotion is always false.
 Run these commands from the repository root. Choose a dedicated path that is
 not your everyday `~/.codex` directory:
 
+For a fresh-machine deployment check with prerequisites, exact-origin and
+clean-checkout validation, a copy/paste Codex prompt, and a bounded readiness
+receipt, follow [NEW_MAC_HANDOFF.md](NEW_MAC_HANDOFF.md). It runs this same
+entry gate and stops before measured slot 1.
+
 ```sh
 SOL_LUNA_PILOT_HOME="$HOME/codex-sol-luna-pilots/m4-v0.2.1-window-01"
 
