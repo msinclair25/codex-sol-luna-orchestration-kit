@@ -34,9 +34,9 @@ boundary and excluded local artifacts.
 
 ## Quick start
 
-Once published, clone the repository and run its local checks. The static
-verifier and test suite require Python 3.11 or newer; they do not launch models
-or send data over the network.
+Clone the repository and run its local checks. The static verifier and test
+suite require Python 3.11 or newer; they do not launch models or send data over
+the network.
 
 ```sh
 git clone https://github.com/msinclair25/codex-sol-luna-orchestration-kit.git
@@ -235,14 +235,14 @@ a server, plugin, MCP service, dashboard, database, or network surface.
 
 ### 1. Download the kit
 
-Once published, clone the repository and open a terminal inside it:
+Clone the repository and open a terminal inside it:
 
 ```sh
 git clone https://github.com/msinclair25/codex-sol-luna-orchestration-kit.git
 cd codex-sol-luna-orchestration-kit
 ```
 
-You can also use GitHub's **Code → Download ZIP** button after publication.
+You can also use GitHub's **Code → Download ZIP** button.
 
 ### 2. Back up your existing Codex configuration
 
