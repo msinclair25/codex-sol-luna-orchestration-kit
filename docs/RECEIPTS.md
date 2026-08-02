@@ -36,9 +36,13 @@ receipts and must be null otherwise.
 
 `summarize` reports accepted outcome count as an observed numerator. The
 north-star `verified_outcomes_per_weighted_usage` value is computed only within
-an exact `(project_id, family, size_risk_band)` cohort. A complete summary with
-multiple cohorts reports deterministic per-cohort rows but leaves the single
-top-level value null with `status: "unknown"` and reason
+an exact `(project_id, family, size_risk_band, bundle_version, policy_hash,
+rate_card_hash)` cohort, where `bundle_version` comes from
+`repository.bundle_version`, `policy_hash` from `repository.hashes.policy`, and
+`rate_card_hash` from `repository.hashes.rate_card`. These three identifiers are
+included in every deterministic per-cohort row. A complete summary with
+multiple cohorts reports those rows but leaves the single top-level value null
+with `status: "unknown"` and reason
 `multiple_incomparable_cohorts`; incomparable denominators are never added.
 Incomplete or unknown usage keeps totals null and reports unknown provenance and
 reason; M2 has no start registry, so receipt coverage is always `unknown` with

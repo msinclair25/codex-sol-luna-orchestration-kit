@@ -168,9 +168,9 @@ class ReceiptToolTests(unittest.TestCase):
             self.assertEqual(unknown["usage"]["coverage"], "unknown")
             self.assertEqual(unknown["receipt_coverage_reason"], "no_start_registry")
             complete_receipts = Path(directory) / "complete"
-            complete_a = dict(self.payloads["accepted"])
+            complete_a = json.loads(json.dumps(self.payloads["accepted"]))
             complete_a["usage"] = {"coverage": "complete-full-workflow", "provenance": "usage_reporter", "total_tokens": 10, "weighted_usage": 2.0, "source_refs": ["usage:1"], "rate_card_version": "rate-card.v1"}
-            complete_r = dict(self.payloads["rejected"])
+            complete_r = json.loads(json.dumps(self.payloads["rejected"]))
             complete_r["family"] = complete_a["family"]
             complete_r["size_risk_band"] = complete_a["size_risk_band"]
             complete_r["usage"] = {"coverage": "complete-full-workflow", "provenance": "usage_reporter", "total_tokens": 20, "weighted_usage": 3.0, "source_refs": ["usage:2"], "rate_card_version": "rate-card.v1"}
@@ -192,6 +192,29 @@ class ReceiptToolTests(unittest.TestCase):
             self.assertIsNone(mixed_summary["usage"]["verified_outcomes_per_weighted_usage"])
             self.assertEqual(mixed_summary["usage"]["reason"], "multiple_incomparable_cohorts")
             self.assertEqual(len(mixed_summary["usage"]["cohorts"]), 2)
+
+    def test_summary_separates_policy_hash_cohorts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            receipts = Path(directory) / "receipts"
+            complete_a = json.loads(json.dumps(self.payloads["accepted"]))
+            complete_a["usage"] = {"coverage": "complete-full-workflow", "provenance": "usage_reporter", "total_tokens": 10, "weighted_usage": 2.0, "source_refs": ["usage:1"], "rate_card_version": "rate-card.v1"}
+            complete_r = json.loads(json.dumps(self.payloads["rejected"]))
+            complete_r["family"] = complete_a["family"]
+            complete_r["size_risk_band"] = complete_a["size_risk_band"]
+            complete_r["usage"] = {"coverage": "complete-full-workflow", "provenance": "usage_reporter", "total_tokens": 20, "weighted_usage": 3.0, "source_refs": ["usage:2"], "rate_card_version": "rate-card.v1"}
+            complete_r["repository"]["hashes"]["policy"] = "a" * 64
+            close_receipt(complete_a, receipts)
+            close_receipt(complete_r, receipts)
+
+            summary = summarize(receipts)
+            self.assertEqual(summary["usage"]["status"], "unknown")
+            self.assertEqual(summary["usage"]["reason"], "multiple_incomparable_cohorts")
+            self.assertIsNone(summary["usage"]["total_weighted_usage"])
+            self.assertIsNone(summary["usage"]["verified_outcomes_per_weighted_usage"])
+            self.assertEqual(len(summary["usage"]["cohorts"]), 2)
+            self.assertEqual({row["bundle_version"] for row in summary["usage"]["cohorts"]}, {"all-max-v1"})
+            self.assertEqual({row["rate_card_hash"] for row in summary["usage"]["cohorts"]}, {complete_a["repository"]["hashes"]["rate_card"]})
+            self.assertEqual({row["policy_hash"] for row in summary["usage"]["cohorts"]}, {complete_a["repository"]["hashes"]["policy"], "a" * 64})
 
     def test_usage_unknown_never_becomes_zero(self):
         value = dict(self.payloads["accepted"])

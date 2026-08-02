@@ -47,6 +47,65 @@ must return compact evidence with exactly `scope`, `files_or_surfaces`,
 `commands_or_checks`, `assumptions`, `failures`, `risks`, `confidence`, and
 `recommendation`.
 
+## Policy stability and M4 pilot freeze
+
+The policy is an experiment, not an invitation to continuous tuning. Before
+M4 starts, predeclare one comparison window of 10 registered milestone starts
+spanning at least three task families. Record the policy assignment schedule,
+using a matched or alternating assignment between the all-Max control and
+dynamic routing, plus acceptance criteria and kill criteria. Then freeze these
+window inputs:
+
+- `config/routing-policy.v1.json`;
+- `AGENTS.md` and `agents/*.toml`;
+- the owned values represented by `config-snippet.toml`; and
+- `config/rate-card.v1.json`.
+
+Keep the immutable all-Max control bundle unchanged. Hold the assignment
+schedule and frozen inputs until every registered start is terminal or overdue,
+unless a kill criterion stops the window earlier. Record optimization ideas in
+a backlog, but do not apply them during the window.
+
+Intervene only for a documented, observed correctness or security failure or a
+predeclared quality kill criterion. Record the failure and evidence in the
+terminal or abandoned receipt. The intervention stops or invalidates the
+comparison window: make the smallest repair, capture a new immutable policy
+snapshot and hashes, and begin a fresh window rather than mixing
+before-and-after observations.
+
+The receipt summarizer enforces the comparison boundary it can prove. Its exact
+cohort key includes project, task family, size/risk band, control-bundle
+version, routing-policy hash, and rate-card hash. Different control snapshots
+produce separate rows and an unknown combined efficiency metric; their
+denominators are never added. This check does not replace M4's predeclared start
+registry or assignment schedule.
+
+Review improvements only at the declared checkpoint. Change at most one policy
+variable at a time, with a predeclared hypothesis, baseline, acceptance
+threshold, overhead budget, and rollback condition. Promote the change only
+with calibrated or replicated evidence and quality and latency
+non-inferiority. If benefit is absent, keep the stable policy, simplify, or
+revert instead of adding more controls or telemetry.
+
+The M4 checkpoint requires complete terminal receipt coverage for registered
+terminal or overdue starts, no critical or high-severity defect regression, at
+least 80% spawn precision, and either a directional 20% reduction in total
+estimated weighted usage with quality and latency non-inferiority or a
+documented quality or speed gain that justifies the difference. Ten milestones
+are directional evidence, not proof of a precise savings percentage; do not
+promote a policy from an uncalibrated estimate unless the result is replicated.
+
+### M4 entry conditions not implemented by V0.2
+
+This freeze guardrail does not start the pilot. M0–M3 do not provide a
+registered-start and assignment ledger, an overdue deadline checker, a
+cross-family all-Max-versus-dynamic aggregation method, or predeclared quality
+and latency metric definitions. Before the first M4 start, define those bounded
+inputs and their evidence path. Until then, report M4 coverage, the total
+cross-policy comparison, and any promotion decision as blocked or unknown. Do
+not substitute manual estimates or add further controls to manufacture a
+result.
+
 ## Static verification
 
 Run from the repository root:

@@ -121,6 +121,37 @@ contract and advisory evaluator. It applies the five SPLIT checks—Separate,
 Provable, Large enough, Isolated, and Tier-appropriate—and sends any failed,
 malformed, unsupported, or stale request directly to Sol.
 
+### Stability before optimization
+
+V0.2 is meant to be observed, not continuously tuned. Before M4, predeclare a
+10-milestone comparison window spanning at least three task families, including
+the policy assignments, acceptance criteria, and kill criteria. Freeze that
+schedule plus the routing policy, root instructions, role files, owned
+configuration, and rate card until every registered start is terminal or
+overdue, unless a kill criterion stops the window earlier. Log improvement
+ideas without applying them mid-window.
+
+An intervention requires a documented, observed correctness or security
+failure or a predeclared quality kill criterion. It ends the comparable window;
+make the smallest repair, capture a new immutable policy snapshot and hashes,
+and start a fresh window rather than mixing before-and-after evidence.
+Receipt summaries partition different control-bundle, routing-policy, and
+rate-card hashes into separate cohorts and leave the combined efficiency metric
+unknown.
+
+At the checkpoint, test at most one policy change at a time against a stated
+hypothesis, baseline, acceptance threshold, overhead budget, and rollback
+condition. Keep it only with calibrated or replicated evidence and no quality
+or latency regression. Otherwise keep the stable policy, simplify, or revert.
+The goal is the minimum control required for consistently accepted outcomes,
+not perpetual optimization.
+
+This guardrail does not start M4. V0.2 still has no registered-start ledger,
+overdue deadline enforcement, cross-family/control comparison, or predeclared
+quality and latency metric set. Those are M4 entry requirements; until they are
+available, the pilot and any policy-promotion decision remain blocked or
+unknown rather than estimated by hand.
+
 ## What you get
 
 ```text
