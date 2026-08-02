@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import json
 import os
 import shutil
@@ -34,7 +35,11 @@ class PilotToolTests(unittest.TestCase):
             target = repo / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, target)
-        return temporary, base, repo, repo / "config" / "m4-pilot.v1.json"
+        plan_path = repo / "config" / "m4-pilot.v1.json"
+        fixture_plan = json.loads(plan_path.read_text())
+        fixture_plan["created_at"] = "2026-08-02T20:40:40Z"
+        plan_path.write_text(json.dumps(fixture_plan, indent=2) + "\n")
+        return temporary, base, repo, plan_path
 
     def _setup(self):
         temporary, base, repo, plan = self._isolated_repo()
@@ -113,6 +118,7 @@ class PilotToolTests(unittest.TestCase):
         result = pilot_tool.verify_plan(PLAN, ROOT)
         self.assertTrue(result["ok"])
         self.assertEqual(result["sample_size"], 10)
+        self.assertEqual(result["deadline_minutes"], 30)
         self.assertEqual(result["family_count"], 5)
         self.assertEqual(result["arm_counts"], {"all-max-control": 5, "dynamic-v0.2.1": 5})
         for name, artifact in (
@@ -123,11 +129,16 @@ class PilotToolTests(unittest.TestCase):
             self.assertFalse(schema["additionalProperties"])
             if artifact is not None:
                 self.assertEqual(set(schema["required"]), set(artifact))
+        archived = ROOT / "pilot-plans" / "m4-v0.2.1-window-01.json"
+        self.assertEqual(hashlib.sha256(archived.read_bytes()).hexdigest(), "65d3f75aa3eb07a991457ae07435f57516bd5fcec12e253f98728fff375e71e4")
+        self.assertEqual(json.loads(archived.read_text())["deadline_hours"], 168)
 
     def test_malformed_plan_types_fail_closed_without_tracebacks(self):
         mutations = (
             ("minimum_families", []),
             ("kill_criteria", {}),
+            ("deadline_hours", 0.25),
+            ("deadline_hours", "0.5"),
         )
         for key, value in mutations:
             with self.subTest(key=key):
@@ -212,6 +223,7 @@ class PilotToolTests(unittest.TestCase):
             pilot_tool.register_start(plan_path, repo, pilot_home, starts, "m4-02", "milestone-02", "task-02", "2026-08-02T20:45:00Z")
         result = pilot_tool.register_start(plan_path, repo, pilot_home, starts, "m4-01", "milestone-01", "task-01", "2026-08-02T20:45:00Z")
         self.assertFalse(result["idempotent"])
+        self.assertEqual(self._read_starts(starts)[0]["due_at"], "2026-08-02T21:15:00Z")
         repeated = pilot_tool.register_start(plan_path, repo, pilot_home, starts, "m4-01", "milestone-01", "task-01", "2026-08-02T20:45:00Z")
         self.assertTrue(repeated["idempotent"])
         with self.assertRaisesRegex(pilot_tool.PilotError, "prior_window_blocked"):
@@ -238,15 +250,15 @@ class PilotToolTests(unittest.TestCase):
         unverified = pilot_tool.summarize_pilot(plan_path, repo, starts_dir, receipts_dir, None, "2026-08-02T20:45:00Z")
         self.assertEqual(unverified["state"], "setup-unverified")
         pilot_tool.register_start(plan_path, repo, pilot_home, starts_dir, "m4-01", "milestone-01", "task-01", "2026-08-02T20:45:00Z")
-        pending = pilot_tool.summarize_pilot(plan_path, repo, starts_dir, receipts_dir, pilot_home, "2026-08-09T20:44:59Z")
+        pending = pilot_tool.summarize_pilot(plan_path, repo, starts_dir, receipts_dir, pilot_home, "2026-08-02T21:14:59Z")
         self.assertEqual(pending["pending_count"], 1)
         self.assertEqual(pending["receipt_coverage_fraction"], 0.0)
-        overdue = pilot_tool.summarize_pilot(plan_path, repo, starts_dir, receipts_dir, pilot_home, "2026-08-09T20:45:00Z")
+        overdue = pilot_tool.summarize_pilot(plan_path, repo, starts_dir, receipts_dir, pilot_home, "2026-08-02T21:15:00Z")
         self.assertEqual(overdue["state"], "blocked")
         start = self._read_starts(starts_dir)[0]
         plan = json.loads(plan_path.read_text())
         close_receipt(self._payload(start, plan), receipts_dir)
-        terminal = pilot_tool.summarize_pilot(plan_path, repo, starts_dir, receipts_dir, pilot_home, "2026-08-09T20:45:00Z")
+        terminal = pilot_tool.summarize_pilot(plan_path, repo, starts_dir, receipts_dir, pilot_home, "2026-08-02T21:15:00Z")
         self.assertEqual(terminal["terminal_count"], 1)
         self.assertEqual(terminal["receipt_coverage"], "in-progress")
         self.assertEqual(terminal["receipt_coverage_fraction"], 1.0)

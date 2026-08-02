@@ -316,7 +316,7 @@ class SolLunaStatusTests(unittest.TestCase):
             sessions,
             "--pilot-home", str(pilot_home),
             "--starts-dir", str(starts),
-            "--as-of", "2026-08-02T20:45:00Z",
+            "--as-of", "2026-08-02T23:45:00Z",
         )
         self.assertEqual(ready["pilot"]["state"], "ready")
         self.assertTrue(ready["drift"]["active_runtime"])
@@ -329,7 +329,7 @@ class SolLunaStatusTests(unittest.TestCase):
             "m4-01",
             "milestone-01",
             "task-01",
-            "2026-08-02T20:45:00Z",
+            "2026-08-02T23:45:00Z",
         )
         pending, _ = self._json(
             base,
@@ -337,7 +337,7 @@ class SolLunaStatusTests(unittest.TestCase):
             sessions,
             "--pilot-home", str(pilot_home),
             "--starts-dir", str(starts),
-            "--as-of", "2026-08-09T20:44:59Z",
+            "--as-of", "2026-08-03T00:14:59Z",
         )
         self.assertEqual(pending["pilot"]["state"], "in-progress")
         self.assertEqual(pending["receipts"]["receipt_coverage"], "in-progress")
@@ -348,7 +348,7 @@ class SolLunaStatusTests(unittest.TestCase):
             sessions,
             "--pilot-home", str(pilot_home),
             "--starts-dir", str(starts),
-            "--as-of", "2026-08-09T20:45:00Z",
+            "--as-of", "2026-08-03T00:15:00Z",
         )
         self.assertEqual(overdue["pilot"]["state"], "blocked")
         self.assertIn("stop the M4 window", overdue["routing_recommendation"])

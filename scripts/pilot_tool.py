@@ -398,7 +398,14 @@ def _load_plan(plan_path: Path | str, repo_root: Path | str) -> Tuple[Dict[str, 
         or value["assignment_method"] != "predeclared-matched-alternating"
     ):
         raise PilotError("plan_design")
-    if isinstance(value["deadline_hours"], bool) or not isinstance(value["deadline_hours"], int) or not 1 <= value["deadline_hours"] <= 24 * 30:
+    deadline = value["deadline_hours"]
+    if (
+        isinstance(deadline, bool)
+        or not isinstance(deadline, (int, float))
+        or not math.isfinite(deadline)
+        or not 0.5 <= deadline <= 24 * 30
+        or deadline * 2 != int(deadline * 2)
+    ):
         raise PilotError("plan_deadline")
     policies = value["policies"]
     if not isinstance(policies, dict) or set(policies) != set(ARMS):
@@ -479,6 +486,7 @@ def verify_plan(plan_path: Path | str = DEFAULT_PLAN, repo_root: Path | str = DE
         "plan_id": plan["plan_id"],
         "plan_sha256": digest,
         "sample_size": plan["sample_size"],
+        "deadline_minutes": int(plan["deadline_hours"] * 60),
         "family_count": len({slot["family"] for slot in plan["slots"]}),
         "arm_counts": {arm: sum(slot["arm"] == arm for slot in plan["slots"]) for arm in ARMS},
         "source_integrity": True,

@@ -17,6 +17,10 @@ boundaries.
 > slot 1 has **not** started. This repository makes no claim of calibrated
 > savings or production performance.
 
+The active M4 window enforces a 30-minute deadline from each registered start
+to its terminal receipt. Tasks that cannot finish defensibly in that bound are
+closed as abandoned; the deadline is never silently extended.
+
 ## Choose the right kit
 
 | | [Original role kit](https://github.com/msinclair25/codex-sol-luna-role-kit) | This orchestration kit |
@@ -197,6 +201,8 @@ codex-sol-luna-orchestration-kit/
 │   └── USAGE_METRICS.md
 ├── evidence/
 │   └── m1-role-smoke-2026-08-02.json
+├── pilot-plans/
+│   └── m4-v0.2.1-window-01.json
 ├── scripts/
 │   ├── install.py
 │   ├── new_mac_preflight.py

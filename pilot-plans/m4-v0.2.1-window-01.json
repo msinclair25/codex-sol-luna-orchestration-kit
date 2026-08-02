@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "plan_id": "m4-v0.2.1-window-02",
+  "plan_id": "m4-v0.2.1-window-01",
   "project_id": "codex-sol-luna-orchestration-kit",
   "status": "frozen-before-first-start",
-  "created_at": "2026-08-02T23:43:28Z",
+  "created_at": "2026-08-02T20:40:40Z",
   "source_commit": "7efec694aa33db0d04964083a8938b62d59ce295",
   "sample_size": 10,
-  "deadline_hours": 0.5,
+  "deadline_hours": 168,
   "minimum_families": 3,
   "assignment_method": "predeclared-matched-alternating",
   "policies": {

@@ -12,6 +12,10 @@ copies authentication or sessions, reads prompts or source, sends data, or
 promotes a policy. It adds no dashboard, server, database, MCP service, Sites
 surface, or plugin.
 
+The active plan is `m4-v0.2.1-window-02`. Window 01 was superseded before any
+measured start solely to replace its seven-day stale ceiling with a hard
+30-minute task deadline; its original plan is preserved under `pilot-plans/`.
+
 Codex documents `CODEX_HOME` as the stable way to relocate Codex state for the
 CLI, IDE extension, app server, and installers. The directory must already
 exist. See the official [Codex environment-variable
@@ -40,6 +44,12 @@ Ten milestones are directional evidence, not a precise savings estimate.
 Missing or incomplete usage remains unknown. A complete window enables human
 review only; automatic promotion is always false.
 
+Every registered task has a hard 30-minute terminal-receipt deadline. The
+deadline is an enforced pilot bound, not a target for continuous execution. If
+a task cannot reach a defensible terminal disposition in that window, mark it
+abandoned and close its receipt rather than extending or silently restarting
+it.
+
 ## Entry-gate setup
 
 Run these commands from the repository root. Choose a dedicated path that is
@@ -51,7 +61,7 @@ receipt, follow [NEW_MAC_HANDOFF.md](NEW_MAC_HANDOFF.md). It runs this same
 entry gate and stops before measured slot 1.
 
 ```sh
-SOL_LUNA_PILOT_HOME="$HOME/codex-sol-luna-pilots/m4-v0.2.1-window-01"
+SOL_LUNA_PILOT_HOME="$HOME/codex-sol-luna-pilots/m4-v0.2.1-window-02"
 
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/pilot_tool.py verify-plan
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/pilot_tool.py setup-environments \
@@ -109,7 +119,7 @@ Slots are strictly sequential: every prior start must have a matching terminal
 receipt before the next can register. Pending, overdue, invalid, mismatched, or
 kill-triggering evidence blocks registration. A start cannot predate the plan
 or be future-dated beyond a five-minute clock-skew allowance. A receipt dated
-after the status clock or after its 168-hour deadline blocks the window instead
+after the status clock or after its 30-minute deadline blocks the window instead
 of silently restoring eligibility.
 
 Launch the task with the planned arm by setting `CODEX_HOME` for that process.
@@ -129,7 +139,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 \
 The registry joins starts to receipts by exact milestone and Codex task IDs.
 Project ID, workload base commit, policy hashes, task family, risk band, start
 time, and the exact unique set of required checks must also match. A missing
-receipt becomes overdue at 168 hours. Invalid receipts, duplicate terminals,
+receipt becomes overdue at 30 minutes. Invalid receipts, duplicate terminals,
 environment or policy drift, attribution failure, and an overdue start block
 further starts.
 

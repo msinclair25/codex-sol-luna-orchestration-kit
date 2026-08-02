@@ -47,6 +47,20 @@ class NewMacPreflightTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertIsNone(new_mac_preflight._canonical_repository(value))
 
+    def test_handoff_resolves_python_and_privately_captures_smoke_events(self):
+        handoff = (ROOT / "docs" / "NEW_MAC_HANDOFF.md").read_text()
+        self.assertIn('for candidate in python3.11 python3; do', handoff)
+        self.assertIn('PYTHON_BIN="$candidate_path"', handoff)
+        self.assertIn('if [ -z "$PYTHON_BIN" ]; then', handoff)
+        self.assertIn("raise SystemExit(sys.version_info < (3, 11))", handoff)
+        self.assertIn('exit 1', handoff)
+        self.assertIn('readonly PYTHON_BIN', handoff)
+        self.assertIn('SMOKE_DIR="$(mktemp -d)"', handoff)
+        self.assertIn('>"$SMOKE_DIR/control.events.jsonl"', handoff)
+        self.assertIn('2>"$SMOKE_DIR/control.stderr.log"', handoff)
+        self.assertIn('--output-last-message "$SMOKE_DIR/control.last.txt"', handoff)
+        self.assertIn("fork_turns '\\''none'\\''", handoff)
+
     def test_dry_run_is_non_mutating_and_reports_zero_model_activity(self):
         with tempfile.TemporaryDirectory() as directory:
             pilot_home = Path(directory) / "nested" / "pilot"
@@ -69,7 +83,7 @@ class NewMacPreflightTests(unittest.TestCase):
             sentinel = ordinary_codex_home / "sentinel.txt"
             sentinel.write_text("unchanged\n")
             sentinel.chmod(0o600)
-            pilot_home = base / "dedicated" / "m4-v0.2.1-window-01"
+            pilot_home = base / "dedicated" / "m4-v0.2.1-window-02"
             starts_existed_before = (ROOT / ".sol-luna" / "starts").exists()
             patches = self._host_patches()
             with (

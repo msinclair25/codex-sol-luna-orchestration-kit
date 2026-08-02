@@ -99,7 +99,7 @@ promote a policy from an uncalibrated estimate unless the result is replicated.
 
 `config/m4-pilot.v1.json` and `scripts/pilot_tool.py` implement the entry gate:
 the frozen assignment ledger, isolated all-Max and dynamic environments,
-strictly sequential registered starts, 168-hour overdue checks, exact
+strictly sequential registered starts, 30-minute overdue checks, exact
 project/source/policy receipt joins, kill-criterion blocking, and predeclared
 comparison fields. They do not start Codex or register slot 1 by themselves.
 See [M4_PILOT.md](M4_PILOT.md) for setup and operating rules.
