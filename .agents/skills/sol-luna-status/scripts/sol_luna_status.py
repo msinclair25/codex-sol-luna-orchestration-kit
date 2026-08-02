@@ -21,6 +21,7 @@ SKILL_REPO_CANDIDATE = Path(__file__).resolve().parents[4]
 MODULE_ROOT = SKILL_REPO_CANDIDATE
 MAX_FILES, MAX_BYTES, MAX_SECONDS, MAX_FILE_BYTES = 128, 16 * 1024 * 1024, 3.0, 2 * 1024 * 1024
 MAX_ENTRIES = MAX_FILES * 16
+KIT_POINTER_NAME = ".sol-luna-kit-root"
 ROLE_NAMES = {"luna_scout_fast", "luna_worker_fast", "luna_critic_fast", "luna_tester_fast", "luna_max_fast"}
 MODEL_NAMES = {"gpt-5.6-sol", "gpt-5.6-luna"}
 REASONING_NAMES = {"low", "medium", "high", "xhigh", "max", "ultra"}
@@ -51,6 +52,21 @@ def _resolve_root(explicit: Optional[str]) -> Path:
         if not _valid_root(candidate):
             raise RuntimeError("role_kit_root_invalid")
         return candidate.resolve()
+    pointer = SCRIPT_DIR.parent / KIT_POINTER_NAME
+    if pointer.is_file() and not pointer.is_symlink():
+        try:
+            raw = pointer.read_text(encoding="utf-8")
+            if len(raw.encode("utf-8")) > 4096 or "\x00" in raw:
+                raise RuntimeError("role_kit_root_pointer_invalid")
+            value = raw.strip()
+            if not value or "\n" in value or "\r" in value:
+                raise RuntimeError("role_kit_root_pointer_invalid")
+            candidate = Path(value).expanduser()
+            if not candidate.is_absolute() or candidate.is_symlink() or not _valid_root(candidate):
+                raise RuntimeError("role_kit_root_pointer_invalid")
+            return candidate.resolve()
+        except (OSError, UnicodeError):
+            raise RuntimeError("role_kit_root_pointer_invalid")
     for base in (Path.cwd(), SCRIPT_DIR):
         for candidate in (base, *base.parents):
             if _valid_root(candidate):
