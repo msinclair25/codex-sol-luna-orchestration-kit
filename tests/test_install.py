@@ -1,4 +1,5 @@
 import contextlib
+import hashlib
 import importlib.util
 import io
 import json
@@ -141,6 +142,17 @@ class InstallerTests(unittest.TestCase):
         self.assertIn(install.AGENTS_START, (self.codex / "AGENTS.override.md").read_text())
         report = verify_active_root(self.codex, ROOT)
         self.assertTrue(report["ok"], report)
+        repeat = install.install(
+            ROOT,
+            self.codex,
+            self.home,
+            apply=True,
+            with_usage=False,
+            approve_agents_refresh=True,
+        )
+        self.assertEqual(repeat["agents"], "identical-managed")
+        self.assertEqual(repeat["write_count"], 0)
+        self.assertIsNone(repeat["backup"])
 
         empty = self.home / "empty-codex"
         empty.mkdir()
@@ -150,6 +162,29 @@ class InstallerTests(unittest.TestCase):
         self.assertIn(install.AGENTS_START, (empty / "AGENTS.md").read_text())
         self.assertEqual((empty / "AGENTS.override.md").read_text(), "")
         self.assertTrue(verify_active_root(empty, ROOT)["ok"])
+
+    def test_known_exact_prior_policy_requires_explicit_safe_refresh(self):
+        self.codex.mkdir()
+        agents = self.codex / "AGENTS.md"
+        prior_policy = b"# exact prior kit policy\n"
+        known = frozenset({hashlib.sha256(prior_policy).hexdigest()})
+        agents.write_bytes(prior_policy)
+
+        with mock.patch.object(install, "KNOWN_EXACT_AGENTS_REVISIONS", known):
+            with self.assertRaisesRegex(install.InstallError, "agents_known_revision_requires_refresh"):
+                install.install(ROOT, self.codex, self.home, apply=False, with_usage=False)
+            plan = install.install(
+                ROOT,
+                self.codex,
+                self.home,
+                apply=True,
+                with_usage=False,
+                approve_agents_refresh=True,
+            )
+
+        self.assertEqual(plan["agents"], "refresh-known-exact")
+        self.assertEqual(agents.read_bytes(), (ROOT / "AGENTS.md").read_bytes())
+        self.assertTrue(plan["verification"]["ok"])
 
     def test_conflicts_fail_closed_and_repeat_is_idempotent(self):
         self.codex.mkdir()

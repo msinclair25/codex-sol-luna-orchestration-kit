@@ -30,6 +30,10 @@ REPO_ROOT = SCRIPT_DIR.parent
 ROLE_FILES = tuple(f"luna_{name}_fast.toml" for name in ("scout", "worker", "critic", "tester", "max"))
 AGENTS_START = "# >>> sol-luna-orchestration-kit managed block >>>\n"
 AGENTS_END = "# <<< sol-luna-orchestration-kit managed block <<<\n"
+KNOWN_EXACT_AGENTS_REVISIONS = frozenset({
+    # V0.2 policy before the M4 stability guardrail. Exact-match only.
+    "b608e3436ec958c140a5e718c9f24e5231512e8f8f57af7cce174c72eb3fd249",
+})
 MAX_AGENTS_BYTES = 32 * 1024
 MAX_CONFIG_BYTES = 256 * 1024
 POINTER_NAME = ".sol-luna-kit-root"
@@ -177,6 +181,11 @@ def _agents_action(destination: Path, source: bytes, *, refresh: bool) -> Tuple[
         current = _read(destination, MAX_AGENTS_BYTES)
         if current == source:
             return "identical", None
+        current_digest = hashlib.sha256(current).hexdigest()
+        if current_digest in KNOWN_EXACT_AGENTS_REVISIONS:
+            if not refresh:
+                raise InstallError("agents_known_revision_requires_refresh")
+            return "refresh-known-exact", source
         starts = current.count(AGENTS_START.encode())
         ends = current.count(AGENTS_END.encode())
         if starts > 1 or ends > 1 or (starts != ends):
@@ -186,11 +195,12 @@ def _agents_action(destination: Path, source: bytes, *, refresh: bool) -> Tuple[
             end = current.find(AGENTS_END.encode())
             body_start = start + len(AGENTS_START.encode())
             body = current[body_start:end]
-            if end < body_start or body != source:
-                if not refresh:
-                    raise InstallError("agents_managed_block_conflict")
-            elif not refresh:
+            if end < body_start:
+                raise InstallError("agents_managed_markers_malformed")
+            if body == source:
                 return "identical-managed", None
+            if not refresh:
+                raise InstallError("agents_managed_block_conflict")
             new = current[:start] + _managed_block(source) + current[end + len(AGENTS_END.encode()):]
             if len(new) > MAX_AGENTS_BYTES:
                 raise InstallError("agents_instruction_size_overflow")

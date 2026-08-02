@@ -314,9 +314,11 @@ back; their printed backup directory is retained as a recovery artifact.
 
 Existing conflicting role files or owned configuration values fail closed.
 Compare them before deliberately rerunning with `--approve-conflicts`. Use
-`--approve-agents-refresh` only to refresh a managed policy block installed by
-an earlier kit version. Neither flag bypasses symlink, malformed TOML, marker,
-size, source-integrity, or post-install verification checks.
+`--approve-agents-refresh` only to replace a byte-exact known prior kit policy
+or refresh a managed policy block installed by an earlier kit version. A
+modified unmarked instruction file is never treated as a known revision.
+Neither flag bypasses symlink, malformed TOML, marker, size, source-integrity,
+or post-install verification checks.
 
 Source-integrity checks detect accidental or unreviewed drift against the
 manifests in a trusted checkout; they do not authenticate a maliciously
