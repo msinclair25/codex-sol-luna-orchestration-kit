@@ -45,8 +45,13 @@ multiple cohorts reports those rows but leaves the single top-level value null
 with `status: "unknown"` and reason
 `multiple_incomparable_cohorts`; incomparable denominators are never added.
 Incomplete or unknown usage keeps totals null and reports unknown provenance and
-reason; M2 has no start registry, so receipt coverage is always `unknown` with
-reason `no_start_registry`.
+reason. The M2 summarizer has no independent denominator, so its coverage stays
+`unknown` with reason `no_start_registry`. During M4,
+`scripts/pilot_tool.py status` and the Sol/Luna status skill replace that field
+with coverage derived from the frozen registered-start ledger. A receipt counts
+only when its project, workload base commit, milestone/task IDs, start time,
+family, risk band, policy hashes, and exact unique acceptance-check set match
+the registered start. Future or post-deadline terminal timestamps fail closed.
 
 The JSON Schema expresses cross-field conditions such as disposition,
 accepted-by, usage coverage, Max-lane reasons, and escalation consistency. The

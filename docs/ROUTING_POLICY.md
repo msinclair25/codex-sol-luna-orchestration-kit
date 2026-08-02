@@ -95,16 +95,19 @@ documented quality or speed gain that justifies the difference. Ten milestones
 are directional evidence, not proof of a precise savings percentage; do not
 promote a policy from an uncalibrated estimate unless the result is replicated.
 
-### M4 entry conditions not implemented by V0.2
+### M4 entry conditions
 
-This freeze guardrail does not start the pilot. M0–M3 do not provide a
-registered-start and assignment ledger, an overdue deadline checker, a
-cross-family all-Max-versus-dynamic aggregation method, or predeclared quality
-and latency metric definitions. Before the first M4 start, define those bounded
-inputs and their evidence path. Until then, report M4 coverage, the total
-cross-policy comparison, and any promotion decision as blocked or unknown. Do
-not substitute manual estimates or add further controls to manufacture a
-result.
+`config/m4-pilot.v1.json` and `scripts/pilot_tool.py` implement the entry gate:
+the frozen assignment ledger, isolated all-Max and dynamic environments,
+strictly sequential registered starts, 168-hour overdue checks, exact
+project/source/policy receipt joins, kill-criterion blocking, and predeclared
+comparison fields. They do not start Codex or register slot 1 by themselves.
+See [M4_PILOT.md](M4_PILOT.md) for setup and operating rules.
+
+The comparison remains unknown until all 10 starts are registered and terminal
+with matching evidence. Missing full-workflow usage remains unknown. A complete
+window is only checkpoint-ready for human review; the tool never promotes a
+policy automatically.
 
 ## Static verification
 

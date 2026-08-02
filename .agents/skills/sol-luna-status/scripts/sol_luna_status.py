@@ -39,11 +39,14 @@ def _module(name: str):
     return mod
 
 
-usage_report = receipt_tool = routing_policy = verify_bundle = None
+usage_report = receipt_tool = routing_policy = verify_bundle = pilot_tool = None
 
 
 def _valid_root(path: Path) -> bool:
-    return _safe_path(path, directory=True) and _safe_path(path / "scripts" / "usage_report.py") and _safe_path(path / "scripts" / "receipt_tool.py")
+    return _safe_path(path, directory=True) and all(
+        _safe_path(path / "scripts" / name)
+        for name in ("usage_report.py", "receipt_tool.py", "pilot_tool.py")
+    )
 
 
 def _resolve_root(explicit: Optional[str]) -> Path:
@@ -75,12 +78,13 @@ def _resolve_root(explicit: Optional[str]) -> Path:
 
 
 def _load_modules(root: Path) -> None:
-    global usage_report, receipt_tool, routing_policy, verify_bundle, MODULE_ROOT
+    global usage_report, receipt_tool, routing_policy, verify_bundle, pilot_tool, MODULE_ROOT
     MODULE_ROOT = root
     usage_report = _module("usage_report")
     receipt_tool = _module("receipt_tool")
     routing_policy = _module("routing_policy")
     verify_bundle = _module("verify_control_bundle")
+    pilot_tool = _module("pilot_tool")
 
 
 def _safe_path(path: Path, *, directory: bool = False) -> bool:
@@ -532,9 +536,29 @@ def _budget(limit: Optional[float], consumed: Optional[float], duration_ms: Opti
     return result
 
 
-def _recommendation(drift: Dict[str, Any], attributed: bool, receipt: Optional[Dict[str, Any]], quality: Dict[str, Any]) -> str:
+def _recommendation(
+    drift: Dict[str, Any],
+    attributed: bool,
+    receipt: Optional[Dict[str, Any]],
+    quality: Dict[str, Any],
+    pilot: Optional[Dict[str, Any]],
+) -> str:
     if drift.get("errors"):
         return "direct Sol: control or rate-card drift requires review"
+    if pilot is not None:
+        state = pilot.get("state")
+        if state == "blocked":
+            return "direct Sol: stop the M4 window and review pilot integrity before more starts"
+        if state == "checkpoint-ready":
+            return "direct Sol: perform the frozen M4 human checkpoint; never auto-promote"
+        if state == "setup-unverified":
+            return "direct Sol: verify both isolated M4 environments before registering slot 1"
+        if state == "ready":
+            return "direct Sol: register only the next predeclared M4 slot when its real task begins"
+        if state == "in-progress" and pilot.get("next_slot_eligible"):
+            return "direct Sol: register only the next predeclared M4 slot when its real task begins"
+        if state == "in-progress":
+            return "direct Sol: close pending M4 evidence before the next predeclared slot"
     if receipt is None:
         return "direct Sol: create a validated milestone receipt before changing routing"
     if receipt.get("disposition") in {"rejected", "abandoned"} or quality.get("check_fail_count") or quality.get("open_risk_count"):
@@ -560,7 +584,52 @@ def _report(args: argparse.Namespace) -> Dict[str, Any]:
         except Exception:
             pass
 
+    plan_path = Path(args.plan).expanduser() if args.plan else root / "config" / "m4-pilot.v1.json"
+    starts_dir = Path(args.starts_dir).expanduser() if args.starts_dir else root / ".sol-luna" / "starts"
+    pilot_summary: Optional[Dict[str, Any]] = None
+    pilot_warning = None
+    try:
+        candidate_pilot = pilot_tool.summarize_pilot(
+            plan_path,
+            root,
+            starts_dir,
+            receipts_dir,
+            args.pilot_home,
+            args.as_of,
+        )
+        if isinstance(candidate_pilot, dict):
+            pilot_summary = candidate_pilot
+            receipt_summary["receipt_coverage"] = candidate_pilot.get("receipt_coverage", "unknown")
+            receipt_summary["receipt_coverage_reason"] = candidate_pilot.get("receipt_coverage_reason", "pilot_status_unknown")
+    except Exception:
+        pilot_warning = "pilot_status_unavailable"
+        pilot_summary = {
+            "ok": False,
+            "schema_version": 1,
+            "plan_id": None,
+            "state": "blocked",
+            "registered_count": None,
+            "unregistered_count": None,
+            "terminal_count": None,
+            "pending_count": None,
+            "overdue_count": None,
+            "receipt_coverage": "unknown",
+            "receipt_coverage_reason": "pilot_status_unavailable",
+            "receipt_coverage_fraction": None,
+            "next_slot": None,
+            "next_slot_eligible": False,
+            "latest_terminal_closed_at": None,
+            "kill_criteria_triggered": [],
+            "comparison": {"status": "unknown", "automatic_promotion": False, "promotion_status": "blocked-or-unknown"},
+            "environment": None,
+            "errors": ["pilot_status_unavailable"],
+        }
+        receipt_summary["receipt_coverage"] = "unknown"
+        receipt_summary["receipt_coverage_reason"] = "pilot_status_unavailable"
+
     selected, probe, warnings = _scan_sessions(session_root)
+    if pilot_warning:
+        warnings.append(pilot_warning)
     if receipt_summary.get("invalid_receipts"):
         warnings.append("invalid_receipts_observed")
 
@@ -625,7 +694,11 @@ def _report(args: argparse.Namespace) -> Dict[str, Any]:
         selected = []
         _mark_probe_failed(probe, str(probe.get("reason") or "session_probe_failed"))
 
-    active_default = Path.home() / ".codex"
+    active_default = (
+        Path(args.pilot_home).expanduser() / "dynamic" / ".codex"
+        if args.pilot_home
+        else Path.home() / ".codex"
+    )
     active_path = Path(args.active_root).expanduser() if args.active_root else (active_default if _safe_path(active_default, directory=True) else None)
     config_path = Path(args.active_config).expanduser() if args.active_config else (active_default / "config.toml" if _safe_path(active_default / "config.toml") else None)
     if active_path is not None and config_path is None:
@@ -763,16 +836,17 @@ def _report(args: argparse.Namespace) -> Dict[str, Any]:
         }
 
     receipt_keys = ("receipts_observed", "invalid_receipts", "accepted_count", "rejected_count", "abandoned_count", "receipt_coverage", "receipt_coverage_reason")
-    recommendation = _recommendation(drift, usage["status"] == "estimated", latest, quality)
+    recommendation = _recommendation(drift, usage["status"] == "estimated", latest, quality, pilot_summary)
     return {
         "schema_version": 1,
         "mode": "session+receipts" if usage["status"] == "estimated" else "receipt-only",
         "milestone": {
-            "id": latest.get("milestone_id") if latest else None,
-            "state": latest.get("disposition") if latest else "unknown",
-            "scope": "latest-terminal-no-start-registry" if latest else "unregistered",
+            "id": pilot_summary.get("plan_id") if pilot_summary else (latest.get("milestone_id") if latest else None),
+            "state": pilot_summary.get("state") if pilot_summary else (latest.get("disposition") if latest else "unknown"),
+            "scope": "m4-pilot-registry" if pilot_summary else ("latest-terminal-no-start-registry" if latest else "unregistered"),
         },
         "receipts": {key: receipt_summary.get(key) for key in receipt_keys},
+        "pilot": pilot_summary,
         "latest_terminal": latest_terminal,
         "latest_accepted_outcome": latest_accepted,
         "session_probe": {key: value for key, value in probe.items() if key not in {"root_meta", "child_meta", "records", "runtime_labels", "workflows"}},
@@ -801,6 +875,7 @@ def _report(args: argparse.Namespace) -> Dict[str, Any]:
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Report bounded privacy-safe Sol/Luna status")
     p.add_argument("--root"); p.add_argument("--receipts-dir"); p.add_argument("--session-root"); p.add_argument("--active-root"); p.add_argument("--active-config")
+    p.add_argument("--plan"); p.add_argument("--starts-dir"); p.add_argument("--pilot-home"); p.add_argument("--as-of")
     p.add_argument("--budget", type=float); p.add_argument("--format", choices=("markdown", "json"), default="markdown")
     return p
 
@@ -818,6 +893,7 @@ def _display(value: Any) -> str:
 def _markdown(report: Dict[str, Any]) -> str:
     milestone = report["milestone"]
     receipts = report["receipts"]
+    pilot = report.get("pilot") or {}
     probe = report["session_probe"]
     usage = report["usage"]
     timing = report["timing"]
@@ -843,6 +919,13 @@ def _markdown(report: Dict[str, Any]) -> str:
         f"- Observed: {_display(receipts.get('receipts_observed'))} (accepted {_display(receipts.get('accepted_count'))}, rejected {_display(receipts.get('rejected_count'))}, abandoned {_display(receipts.get('abandoned_count'))})",
         f"- Invalid: {_display(receipts.get('invalid_receipts'))}",
         f"- Coverage: {_display(receipts.get('receipt_coverage'))} ({_display(receipts.get('receipt_coverage_reason'))})",
+        "",
+        "## M4 pilot",
+        "",
+        f"- State: {_display(pilot.get('state'))}; plan: {_display(pilot.get('plan_id'))}",
+        f"- Registered/terminal/pending/overdue: {_display(pilot.get('registered_count'))} / {_display(pilot.get('terminal_count'))} / {_display(pilot.get('pending_count'))} / {_display(pilot.get('overdue_count'))}",
+        f"- Next slot: {_display((pilot.get('next_slot') or {}).get('slot_id'))}; comparison: {_display((pilot.get('comparison') or {}).get('status'))}",
+        f"- Automatic promotion: no; checkpoint disposition: {_display((pilot.get('comparison') or {}).get('promotion_status'))}",
         "",
         "## Session capability probe",
         "",
@@ -915,6 +998,7 @@ def _failure_report() -> Dict[str, Any]:
         "mode": "receipt-only",
         "milestone": {"id": None, "state": "unknown", "scope": "unregistered"},
         "receipts": _empty_receipt_summary(),
+        "pilot": {"ok": False, "schema_version": 1, "plan_id": None, "state": "blocked", "registered_count": None, "terminal_count": None, "pending_count": None, "overdue_count": None, "receipt_coverage": "unknown", "receipt_coverage_reason": "status_report_failed", "receipt_coverage_fraction": None, "next_slot": None, "next_slot_eligible": False, "latest_terminal_closed_at": None, "kill_criteria_triggered": [], "comparison": {"status": "unknown", "automatic_promotion": False, "promotion_status": "blocked-or-unknown"}, "environment": None, "errors": ["status_report_failed"]},
         "latest_terminal": None,
         "latest_accepted_outcome": None,
         "session_probe": {"status": "failed", "reason": "status_report_failed", "adapter_schema_version": 1, "source_schema": "record-schema-v1", "path_status": "failed", "schema_status": "failed", "required_fields_status": "failed", "attribution_status": "failed"},

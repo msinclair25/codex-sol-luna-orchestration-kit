@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from scripts import pilot_tool
 from scripts.receipt_tool import close_receipt
 
 
@@ -116,8 +117,10 @@ class SolLunaStatusTests(unittest.TestCase):
         self.assertEqual(report["usage"]["fast_multiplier"], 2.5)
         self.assertIsNone(report["usage"]["billed_usage"])
         self.assertEqual(report["receipts"]["accepted_count"], 1)
-        self.assertEqual(report["receipts"]["receipt_coverage"], "unknown")
-        self.assertEqual(report["receipts"]["receipt_coverage_reason"], "no_start_registry")
+        self.assertEqual(report["receipts"]["receipt_coverage"], "not-started")
+        self.assertEqual(report["receipts"]["receipt_coverage_reason"], "no_registered_starts")
+        self.assertEqual(report["pilot"]["state"], "setup-unverified")
+        self.assertEqual(report["pilot"]["next_slot"]["slot_id"], "m4-01")
         self.assertEqual(report["latest_accepted_outcome"]["milestone_id"], "m2-receipts")
         self.assertEqual(report["timing"]["time_to_verified_outcome_ms"], 300000)
         self.assertEqual(report["budget"]["warning_threshold"], 50)
@@ -286,7 +289,7 @@ class SolLunaStatusTests(unittest.TestCase):
         second = self._run(base, receipts, sessions)
         self.assertEqual(first.returncode, 0)
         self.assertEqual(first.stdout, second.stdout)
-        for section in ("Milestone", "Receipts", "Session capability probe", "Usage", "Timing", "Delegation and quality", "Budget", "Drift and freshness", "Provenance and unknowns", "Routing recommendation"):
+        for section in ("Milestone", "Receipts", "M4 pilot", "Session capability probe", "Usage", "Timing", "Delegation and quality", "Budget", "Drift and freshness", "Provenance and unknowns", "Routing recommendation"):
             self.assertIn(f"## {section}", first.stdout)
         report, _ = self._json(base, receipts, sessions)
         self.assertEqual(first.stdout.count(report["routing_recommendation"]), 1)
@@ -300,6 +303,55 @@ class SolLunaStatusTests(unittest.TestCase):
         shutil.copytree(SKILL, global_skill)
         report, _ = self._json(base, receipts, sessions, script=global_skill / "scripts" / "sol_luna_status.py")
         self.assertEqual(report["mode"], "session+receipts")
+
+    def test_pilot_registry_drives_coverage_deadline_and_recommendation(self):
+        temporary, base, receipts, sessions = self._workspace()
+        self.addCleanup(temporary.cleanup)
+        pilot_home = base / "pilot"
+        starts = base / "starts"
+        pilot_tool.setup_environments(ROOT / "config" / "m4-pilot.v1.json", ROOT, pilot_home, apply=True)
+        ready, _ = self._json(
+            base,
+            receipts,
+            sessions,
+            "--pilot-home", str(pilot_home),
+            "--starts-dir", str(starts),
+            "--as-of", "2026-08-02T20:45:00Z",
+        )
+        self.assertEqual(ready["pilot"]["state"], "ready")
+        self.assertTrue(ready["drift"]["active_runtime"])
+        self.assertIn("register only the next predeclared M4 slot", ready["routing_recommendation"])
+        pilot_tool.register_start(
+            ROOT / "config" / "m4-pilot.v1.json",
+            ROOT,
+            pilot_home,
+            starts,
+            "m4-01",
+            "milestone-01",
+            "task-01",
+            "2026-08-02T20:45:00Z",
+        )
+        pending, _ = self._json(
+            base,
+            receipts,
+            sessions,
+            "--pilot-home", str(pilot_home),
+            "--starts-dir", str(starts),
+            "--as-of", "2026-08-09T20:44:59Z",
+        )
+        self.assertEqual(pending["pilot"]["state"], "in-progress")
+        self.assertEqual(pending["receipts"]["receipt_coverage"], "in-progress")
+        self.assertEqual(pending["pilot"]["next_slot"]["slot_id"], "m4-02")
+        overdue, _ = self._json(
+            base,
+            receipts,
+            sessions,
+            "--pilot-home", str(pilot_home),
+            "--starts-dir", str(starts),
+            "--as-of", "2026-08-09T20:45:00Z",
+        )
+        self.assertEqual(overdue["pilot"]["state"], "blocked")
+        self.assertIn("stop the M4 window", overdue["routing_recommendation"])
 
     def test_active_drift_changes_recommendation_and_invalid_args_are_nonzero(self):
         temporary, base, receipts, sessions = self._workspace()

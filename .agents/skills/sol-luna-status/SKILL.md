@@ -15,8 +15,11 @@ Pass `--root /path/to/codex-sol-luna-orchestration-kit` when invoked from a
 globally installed copy.
 Add `--active-root` and `--active-config` to compare the installed runtime, a
 positive `--budget` to report attributable budget thresholds, and `--format
-json` for automation. Treat the single recommendation in the report as the
-next routing action.
+json` for automation. During M4, pass `--pilot-home` to verify the two isolated
+roots; use `--plan`, `--starts-dir`, and `--as-of` only for explicit fixtures or
+audits. Treat the single recommendation in the report as the next routing
+action. Never infer pilot coverage without the registered-start join and never
+auto-promote a policy.
 
 The scanner is bounded and deterministic. It reads validated local receipts
 and recognized local session JSONL only when record schema v1, complete token

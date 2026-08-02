@@ -13,7 +13,8 @@ boundaries.
 
 > [!IMPORTANT]
 > V0.2 milestones M0–M3 are implemented and verified. The M4 observational
-> pilot has **not** run, so this repository makes no claim of calibrated
+> pilot entry gate and frozen 10-slot protocol are implemented, but measured
+> slot 1 has **not** started. This repository makes no claim of calibrated
 > savings or production performance.
 
 ## Choose the right kit
@@ -146,11 +147,12 @@ or latency regression. Otherwise keep the stable policy, simplify, or revert.
 The goal is the minimum control required for consistently accepted outcomes,
 not perpetual optimization.
 
-This guardrail does not start M4. V0.2 still has no registered-start ledger,
-overdue deadline enforcement, cross-family/control comparison, or predeclared
-quality and latency metric set. Those are M4 entry requirements; until they are
-available, the pilot and any policy-promotion decision remain blocked or
-unknown rather than estimated by hand.
+The M4 entry gate now supplies a frozen registered-start ledger, deadline
+enforcement, matched control/dynamic comparison, and predeclared quality,
+latency, usage, and disposition checks. It still does not start the pilot.
+Follow [the M4 protocol](docs/M4_PILOT.md), verify both isolated environments,
+and run an unmeasured smoke before registering slot 1. Policy promotion remains
+manual and requires calibrated or replicated evidence.
 
 ## What you get
 
@@ -168,14 +170,18 @@ codex-sol-luna-orchestration-kit/
 ├── config-snippet.toml
 ├── config/
 │   ├── install-assets.v1.json
+│   ├── m4-pilot.v1.json
 │   ├── rate-card.v1.json
 │   └── routing-policy.v1.json
 ├── control-bundles/
 │   └── all-max-v1/
 ├── schemas/
-│   └── milestone-receipt.v1.schema.json
+│   ├── m4-pilot-plan.v1.schema.json
+│   ├── milestone-receipt.v1.schema.json
+│   └── pilot-start.v1.schema.json
 ├── docs/
 │   ├── CONTROL_BUNDLES.md
+│   ├── M4_PILOT.md
 │   ├── RECEIPTS.md
 │   ├── PROVENANCE.md
 │   ├── ROUTING_POLICY.md
@@ -185,6 +191,7 @@ codex-sol-luna-orchestration-kit/
 │   └── m1-role-smoke-2026-08-02.json
 ├── scripts/
 │   ├── install.py
+│   ├── pilot_tool.py
 │   ├── receipt_tool.py
 │   ├── routing_policy.py
 │   ├── usage_report.py
@@ -193,6 +200,7 @@ codex-sol-luna-orchestration-kit/
 │   ├── test_control_bundle.py
 │   ├── test_install.py
 │   ├── test_m1_evidence.py
+│   ├── test_pilot_tool.py
 │   ├── test_receipt_tool.py
 │   ├── test_routing_policy.py
 │   ├── test_sol_luna_status.py
@@ -262,8 +270,9 @@ python3 scripts/receipt_tool.py summarize --receipts-dir .sol-luna/receipts --fo
 
 Receipts are local audit artifacts, not automation commands or cryptographic
 proof. Their SHA-256 IDs are anchored by the canonical close payload; Git and
-human review remain the provenance anchor. No start registry is created in M2,
-so receipt coverage is reported as unknown even when terminal receipts exist.
+human review remain the provenance anchor. M2 summaries alone cannot infer
+coverage. The M4 registry now computes coverage only by joining pre-registered
+starts to matching terminal receipts; see [the pilot protocol](docs/M4_PILOT.md).
 
 ## Sol/Luna status skill
 
@@ -272,7 +281,9 @@ Run the repository-local, read-only status report with
 `--format json` for automation. The bounded scanner uses validated local
 receipts and attributable record-schema-v1 rollout JSONL with complete token
 snapshots, redacts sensitive content, and falls back to receipt-only status
-when local session capability or correlation is not provable. It does not use
+when local session capability or correlation is not provable. During M4 it also
+reports registered, terminal, pending, and overdue starts plus the next frozen
+slot and human-only checkpoint state. It does not use
 a server, plugin, MCP service, dashboard, database, or network surface.
 
 The guided installer offers this as a separate opt-in personal skill under
@@ -714,6 +725,7 @@ the Codex configuration files you changed.
 
 - [Codex subagents and custom agents](https://learn.chatgpt.com/docs/agent-configuration/subagents)
 - [Codex configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference#configtoml)
+- [Codex environment variables and `CODEX_HOME`](https://learn.chatgpt.com/docs/config-file/environment-variables)
 
 ## Share the project
 

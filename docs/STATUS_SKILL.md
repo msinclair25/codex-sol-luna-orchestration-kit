@@ -13,13 +13,17 @@ Use `--root`, `--receipts-dir`, and `--session-root` for a synthetic or
 alternate local fixture. When running a globally installed copy, `--root` is
 required so the skill can resolve the orchestration-kit modules. Add
 `--active-root` and `--active-config` to compare the installed dynamic runtime.
+For M4, add `--pilot-home` to verify the isolated control and dynamic roots;
+`--plan`, `--starts-dir`, and `--as-of` support explicit fixtures and audits.
 An optional positive `--budget` reports 50/75/90% thresholds only when usage
 is attributable.
 
 The report always contains milestone and receipt state, latest terminal and
 accepted outcomes, session-probe capability, usage, timing, delegation
 quality, budget, drift, freshness, provenance, warnings, and exactly one next
-routing recommendation. Numeric usage, timing, and budget values remain null
+routing recommendation. The M4 section reports plan state, registered and
+terminal counts, pending/overdue starts, the next frozen slot, and a
+human-review-only checkpoint. Numeric usage, timing, and budget values remain null
 and explicitly unknown in receipt-only mode.
 
 The scanner is bounded (under 30 seconds in normal operation), redacts paths,
