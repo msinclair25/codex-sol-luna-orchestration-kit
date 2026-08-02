@@ -428,6 +428,30 @@ class RoutingPolicyTests(unittest.TestCase):
         finally:
             temporary.cleanup()
 
+    def test_active_root_accepts_exact_managed_override_and_rejects_duplicate_markers(self):
+        temporary, copy = self._copy_runtime()
+        active = Path(temporary.name) / "active"
+        for relative in ("AGENTS.md", *(d["path"] for d in ROLE_DEFINITIONS.values())):
+            source = copy / relative
+            destination = active / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, destination)
+        start = b"# >>> sol-luna-orchestration-kit managed block >>>\n"
+        end = b"# <<< sol-luna-orchestration-kit managed block <<<\n"
+        try:
+            (active / "AGENTS.override.md").write_bytes(b"user override\n" + start + (copy / "AGENTS.md").read_bytes() + end)
+            report = verify_active_root(active, copy)
+            self.assertTrue(report["ok"], report)
+            self.assertEqual(report["active_agents_path"], "AGENTS.override.md")
+            (active / "AGENTS.override.md").write_bytes(
+                (active / "AGENTS.override.md").read_bytes() + start + (copy / "AGENTS.md").read_bytes() + end
+            )
+            report = verify_active_root(active, copy)
+            self.assertFalse(report["ok"])
+            self.assertIn("active_agents_drift", report["errors"])
+        finally:
+            temporary.cleanup()
+
 
 if __name__ == "__main__":
     unittest.main()

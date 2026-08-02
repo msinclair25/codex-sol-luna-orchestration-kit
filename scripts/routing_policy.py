@@ -29,6 +29,9 @@ POLICY_VERSION = "routing-policy.v1"
 DEFAULT_ROOT = Path(__file__).resolve().parents[1]
 POLICY_RELATIVE = "config/routing-policy.v1.json"
 AGENTS_RELATIVE = "AGENTS.md"
+MANAGED_AGENTS_START = "# >>> sol-luna-orchestration-kit managed block >>>\n"
+MANAGED_AGENTS_END = "# <<< sol-luna-orchestration-kit managed block <<<\n"
+AGENTS_OVERRIDE_RELATIVE = "AGENTS.override.md"
 SNIPPET_RELATIVE = "config-snippet.toml"
 MIN_PYTHON = (3, 11)
 PYTHON_REQUIREMENT = "Python >=3.11 is required for deterministic TOML contract verification"
@@ -358,6 +361,59 @@ def _hash_file(path: Optional[Path]) -> Optional[Tuple[str, int]]:
     return digest.hexdigest(), size
 
 
+def _agents_match(actual: Optional[Path], repository: Optional[Path]) -> Tuple[bool, bool]:
+    """Accept an exact AGENTS file or one exact, uniquely delimited managed block.
+
+    Repository verification remains hash-exact; this helper is intentionally used
+    only for installed active roots where a user's surrounding instructions may
+    be preserved by the installer.
+    """
+    if actual is None or repository is None:
+        return False, False
+    try:
+        if actual.stat().st_size > MAX_ROUTE_INPUT_BYTES or repository.stat().st_size > MAX_ROUTE_INPUT_BYTES:
+            return False, False
+        actual_bytes = actual.read_bytes()
+        repository_bytes = repository.read_bytes()
+    except (OSError, UnicodeError):
+        return False, False
+    if actual_bytes == repository_bytes:
+        return True, False
+    start = MANAGED_AGENTS_START.encode("utf-8")
+    end = MANAGED_AGENTS_END.encode("utf-8")
+    if actual_bytes.count(start) != 1 or actual_bytes.count(end) != 1:
+        return False, False
+    begin = actual_bytes.find(start)
+    finish = actual_bytes.find(end)
+    if begin < 0 or finish < begin + len(start):
+        return False, False
+    body = actual_bytes[begin + len(start):finish]
+    if body != repository_bytes:
+        return False, False
+    return True, True
+
+
+def _active_agents_path(root: Path) -> Optional[Path]:
+    """Resolve Codex's effective global instruction file safely."""
+    override_candidate = root / AGENTS_OVERRIDE_RELATIVE
+    if override_candidate.exists() or override_candidate.is_symlink():
+        if override_candidate.is_symlink() or not override_candidate.is_file():
+            return None
+        override = _safe_path(root, AGENTS_OVERRIDE_RELATIVE)
+        if override is None:
+            return None
+        try:
+            with override.open("rb") as handle:
+                raw = handle.read(MAX_ROUTE_INPUT_BYTES + 1)
+            if len(raw) > MAX_ROUTE_INPUT_BYTES:
+                return None
+            if raw.strip():
+                return override
+        except (OSError, UnicodeError):
+            return None
+    return _safe_path(root, AGENTS_RELATIVE)
+
+
 def _read_json(path: Optional[Path]) -> Tuple[Optional[Any], bool]:
     if path is None:
         return None, False
@@ -668,6 +724,7 @@ def verify_active_root(
         "repository_contract_ok": False,
         "active_root_match": False,
         "active_agents_match": False,
+        "active_agents_managed_block": False,
         "active_config_checked": active_config is not None,
         "active_config_match": None,
         "role_matches": 0,
@@ -693,9 +750,10 @@ def verify_active_root(
         report["errors"] = ["repository_contract_invalid"]
         return report
     runtime = contract["runtime"]
-    agents_path = _safe_path(active_path, AGENTS_RELATIVE)
-    agents_hash = _hash_file(agents_path)
-    report["active_agents_match"] = agents_hash is not None and agents_hash[0] == runtime["agents_sha256"]
+    agents_path = _active_agents_path(active_path)
+    repository_agents = _safe_path(repository_path, AGENTS_RELATIVE)
+    report["active_agents_match"], report["active_agents_managed_block"] = _agents_match(agents_path, repository_agents)
+    report["active_agents_path"] = AGENTS_OVERRIDE_RELATIVE if agents_path is not None and agents_path.name == AGENTS_OVERRIDE_RELATIVE else AGENTS_RELATIVE
     if not report["active_agents_match"]:
         report["errors"].append("active_agents_drift")
     if active_config is not None:

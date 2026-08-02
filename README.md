@@ -34,9 +34,18 @@ boundary and excluded local artifacts.
 
 ## Quick start
 
-Clone the repository and run its local checks. The static verifier and test
-suite require Python 3.11 or newer; they do not launch models or send data over
-the network.
+For a first-time guided install on macOS or Linux, paste this in a terminal:
+
+```sh
+git clone --depth 1 https://github.com/msinclair25/codex-sol-luna-orchestration-kit.git && python3 codex-sol-luna-orchestration-kit/scripts/install.py
+```
+
+The installer previews its plan, asks before installing the core, then asks
+separately about the optional local usage/status skill. It requires Python 3.11
+or newer, launches no models, enables no telemetry, and sends no data over the
+network.
+
+To inspect the repository without installing anything, run its local checks:
 
 ```sh
 git clone https://github.com/msinclair25/codex-sol-luna-orchestration-kit.git
@@ -45,9 +54,10 @@ PYTHONDONTWRITEBYTECODE=1 python3 scripts/routing_policy.py verify --format json
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
 ```
 
-Then follow [Installation](#installation) to back up and merge the Codex
-configuration safely. Model IDs, Fast access, and custom-agent availability
-still depend on your Codex version, account, and workspace policy.
+Use the [guided installer](#guided-installer-recommended) for setup; the manual
+steps remain available as a fallback. Model IDs, Fast access, and custom-agent
+availability still depend on your Codex version, account, and workspace
+policy.
 
 ## Why this setup exists
 
@@ -142,12 +152,14 @@ codex-sol-luna-orchestration-kit/
 ├── evidence/
 │   └── m1-role-smoke-2026-08-02.json
 ├── scripts/
+│   ├── install.py
 │   ├── receipt_tool.py
 │   ├── routing_policy.py
 │   ├── usage_report.py
 │   └── verify_control_bundle.py
 ├── tests/
 │   ├── test_control_bundle.py
+│   ├── test_install.py
 │   ├── test_m1_evidence.py
 │   ├── test_receipt_tool.py
 │   ├── test_routing_policy.py
@@ -231,9 +243,92 @@ snapshots, redacts sensitive content, and falls back to receipt-only status
 when local session capability or correlation is not provable. It does not use
 a server, plugin, MCP service, dashboard, database, or network surface.
 
+The guided installer offers this as a separate opt-in personal skill under
+`~/.agents/skills/sol-luna-status`. Choosing no installs only the core routing
+kit. Choosing yes still does not read session records during installation;
+local data is inspected only when you later invoke the status or usage tools.
+
 ## Installation
 
-### 1. Download the kit
+### Guided installer (recommended)
+
+From an existing checkout, run:
+
+```sh
+python3 scripts/install.py
+```
+
+It performs the following bounded flow:
+
+1. Verifies the checked-in routing policy and all five role files before any
+   write.
+2. Prints a JSON preview and asks whether to install the core roles,
+   instructions, and owned configuration keys.
+3. Preserves unrelated `config.toml` settings and existing global instructions.
+   A non-empty `AGENTS.override.md` is updated because that is the active global
+   instruction file; otherwise the managed policy is placed in `AGENTS.md`.
+4. Backs up every replaced file under
+   `~/codex-config-backups/sol-luna-<unique-id>/`, writes an installation
+   receipt listing every created or replaced relative path, and verifies the
+   installed active root.
+5. Separately asks whether to install the optional privacy-safe local
+   usage/status skill. It never enables OTLP or another telemetry exporter.
+
+Core and optional usage are separate transactions. If the optional phase is
+declined or blocked, the already verified core remains installed and the
+optional phase can be retried independently. Failed transactions are rolled
+back; their printed backup directory is retained as a recovery artifact.
+
+Existing conflicting role files or owned configuration values fail closed.
+Compare them before deliberately rerunning with `--approve-conflicts`. Use
+`--approve-agents-refresh` only to refresh a managed policy block installed by
+an earlier kit version. Neither flag bypasses symlink, malformed TOML, marker,
+size, source-integrity, or post-install verification checks.
+
+For a no-write preview:
+
+```sh
+python3 scripts/install.py --dry-run --without-usage
+```
+
+For non-interactive automation, the usage choice is mandatory:
+
+```sh
+python3 scripts/install.py --apply --without-usage
+# Or explicitly opt in:
+python3 scripts/install.py --apply --with-usage
+```
+
+The optional personal skill keeps a local pointer to this checkout. Keep the
+checkout in place. After moving it, refresh only that installer-owned pointer:
+
+```sh
+python3 scripts/install.py --apply --with-usage --refresh-usage-pointer
+```
+
+The guided global installer rejects filesystem roots and broad destinations;
+the selected Codex home must be a proper child of the supplied home directory.
+
+### Paste into Codex
+
+You can paste this request into a Codex task instead of entering shell steps
+yourself:
+
+```text
+Install the Codex Sol/Luna Orchestration Kit globally from
+https://github.com/msinclair25/codex-sol-luna-orchestration-kit. If I do not
+already have a trusted checkout, clone it into a permanent local folder. Read
+scripts/install.py, run it interactively, show me its preview, and relay its
+core and optional usage/status questions without choosing for me. Do not
+enable telemetry, install a plugin, overwrite a conflict, or remove unrelated
+Codex settings or instructions without my explicit approval. When finished,
+show me the verification result plus backup and receipt paths, then remind me
+to restart Codex.
+```
+
+### Manual installation
+
+#### 1. Download the kit
 
 Clone the repository and open a terminal inside it:
 
@@ -244,7 +339,7 @@ cd codex-sol-luna-orchestration-kit
 
 You can also use GitHub's **Code → Download ZIP** button.
 
-### 2. Back up your existing Codex configuration
+#### 2. Back up your existing Codex configuration
 
 Do not replace your full Codex configuration. Preserve existing project trust,
 permissions, plugins, MCP servers, notifications, profiles, and instructions.
@@ -256,6 +351,7 @@ mkdir -p "$HOME/codex-config-backups"
 SOL_LUNA_BACKUP_DIR="$(mktemp -d "$HOME/codex-config-backups/sol-luna-XXXXXXXX")"
 test ! -e ~/.codex/config.toml || cp -p ~/.codex/config.toml "$SOL_LUNA_BACKUP_DIR/config.toml"
 test ! -e ~/.codex/AGENTS.md || cp -p ~/.codex/AGENTS.md "$SOL_LUNA_BACKUP_DIR/AGENTS.md"
+test ! -e ~/.codex/AGENTS.override.md || cp -p ~/.codex/AGENTS.override.md "$SOL_LUNA_BACKUP_DIR/AGENTS.override.md"
 test ! -d ~/.codex/agents || cp -Rp ~/.codex/agents "$SOL_LUNA_BACKUP_DIR/agents"
 echo "Backup: $SOL_LUNA_BACKUP_DIR"
 ```
@@ -273,6 +369,9 @@ if (Test-Path (Join-Path $codexDir "config.toml")) {
 if (Test-Path (Join-Path $codexDir "AGENTS.md")) {
     Copy-Item (Join-Path $codexDir "AGENTS.md") $backupDir
 }
+if (Test-Path (Join-Path $codexDir "AGENTS.override.md")) {
+    Copy-Item (Join-Path $codexDir "AGENTS.override.md") $backupDir
+}
 if (Test-Path (Join-Path $codexDir "agents")) {
     Copy-Item (Join-Path $codexDir "agents") $backupDir -Recurse
 }
@@ -281,7 +380,7 @@ Write-Host "Backup: $backupDir"
 
 Keep the printed backup path until you have completed validation.
 
-### 3. Install the custom roles
+#### 3. Install the custom roles
 
 Run these commands from inside the extracted kit directory. Existing roles are
 never silently overwritten:
@@ -318,23 +417,36 @@ Custom agents placed under `~/.codex/agents/` apply globally. To scope the
 roles to one trusted repository instead, place them under that project's
 `.codex/agents/` directory.
 
-### 4. Merge the routing policy
+#### 4. Merge the routing policy
 
-If `~/.codex/AGENTS.md` does not exist, copy this kit's `AGENTS.md` there. If it
-already exists, manually merge the **Role-based subagent policy** section into
-it—do not overwrite unrelated instructions.
+If a non-empty `~/.codex/AGENTS.override.md` exists, manually merge the
+**Role-based subagent policy** section there because Codex gives it precedence.
+Otherwise, copy this kit's `AGENTS.md` to `~/.codex/AGENTS.md` when absent, or
+merge the policy into the existing file. Do not overwrite unrelated
+instructions.
 
 macOS or Linux:
 
 ```sh
-test -e ~/.codex/AGENTS.md || cp AGENTS.md ~/.codex/AGENTS.md
+if [ -s "$HOME/.codex/AGENTS.override.md" ]; then
+  echo "Merge the policy into $HOME/.codex/AGENTS.override.md"
+elif [ -e "$HOME/.codex/AGENTS.md" ]; then
+  echo "Merge the policy into $HOME/.codex/AGENTS.md"
+else
+  cp AGENTS.md "$HOME/.codex/AGENTS.md"
+fi
 ```
 
 PowerShell:
 
 ```powershell
+$override = Join-Path $HOME ".codex\AGENTS.override.md"
 $destination = Join-Path $HOME ".codex\AGENTS.md"
-if (-not (Test-Path $destination)) {
+if ((Test-Path $override) -and (Get-Content $override -Raw).Trim()) {
+    Write-Host "Merge the policy into $override"
+} elseif (Test-Path $destination) {
+    Write-Host "Merge the policy into $destination"
+} else {
     Copy-Item (Join-Path (Get-Location).Path "AGENTS.md") $destination
 }
 ```
@@ -342,7 +454,7 @@ if (-not (Test-Path $destination)) {
 A more-specific project `AGENTS.md` can refine the global policy for that
 repository.
 
-### 5. Merge the Codex settings
+#### 5. Merge the Codex settings
 
 Open `~/.codex/config.toml` and merge the relevant values from
 `config-snippet.toml`:
@@ -362,6 +474,9 @@ max_concurrent_threads_per_session = 3
 Important details:
 
 - Do not replace the complete file.
+- The guided installer preserves an existing non-empty
+  `model_reasoning_effort`; `xhigh` is only the default when that preference is
+  absent.
 - If `[features]` already exists, add the keys to that table. TOML cannot have
   two `[features]` tables.
 - To keep Sol on Standard/default service, leave the top-level `service_tier`
@@ -375,7 +490,7 @@ Important details:
   Luna directly, and some tested desktop builds rejected Luna custom-agent
   launches when that global default was present.
 
-### 6. Restart Codex
+#### 6. Restart Codex
 
 Fully quit and reopen the Codex desktop app. For the CLI, exit the current
 session and start a new one. Create a new task so the global instructions and
@@ -535,14 +650,22 @@ the replacement before relying on it.
 
 ## Rollback
 
+The guided installer prints its unique backup directory and receipt. Backups
+preserve original paths beneath `codex-home/` and `home/`; newly created files
+have no prior copy and are identified by the install plan. Fully quit Codex
+before restoring them.
+
 1. Fully quit Codex.
-2. Restore `config.toml` and `AGENTS.md` from the unique backup directory when
-   those files existed before installation. If either file was absent and you
-   created it solely for this kit, remove only that newly created file instead.
+2. Restore `config.toml` and the active `AGENTS.md` or `AGENTS.override.md`
+   from the unique backup directory when those files existed before
+   installation. If a file was absent and created solely for this kit, remove
+   only that newly created file instead.
 3. Restore the previous `agents` directory when one existed. Otherwise, remove
    only the five role files introduced by this kit—do not delete unrelated
    custom agents.
-4. Reopen Codex and create a new task.
+4. If you opted into the personal status skill, restore its backed-up files or
+   remove only `~/.agents/skills/sol-luna-status` when the installer created it.
+5. Reopen Codex and create a new task.
 
 This setup does not store or delete project source code. Rollback affects only
 the Codex configuration files you changed.
