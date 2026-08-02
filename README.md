@@ -1,17 +1,53 @@
-# Sol/Luna Orchestration Kit (V0.2)
+# Codex Sol/Luna Orchestration Kit
 
-The advanced orchestration and measurement edition for Codex: GPT-5.6 Sol
-stays responsible for planning, routing, integration, and final acceptance,
-while dynamically routed GPT-5.6 Luna Fast roles scout, build, challenge, and
-test. For the simpler original setup, see the
-[Codex Sol/Luna Role Kit](https://github.com/msinclair25/codex-sol-luna-role-kit).
+**Sol leads. Luna specializes. Every milestone ends in evidence.**
+
+The advanced V0.2 orchestration and measurement edition for Codex. GPT-5.6
+Sol owns planning, routing, integration, and final acceptance; dynamically
+routed GPT-5.6 Luna Fast roles scout, build, challenge, and test within explicit
+boundaries.
+
+<p align="center">
+  <img src="assets/sol-luna-orchestration-system.png" alt="Sol routes bounded work through the SPLIT gate to dynamically configured Luna Scout, Worker, Critic, Tester, and Max exception roles, then accepts a verified outcome backed by status and receipts." width="960">
+</p>
+
+> [!IMPORTANT]
+> V0.2 milestones M0–M3 are implemented and verified. The M4 observational
+> pilot has **not** run, so this repository makes no claim of calibrated
+> savings or production performance.
+
+## Choose the right kit
+
+| | [Original role kit](https://github.com/msinclair25/codex-sol-luna-role-kit) | This orchestration kit |
+| --- | --- | --- |
+| Best for | A small, simple Sol/Luna setup | Repeatable multi-agent engineering work |
+| Routing | Lightweight role selection | Fail-closed SPLIT policy and dynamic reasoning |
+| Roles | General Sol/Luna pairing | Scout, Worker, Critic, Tester, and exception-only Max |
+| Evidence | Prompt-level reporting | Structured receipts, local status, and usage summaries |
+| Operational weight | Minimal | More policy, validation, and coordination |
+
+If you want simplicity, start with the original. Use this repository when the
+extra control and evidence justify the orchestration overhead.
 
 See [repository provenance](docs/PROVENANCE.md) for the curated-snapshot
 boundary and excluded local artifacts.
 
-V0.2 milestones M0–M3 are implemented. The M4 observational pilot has not
-run, so this repository makes no claim of calibrated savings or production
-performance.
+## Quick start
+
+Once published, clone the repository and run its local checks. The static
+verifier and test suite require Python 3.11 or newer; they do not launch models
+or send data over the network.
+
+```sh
+git clone https://github.com/msinclair25/codex-sol-luna-orchestration-kit.git
+cd codex-sol-luna-orchestration-kit
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/routing_policy.py verify --format json
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
+```
+
+Then follow [Installation](#installation) to back up and merge the Codex
+configuration safely. Model IDs, Fast access, and custom-agent availability
+still depend on your Codex version, account, and workspace policy.
 
 ## Why this setup exists
 
@@ -85,6 +121,9 @@ codex-sol-luna-orchestration-kit/
 ├── LICENSE
 ├── SECURITY.md
 ├── AGENTS.md
+├── assets/
+│   ├── sol-luna-orchestration-system.png
+│   └── social-preview.jpg
 ├── config-snippet.toml
 ├── config/
 │   ├── rate-card.v1.json
@@ -512,6 +551,12 @@ the Codex configuration files you changed.
 
 - [Codex subagents and custom agents](https://learn.chatgpt.com/docs/agent-configuration/subagents)
 - [Codex configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference#configtoml)
+
+## Share the project
+
+Use the repository-ready [1280×640 social preview](assets/social-preview.jpg)
+for link cards and launch posts. It uses the same Sol-gold, Luna-cyan, and
+verified-emerald visual language as the architecture image above.
 
 ## License
 
