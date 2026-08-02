@@ -9,7 +9,7 @@
   },
   "runtime": {
     "agents_path": "AGENTS.md",
-    "agents_sha256": "b608e3436ec958c140a5e718c9f24e5231512e8f8f57af7cce174c72eb3fd249",
+    "agents_sha256": "769910295dc442b19366f8ef7d6a073e4f22c47bdfc76999dcff74ac53ffb23e",
     "config_snippet_path": "config-snippet.toml",
     "config_snippet_sha256": "021b9ed7b0ee52eb6c7930497816314694ceff1b1dd0e4d58a1fc86eb61f410c"
   },

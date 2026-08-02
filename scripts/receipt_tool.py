@@ -456,20 +456,32 @@ def summarize(receipts_dir: Path) -> Dict[str, Any]:
         and math.isfinite(float(receipt["usage"]["weighted_usage"]))
         for receipt in receipts
     )
-    cohorts: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+    cohorts: Dict[Tuple[str, str, str, str, str, str], Dict[str, Any]] = {}
     if terminal_complete:
         for receipt in receipts:
-            key = (receipt["project_id"], receipt["family"], receipt["size_risk_band"])
+            repository = receipt["repository"]
+            hashes = repository["hashes"]
+            key = (
+                receipt["project_id"],
+                receipt["family"],
+                receipt["size_risk_band"],
+                repository["bundle_version"],
+                hashes["policy"],
+                hashes["rate_card"],
+            )
             cohort = cohorts.setdefault(key, {"accepted_outcome_count": 0, "total_weighted_usage": 0.0})
             cohort["accepted_outcome_count"] += int(receipt["disposition"] == "accepted")
             cohort["total_weighted_usage"] += float(receipt["usage"]["weighted_usage"])
         cohort_rows: List[Dict[str, Any]] = []
-        for (project_id, family, size_risk_band), cohort in sorted(cohorts.items()):
+        for (project_id, family, size_risk_band, bundle_version, policy_hash, rate_card_hash), cohort in sorted(cohorts.items()):
             total = cohort["total_weighted_usage"]
             cohort_rows.append({
                 "project_id": project_id,
                 "family": family,
                 "size_risk_band": size_risk_band,
+                "bundle_version": bundle_version,
+                "policy_hash": policy_hash,
+                "rate_card_hash": rate_card_hash,
                 "accepted_outcome_count": cohort["accepted_outcome_count"],
                 "total_weighted_usage": total,
                 "verified_outcomes_per_weighted_usage": cohort["accepted_outcome_count"] / total if total > 0 else None,
