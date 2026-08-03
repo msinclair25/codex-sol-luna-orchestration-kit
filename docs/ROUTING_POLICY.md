@@ -1,8 +1,9 @@
 # Dynamic routing policy
 
-`config/routing-policy.v1.1.json` is the active public contract for the
-Sol-root and Luna-role runtime policy. It is descriptive and advisory: it does
-not spawn agents, change Codex configuration, or replace Sol's judgment.
+`config/routing-policy.v1.1.json` is the Fast contract and
+`config/routing-policy.standard.v1.1.json` is the Standard contract for the
+Sol-root and Luna-role runtime policy. They are descriptive and advisory: they
+do not spawn agents, change Codex configuration, or replace Sol's judgment.
 The verifier requires Python 3.11 or newer for stdlib `tomllib`; older
 versions fail closed with a diagnostic instead of guessing at TOML semantics.
 The earlier `routing-policy.v1.json` and `AGENTS.md` remain unchanged as frozen
@@ -12,15 +13,21 @@ the guided installer.
 ## Runtime contract
 
 The root uses `gpt-5.6-sol`, the user's selected reasoning level, and Standard
-service by leaving the global `service_tier` unset. The role table is:
+service by leaving the global `service_tier` unset. Both profiles preserve the
+same reasoning and sandbox policy:
 
-| Work kind | Role | Reasoning | Tier | Sandbox |
+| Work kind | Fast role | Standard role | Reasoning | Sandbox |
 | --- | --- | --- | --- | --- |
-| `scout` | `luna_scout_fast` | `medium` | `fast` | `read-only` |
-| `worker` | `luna_worker_fast` | `high` | `fast` | `workspace-write` |
-| `critic` | `luna_critic_fast` | `high` | `fast` | `read-only` |
-| `tester` | `luna_tester_fast` | `medium` | `fast` | `workspace-write` |
-| `max` | `luna_max_fast` | `max` | `fast` | `read-only` |
+| `scout` | `luna_scout_fast` | `luna_scout_standard` | `medium` | `read-only` |
+| `worker` | `luna_worker_fast` | `luna_worker_standard` | `high` | `workspace-write` |
+| `critic` | `luna_critic_fast` | `luna_critic_standard` | `high` | `read-only` |
+| `tester` | `luna_tester_fast` | `luna_tester_standard` | `medium` | `workspace-write` |
+| `max` | `luna_max_fast` | `luna_max_standard` | `max` | `read-only` |
+
+Fast roles explicitly set `service_tier = "fast"`. Standard roles omit the
+key and inherit normal service. A route request selects the profile with
+`"profile":"fast"` or `"profile":"standard"`; omitted profile remains Fast
+for compatibility.
 
 Routine kinds include `scout`, `mapping`, `worker`, `implementation`, `write`,
 `critic`, `review`, `tester`, `test`, and `validation`. General `analysis` is
@@ -148,6 +155,7 @@ Run from the repository root:
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/routing_policy.py verify --format json
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/routing_policy.py verify --profile standard --format json
 ```
 
 The verifier checks the JSON schema, safe repository-relative paths, SHA-256
@@ -161,6 +169,7 @@ the five role TOMLs) with this repository's contract, run:
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/routing_policy.py active-root \
+  --profile standard \
   --active-root /path/to/active-root \
   --active-config /path/to/config.toml \
   --format json
@@ -179,7 +188,7 @@ decision. For example:
 
 ```sh
 python3 scripts/routing_policy.py route \
-  --request '{"kind":"scout","separate":true,"provable":true,"large_enough":true,"isolated":true,"tier_appropriate":true,"ownership":{"scout":["docs/spec.md"]}}'
+  --request '{"kind":"scout","profile":"standard","fork_turns":"none","separate":true,"provable":true,"large_enough":true,"isolated":true,"tier_appropriate":true,"ownership":{"scout":["docs/spec.md"]}}'
 ```
 
 The result identifies the selected role or the Sol fallback and gives compact

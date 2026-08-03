@@ -15,6 +15,7 @@ from scripts.routing_policy import (
     POLICY_AGENTS_RELATIVE,
     POLICY_RELATIVE,
     ROLE_DEFINITIONS,
+    STANDARD_ROLE_DEFINITIONS,
     detect_ownership_conflicts,
     evaluate,
     validate_evidence,
@@ -40,6 +41,11 @@ class RoutingPolicyTests(unittest.TestCase):
         self.assertTrue(report["runtime_config_match"])
         self.assertEqual(report["role_matches"], 5)
 
+        standard = verify_contract(ROOT, "standard")
+        self.assertTrue(standard["ok"], standard)
+        self.assertEqual(standard["profile"], "standard")
+        self.assertEqual(standard["role_matches"], 5)
+
     def test_role_reasoning_and_tier_table_is_dynamic(self):
         expected = {
             "luna_scout_fast": ("medium", "fast", "read-only"),
@@ -53,6 +59,8 @@ class RoutingPolicyTests(unittest.TestCase):
                 (definition["reasoning"], definition["service_tier"], definition["sandbox_mode"]),
                 expected[definition["role"]],
             )
+        self.assertTrue(all(role["service_tier"] == "standard" for role in STANDARD_ROLE_DEFINITIONS.values()))
+        self.assertTrue(all(role["service_tier_configured"] is False for role in STANDARD_ROLE_DEFINITIONS.values()))
 
     def test_valid_delegation_routes_to_routine_role(self):
         result = evaluate(self.cases["valid_delegation"], ROOT)
@@ -62,6 +70,20 @@ class RoutingPolicyTests(unittest.TestCase):
         self.assertEqual(result["reasoning"], "medium")
         self.assertFalse(result["fallback"])
         self.assertEqual(result["transport"], LUNA_TRANSPORT)
+
+        request = dict(self.cases["valid_delegation"])
+        request["profile"] = "standard"
+        standard = evaluate(request, ROOT)
+        self.assertTrue(standard["ok"], standard)
+        self.assertEqual(standard["route"], "luna_scout_standard")
+        self.assertEqual(standard["service_tier"], "standard")
+        self.assertEqual(standard["profile"], "standard")
+
+        unsupported = dict(request)
+        unsupported["profile"] = "priority-plus"
+        denied = evaluate(unsupported, ROOT)
+        self.assertFalse(denied["ok"])
+        self.assertIn("unsupported_profile", denied["reason_codes"])
 
     def test_context_free_transport_is_explicit_and_history_forks_fail_closed(self):
         allowed = dict(self.cases["valid_delegation"])

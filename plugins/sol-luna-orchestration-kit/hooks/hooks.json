@@ -1,0 +1,19 @@
+{
+  "description": "Opt-in Sol/Luna admission guard for supported subagent spawns.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^Agent$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$PLUGIN_ROOT/scripts/pre_tool_use_guard.py\"",
+            "commandWindows": "py -3 \"%PLUGIN_ROOT%\\scripts\\pre_tool_use_guard.py\"",
+            "timeout": 5,
+            "statusMessage": "Checking Sol/Luna spawn contract"
+          }
+        ]
+      }
+    ]
+  }
+}

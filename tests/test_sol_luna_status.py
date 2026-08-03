@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from scripts import install as installer
 from scripts import pilot_tool
 from scripts.receipt_tool import close_receipt
 
@@ -117,10 +118,14 @@ class SolLunaStatusTests(unittest.TestCase):
         self.assertEqual(report["usage"]["fast_multiplier"], 2.5)
         self.assertIsNone(report["usage"]["billed_usage"])
         self.assertEqual(report["receipts"]["accepted_count"], 1)
-        self.assertEqual(report["receipts"]["receipt_coverage"], "not-started")
-        self.assertEqual(report["receipts"]["receipt_coverage_reason"], "no_registered_starts")
-        self.assertEqual(report["pilot"]["state"], "setup-unverified")
-        self.assertEqual(report["pilot"]["next_slot"]["slot_id"], "m4-01")
+        self.assertEqual(report["receipts"]["receipt_coverage"], "not-applicable")
+        self.assertEqual(report["receipts"]["receipt_coverage_reason"], "m4_terminal_retirement")
+        self.assertEqual(report["pilot"]["state"], "retired-non-retryable")
+        self.assertIsNone(report["pilot"]["next_slot"])
+        self.assertFalse(report["pilot"]["next_slot_eligible"])
+        self.assertEqual(report["pilot"]["comparison"]["status"], "retired-no-comparison")
+        self.assertEqual(report["milestone"]["id"], "m2-receipts")
+        self.assertEqual(report["milestone"]["scope"], "latest-terminal-after-m4-retirement")
         self.assertEqual(report["latest_accepted_outcome"]["milestone_id"], "m2-receipts")
         self.assertEqual(report["timing"]["time_to_verified_outcome_ms"], 300000)
         self.assertEqual(report["budget"]["warning_threshold"], 50)
@@ -304,6 +309,31 @@ class SolLunaStatusTests(unittest.TestCase):
         report, _ = self._json(base, receipts, sessions, script=global_skill / "scripts" / "sol_luna_status.py")
         self.assertEqual(report["mode"], "session+receipts")
 
+    def test_standard_profile_active_drift_check(self):
+        temporary, base, receipts, sessions = self._workspace()
+        self.addCleanup(temporary.cleanup)
+        home = base / "profile-home"
+        home.mkdir()
+        codex = home / ".codex"
+        installer.install(
+            ROOT,
+            codex,
+            home,
+            apply=True,
+            with_usage=False,
+            luna_tier="standard",
+        )
+        report, _ = self._json(
+            base,
+            receipts,
+            sessions,
+            "--luna-tier", "standard",
+            "--active-root", str(codex),
+            "--active-config", str(codex / "config.toml"),
+        )
+        self.assertTrue(report["drift"]["routing_contract"])
+        self.assertTrue(report["drift"]["active_runtime"])
+
     def test_pilot_registry_drives_coverage_deadline_and_recommendation(self):
         temporary, base, receipts, sessions = self._workspace()
         self.addCleanup(temporary.cleanup)
@@ -314,13 +344,15 @@ class SolLunaStatusTests(unittest.TestCase):
             base,
             receipts,
             sessions,
+            "--allow-retired-m4-audit",
+            "--plan", str(ROOT / "config" / "m4-pilot.v1.json"),
             "--pilot-home", str(pilot_home),
             "--starts-dir", str(starts),
             "--as-of", "2026-08-02T23:45:00Z",
         )
         self.assertEqual(ready["pilot"]["state"], "ready")
         self.assertFalse(ready["drift"]["active_runtime"])
-        self.assertIn("control or rate-card drift requires review", ready["routing_recommendation"])
+        self.assertIn("historical M4 audit only", ready["routing_recommendation"])
         pilot_tool.register_start(
             ROOT / "config" / "m4-pilot.v1.json",
             ROOT,
@@ -335,6 +367,8 @@ class SolLunaStatusTests(unittest.TestCase):
             base,
             receipts,
             sessions,
+            "--allow-retired-m4-audit",
+            "--plan", str(ROOT / "config" / "m4-pilot.v1.json"),
             "--pilot-home", str(pilot_home),
             "--starts-dir", str(starts),
             "--as-of", "2026-08-03T00:14:59Z",
@@ -346,12 +380,59 @@ class SolLunaStatusTests(unittest.TestCase):
             base,
             receipts,
             sessions,
+            "--allow-retired-m4-audit",
+            "--plan", str(ROOT / "config" / "m4-pilot.v1.json"),
             "--pilot-home", str(pilot_home),
             "--starts-dir", str(starts),
             "--as-of", "2026-08-03T00:15:00Z",
         )
         self.assertEqual(overdue["pilot"]["state"], "blocked")
-        self.assertIn("control or rate-card drift requires review", overdue["routing_recommendation"])
+        self.assertIn("historical M4 audit only", overdue["routing_recommendation"])
+
+    def test_retired_m4_blocks_default_restart_but_explicit_plan_remains_audit_capable(self):
+        retirement = STATUS._m4_retirement(ROOT)
+        self.assertIsNotNone(retirement)
+        summary = STATUS._retired_m4_summary(retirement)
+        self.assertEqual(summary["state"], "retired-non-retryable")
+        self.assertIsNone(summary["next_slot"])
+        self.assertFalse(summary["next_slot_eligible"])
+        self.assertEqual(summary["comparison"]["promotion_status"], "blocked-terminal-retirement")
+        self.assertIn("do not restart or promote", STATUS._recommendation({"errors": []}, False, None, {}, summary))
+
+        missing = STATUS._blocked_m4_retirement_summary()
+        self.assertEqual(missing["state"], "retirement-evidence-unavailable")
+        self.assertIsNone(missing["next_slot"])
+        self.assertFalse(missing["next_slot_eligible"])
+        self.assertIn(
+            "do not register, restart, promote, or launch",
+            STATUS._recommendation({"errors": []}, False, None, {}, missing),
+        )
+
+        temporary, base, receipts, sessions = self._workspace()
+        self.addCleanup(temporary.cleanup)
+        still_retired, _ = self._json(
+            base,
+            receipts,
+            sessions,
+            "--plan", str(ROOT / "config" / "m4-pilot.v1.json"),
+            "--as-of", "2026-08-02T23:43:28Z",
+        )
+        self.assertEqual(still_retired["pilot"]["state"], "retired-non-retryable")
+        self.assertIsNone(still_retired["pilot"]["next_slot"])
+
+        audit, _ = self._json(
+            base,
+            receipts,
+            sessions,
+            "--allow-retired-m4-audit",
+            "--plan", str(ROOT / "config" / "m4-pilot.v1.json"),
+            "--as-of", "2026-08-02T23:43:28Z",
+        )
+        self.assertTrue(audit["pilot"]["audit_only"])
+        self.assertEqual(audit["pilot"]["state"], "setup-unverified")
+        self.assertEqual(audit["pilot"]["next_slot"]["slot_id"], "m4-01")
+        self.assertFalse(audit["pilot"]["next_slot_eligible"])
+        self.assertIn("historical M4 audit only", audit["routing_recommendation"])
 
     def test_active_drift_changes_recommendation_and_invalid_args_are_nonzero(self):
         temporary, base, receipts, sessions = self._workspace()

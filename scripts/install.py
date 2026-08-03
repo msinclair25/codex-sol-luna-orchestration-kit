@@ -27,7 +27,7 @@ except ImportError:  # pragma: no cover
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
-ROLE_FILES = tuple(f"luna_{name}_fast.toml" for name in ("scout", "worker", "critic", "tester", "max"))
+LUNA_TIERS = ("fast", "standard")
 AGENTS_START = "# >>> sol-luna-orchestration-kit managed block >>>\n"
 AGENTS_END = "# <<< sol-luna-orchestration-kit managed block <<<\n"
 KNOWN_EXACT_AGENTS_REVISIONS = frozenset({
@@ -47,6 +47,10 @@ USAGE_SKILL_FILES = (
 )
 USAGE_ASSET_MANIFEST = "config/install-assets.v1.json"
 MAX_ASSET_MANIFEST_BYTES = 16 * 1024
+INSTALL_STATE_NAME = ".sol-luna-install-state.json"
+INSTALL_STATE_SCHEMA = 1
+KIT_VERSION = "0.2.0"
+MAX_INSTALL_STATE_BYTES = 32 * 1024
 OWNED = {
     "model": '"gpt-5.6-sol"',
     "model_reasoning_effort": '"xhigh"',
@@ -58,6 +62,85 @@ OWNED = {
 
 class InstallError(RuntimeError):
     pass
+
+
+def _sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _strict_json_object(data: bytes, *, error: str) -> Dict[str, Any]:
+    def reject_duplicate_keys(pairs: List[Tuple[str, Any]]) -> Dict[str, Any]:
+        result: Dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate key")
+            result[key] = value
+        return result
+
+    try:
+        value = json.loads(data.decode("utf-8"), object_pairs_hook=reject_duplicate_keys)
+    except (UnicodeError, ValueError, json.JSONDecodeError, MemoryError, OverflowError, RecursionError) as exc:
+        raise InstallError(error) from exc
+    if not isinstance(value, dict):
+        raise InstallError(error)
+    return value
+
+
+def _load_install_state(path: Path, *, required: bool) -> Optional[Dict[str, Any]]:
+    if not path.exists() and not path.is_symlink():
+        if required:
+            raise InstallError("update_state_missing")
+        return None
+    value = _strict_json_object(_read(path, MAX_INSTALL_STATE_BYTES), error="install_state_invalid")
+    if set(value) != {
+        "schema_version",
+        "kit_version",
+        "active_luna_tier",
+        "agents_source_sha256",
+        "roles",
+        "usage_assets",
+    }:
+        raise InstallError("install_state_invalid")
+    roles = value.get("roles")
+    usage = value.get("usage_assets")
+    if (
+        value.get("schema_version") != INSTALL_STATE_SCHEMA
+        or not isinstance(value.get("kit_version"), str)
+        or re.fullmatch(r"[0-9A-Za-z.+-]{1,32}", value["kit_version"]) is None
+        or value.get("active_luna_tier") not in LUNA_TIERS
+        or not isinstance(value.get("agents_source_sha256"), str)
+        or re.fullmatch(r"[0-9a-f]{64}", value["agents_source_sha256"]) is None
+        or not isinstance(roles, dict)
+        or len(roles) > 16
+        or any(
+            not isinstance(name, str)
+            or re.fullmatch(r"luna_[a-z]+_(?:fast|standard)\.toml", name) is None
+            or not isinstance(digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            for name, digest in roles.items()
+        )
+        or not isinstance(usage, dict)
+        or set(usage) - set(USAGE_SKILL_FILES)
+        or any(
+            not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            for digest in usage.values()
+        )
+    ):
+        raise InstallError("install_state_invalid")
+    return value
+
+
+def _installed_agents_source_hash(destination: Path) -> str:
+    current = _read(destination, MAX_AGENTS_BYTES)
+    start = AGENTS_START.encode()
+    end = AGENTS_END.encode()
+    if current.count(start) == 1 and current.count(end) == 1:
+        begin = current.find(start) + len(start)
+        finish = current.find(end)
+        if finish < begin:
+            raise InstallError("agents_managed_markers_malformed")
+        return _sha256(current[begin:finish])
+    return _sha256(current)
 
 
 def _safe_ancestors(path: Path) -> bool:
@@ -399,6 +482,7 @@ def _usage_plan(
     *,
     approve_conflicts: bool,
     refresh_pointer: bool,
+    managed_hashes: Optional[Dict[str, str]] = None,
 ) -> Tuple[str, Dict[Path, bytes]]:
     source_root = repo / ".agents" / "skills" / "sol-luna-status"
     if not _safe_existing(source_root, directory=True):
@@ -452,7 +536,11 @@ def _usage_plan(
         if target.exists() or target.is_symlink():
             existing_files[name] = _read(target, MAX_CONFIG_BYTES)
     conflicts = [name for name, data in source_files.items() if name in existing_files and existing_files[name] != data]
-    if conflicts and not approve_conflicts:
+    unmanaged_conflicts = [
+        name for name in conflicts
+        if managed_hashes is None or managed_hashes.get(name) != _sha256(existing_files[name])
+    ]
+    if unmanaged_conflicts and not approve_conflicts:
         raise InstallError("usage_conflict")
     writes: Dict[Path, bytes] = {}
     for name, data in source_files.items():
@@ -535,12 +623,18 @@ def install(
     approve_agents_refresh: bool = False,
     approve_conflicts: bool = False,
     refresh_usage_pointer: bool = False,
+    luna_tier: str = "fast",
+    update: bool = False,
 ) -> Dict[str, Any]:
     if not repo.is_dir() or repo.is_symlink() or not _safe_existing(repo, directory=True):
         raise InstallError("repository_root_invalid")
     # Verify the repository's exact checked-in contract before planning writes.
     routing_policy = _load_routing_policy(repo)
-    contract = routing_policy.verify_contract(repo)
+    try:
+        profile = routing_policy.profile_spec(luna_tier)
+    except ValueError as exc:
+        raise InstallError("unsupported_luna_tier") from exc
+    contract = routing_policy.verify_contract(repo, luna_tier)
     if not contract.get("ok"):
         raise InstallError("routing_contract_invalid")
     codex_home = _root_arg(str(codex_home))
@@ -551,28 +645,51 @@ def install(
         raise InstallError("codex_home_outside_home") from exc
     if not relative_codex_home.parts:
         raise InstallError("codex_home_equals_home")
-    agents_source = _read(repo / routing_policy.POLICY_AGENTS_RELATIVE, MAX_AGENTS_BYTES)
-    config_source = _read(repo / "config-snippet.toml", MAX_CONFIG_BYTES)
-    plan: Dict[str, Any] = {"roles": [], "agents": None, "config": None, "usage": "declined" if not with_usage else None}
+    state_path = codex_home / INSTALL_STATE_NAME
+    state = _load_install_state(state_path, required=update)
+    managed_roles = dict(state.get("roles", {})) if state else {}
+    managed_usage = dict(state.get("usage_assets", {})) if state else {}
+    agents_source = _read(repo.joinpath(*profile["agents_relative"].split("/")), MAX_AGENTS_BYTES)
+    config_source = _read(repo.joinpath(*profile["snippet_relative"].split("/")), MAX_CONFIG_BYTES)
+    plan: Dict[str, Any] = {
+        "luna_tier": luna_tier,
+        "mode": "update" if update else "install",
+        "roles": [],
+        "agents": None,
+        "config": None,
+        "usage": "declined" if not with_usage else None,
+    }
     writes: Dict[Path, bytes] = {}
     role_dir = codex_home / "agents"
     if not _safe_ancestors(role_dir):
         raise InstallError("roles_destination_unsafe")
-    for name in ROLE_FILES:
-        source = _read(repo / "agents" / name, MAX_CONFIG_BYTES)
+    selected_role_hashes: Dict[str, str] = {}
+    for definition in profile["roles"].values():
+        name = Path(definition["path"]).name
+        source = _read(repo.joinpath(*definition["path"].split("/")), MAX_CONFIG_BYTES)
+        selected_role_hashes[name] = _sha256(source)
         target = role_dir / name
         if target.exists() or target.is_symlink():
             current = _read(target, MAX_CONFIG_BYTES)
             action = "identical" if current == source else "conflict"
-            if action == "conflict" and not approve_conflicts:
+            managed_update = update and managed_roles.get(name) == _sha256(current)
+            if action == "conflict" and not approve_conflicts and not managed_update:
                 raise InstallError(f"role_conflict_{name}")
             if action == "conflict":
                 writes[target] = source
+                action = "update-managed" if managed_update else "conflict"
         else:
             action = "create"; writes[target] = source
         plan["roles"].append({"name": name, "action": action})
     agents_target = _active_agents_target(codex_home)
-    agents_action, agents_data = _agents_action(agents_target, agents_source, refresh=approve_agents_refresh)
+    if update and (agents_target.exists() or agents_target.is_symlink()):
+        if state is None or _installed_agents_source_hash(agents_target) != state["agents_source_sha256"]:
+            raise InstallError("agents_update_state_mismatch")
+    agents_action, agents_data = _agents_action(
+        agents_target,
+        agents_source,
+        refresh=approve_agents_refresh or update,
+    )
     if agents_data is not None:
         writes[agents_target] = agents_data
     plan["agents"] = agents_action
@@ -587,8 +704,29 @@ def install(
             home,
             approve_conflicts=approve_conflicts,
             refresh_pointer=refresh_usage_pointer,
+            managed_hashes=managed_usage if update else None,
         )
         writes.update(usage_writes); plan["usage"] = usage_action
+    next_roles = dict(managed_roles)
+    next_roles.update(selected_role_hashes)
+    next_usage = dict(managed_usage)
+    if with_usage:
+        next_usage = {
+            name: _sha256(_read(repo / ".agents" / "skills" / "sol-luna-status" / name, MAX_CONFIG_BYTES))
+            for name in USAGE_SKILL_FILES
+        }
+    install_state = {
+        "schema_version": INSTALL_STATE_SCHEMA,
+        "kit_version": KIT_VERSION,
+        "active_luna_tier": luna_tier,
+        "agents_source_sha256": _sha256(agents_source),
+        "roles": dict(sorted(next_roles.items())),
+        "usage_assets": dict(sorted(next_usage.items())),
+    }
+    state_data = (json.dumps(install_state, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+    current_state = _read(state_path, MAX_INSTALL_STATE_BYTES) if state_path.exists() else None
+    if current_state != state_data:
+        writes[state_path] = state_data
     plan["write_count"] = len(writes)
     plan["changes"] = [
         {
@@ -599,14 +737,14 @@ def install(
     ]
     plan["guidance"] = [
         "Restart Codex after an applied install so global instructions, config, and roles reload.",
-        "Verify with: python3 scripts/routing_policy.py active-root --active-root <CODEX_HOME> --root <KIT_ROOT> --format json",
+        f"Verify with: python3 scripts/routing_policy.py active-root --profile {luna_tier} --active-root <CODEX_HOME> --root <KIT_ROOT> --format json",
     ]
     plan["status"] = "dry-run" if not apply else "planned"
     if not apply:
         return plan
     config_target = codex_home / "config.toml"
     if not writes:
-        verification = routing_policy.verify_active_root(codex_home, repo, config_target)
+        verification = routing_policy.verify_active_root(codex_home, repo, config_target, luna_tier)
         plan["verification"] = _verification_receipt(verification)
         if not verification.get("ok"):
             raise InstallError("active_install_verification_failed")
@@ -632,7 +770,7 @@ def install(
                 backup = _backup_destination(backup_root, path, codex_home, home)
                 _atomic_write(backup, originals[path] or b"")
             _atomic_write(path, data)
-        verification = routing_policy.verify_active_root(codex_home, repo, config_target)
+        verification = routing_policy.verify_active_root(codex_home, repo, config_target, luna_tier)
         plan["verification"] = _verification_receipt(verification)
         if not verification.get("ok"):
             raise InstallError("active_install_verification_failed")
@@ -643,6 +781,8 @@ def install(
             "write_count": len(writes),
             "changes": plan["changes"],
             "usage": plan["usage"],
+            "luna_tier": luna_tier,
+            "mode": plan["mode"],
             "verification": plan["verification"],
         }
         _atomic_write(
@@ -684,26 +824,42 @@ def main(argv: Optional[List[str]] = None) -> int:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--apply", action="store_true")
     mode.add_argument("--dry-run", action="store_true")
+    mode.add_argument("--update", action="store_true", help="safely refresh a prior state-tracked install")
     usage = parser.add_mutually_exclusive_group()
     usage.add_argument("--with-usage", action="store_true")
     usage.add_argument("--without-usage", action="store_true")
     parser.add_argument("--approve-agents-refresh", action="store_true")
     parser.add_argument("--approve-conflicts", action="store_true")
     parser.add_argument("--refresh-usage-pointer", action="store_true")
+    parser.add_argument("--luna-tier", choices=LUNA_TIERS, help="Luna tier profile (defaults to Fast, or the recorded tier during update)")
     args = parser.parse_args(argv)
     try:
         repo = _root_arg(args.repo_root, must_exist=True)
         codex_home = _root_arg(args.codex_home)
         home = _root_arg(args.home)
-        interactive = not args.dry_run and not args.apply
-        if args.apply and not args.with_usage and not args.without_usage:
+        apply_mode = args.apply or args.update
+        interactive = not args.dry_run and not apply_mode
+        effective_luna_tier = args.luna_tier or "fast"
+        effective_with_usage = args.with_usage
+        effective_without_usage = args.without_usage
+        previous_state = None
+        if args.update:
+            previous_state = _load_install_state(codex_home / INSTALL_STATE_NAME, required=True)
+            if args.luna_tier is None and previous_state is not None:
+                effective_luna_tier = previous_state["active_luna_tier"]
+        if args.update and not effective_with_usage and not effective_without_usage:
+            effective_with_usage = bool(previous_state and previous_state.get("usage_assets"))
+            effective_without_usage = not effective_with_usage
+        if apply_mode and not effective_with_usage and not effective_without_usage:
             raise InstallError("usage_choice_required")
-        if args.refresh_usage_pointer and not args.with_usage:
+        if args.refresh_usage_pointer and not effective_with_usage:
             raise InstallError("usage_pointer_refresh_requires_with_usage")
         options = {
             "approve_agents_refresh": args.approve_agents_refresh,
             "approve_conflicts": args.approve_conflicts,
-            "refresh_usage_pointer": args.refresh_usage_pointer,
+            "refresh_usage_pointer": args.refresh_usage_pointer or (args.update and effective_with_usage),
+            "luna_tier": effective_luna_tier,
+            "update": args.update,
         }
         if interactive:
             preview = install(repo, codex_home, home, apply=False, with_usage=False, **options)
@@ -715,8 +871,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             core = install(repo, codex_home, home, apply=True, with_usage=False, **options)
             core["phase"] = "core"
             print(json.dumps(core, sort_keys=True, separators=(",", ":")))
-            with_usage = args.with_usage or (
-                not args.without_usage and _ask("Install optional local usage/status components?")
+            with_usage = effective_with_usage or (
+                not effective_without_usage and _ask("Install optional local usage/status components?")
             )
             if with_usage:
                 plan = install(repo, codex_home, home, apply=True, with_usage=True, **options)
@@ -724,14 +880,14 @@ def main(argv: Optional[List[str]] = None) -> int:
             else:
                 plan = core
                 plan["usage"] = "declined"
-        elif args.apply:
+        elif apply_mode:
             preview = install(repo, codex_home, home, apply=False, with_usage=False, **options)
             preview["status"] = "preview"
             preview["phase"] = "core"
             print(json.dumps(preview, sort_keys=True, separators=(",", ":")))
             core = install(repo, codex_home, home, apply=True, with_usage=False, **options)
             core["phase"] = "core"
-            if args.with_usage:
+            if effective_with_usage:
                 print(json.dumps(core, sort_keys=True, separators=(",", ":")))
                 usage_preview = install(repo, codex_home, home, apply=False, with_usage=True, **options)
                 usage_preview["status"] = "preview"
@@ -743,7 +899,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 plan = core
                 plan["usage"] = "declined"
         else:
-            plan = install(repo, codex_home, home, apply=False, with_usage=args.with_usage, **options)
+            plan = install(repo, codex_home, home, apply=False, with_usage=effective_with_usage, **options)
         print(json.dumps(plan, sort_keys=True, separators=(",", ":")))
         return 0
     except (InstallError, OSError, ValueError, EOFError) as exc:

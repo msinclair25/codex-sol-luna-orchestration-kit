@@ -1,0 +1,20 @@
+{
+  "name": "sol-luna",
+  "interface": {
+    "displayName": "Sol Luna Orchestration Kit"
+  },
+  "plugins": [
+    {
+      "name": "sol-luna-orchestration-kit",
+      "source": {
+        "source": "local",
+        "path": "./plugins/sol-luna-orchestration-kit"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

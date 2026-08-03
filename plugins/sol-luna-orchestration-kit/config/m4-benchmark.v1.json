@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "benchmark_id": "m4-v0.2.1-single-pair-01",
+  "status": "frozen-before-first-run",
+  "origin": "unsigned-local-audit",
+  "pilot_plan_path": "config/m4-pilot.v1.json",
+  "pilot_plan_sha256": "bd053dab372dd576e94252be6c2cec0c77d5083198d34b62630b3db4e28b060e",
+  "fixture": {
+    "root": "benchmark/m4_single_pair/fixture",
+    "files": {
+      "README.md": "3847a91b9b86576f3cd0d81bb96c79455213c4a56a1883a714908bad773b8944",
+      "TASK.md": "d769d206c45aabcada95bd8273b95c36cec09a3c53e2130c07d8fe4ecd29c477",
+      "inventory.py": "0973fe559294bfcbff6bf7dbe426cc4428f037d9941950a8e343b9a6aa3a8c43",
+      "tests/__init__.py": "fe15b00862d624961529e22e29f6e958949c6079eabf373ab158fed8dd2ac44c",
+      "tests/test_inventory_public.py": "e817ce813318c658f83f895d2042b3f63cb6b8706e87ca3203b0617c21a07c00"
+    },
+    "allowed_changes": [
+      "inventory.py"
+    ]
+  },
+  "prompt": {
+    "path": "benchmark/m4_single_pair/PROMPT.txt",
+    "sha256": "52708f9c59107f6be18ff0db1896f4504b5b7d06b279b21b176d74a35d41c63c"
+  },
+  "oracle": {
+    "path": "benchmark/m4_single_pair/oracle.py",
+    "sha256": "f904527a72321e57575cc6a2e330fb786f3d9320a796b8197f46a38ab9f1ff8d",
+    "checks": 14
+  },
+  "arms": [
+    {
+      "arm": "all-max-control",
+      "environment_label": "control"
+    },
+    {
+      "arm": "dynamic-v0.2.1",
+      "environment_label": "dynamic"
+    }
+  ],
+  "required_roles": [
+    "luna_scout_fast",
+    "luna_worker_fast",
+    "luna_tester_fast"
+  ],
+  "arm_timeout_seconds": 900,
+  "total_model_timeout_seconds": 1800,
+  "acceptance_timeout_seconds": 60,
+  "weighted_usage_reduction_target": 0.2,
+  "latency_noninferiority_margin": 0.2,
+  "automatic_promotion": false,
+  "directional_only": true
+}
