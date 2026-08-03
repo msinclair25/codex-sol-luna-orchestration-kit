@@ -1,5 +1,10 @@
 # M4 observational pilot
 
+> This ten-slot protocol was superseded before its first measured start by the
+> simpler [M4 single-pair benchmark](M4_BENCHMARK.md). Its plan and tooling are
+> retained unchanged as an auditable baseline and to verify the two prepared
+> `CODEX_HOME` environments. Do not register `m4-01` for the active benchmark.
+
 M4 is a local, observational comparison. It uses the same Codex build and
 account with two persistent, isolated `CODEX_HOME` roots:
 

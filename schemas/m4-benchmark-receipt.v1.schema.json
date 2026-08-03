@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "m4-benchmark-receipt.v1",
+  "title": "M4 single-pair comparison receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "benchmark_id",
+    "run_id",
+    "origin",
+    "started_at",
+    "closed_at",
+    "toolkit",
+    "integrity",
+    "limits",
+    "arms",
+    "comparison",
+    "artifacts_retained_private"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "benchmark_id": {"const": "m4-v0.2.1-single-pair-01"},
+    "run_id": {"type": "string", "pattern": "^br1-[0-9a-f]{16}$"},
+    "origin": {"const": "unsigned-local-audit"},
+    "started_at": {"type": "string"},
+    "closed_at": {"type": "string"},
+    "toolkit": {"type": "object"},
+    "integrity": {"type": "object"},
+    "limits": {"type": "object"},
+    "arms": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["all-max-control", "dynamic-v0.2.1"],
+      "properties": {
+        "all-max-control": {"$ref": "#/$defs/arm"},
+        "dynamic-v0.2.1": {"$ref": "#/$defs/arm"}
+      }
+    },
+    "comparison": {
+      "type": "object",
+      "required": ["status", "directional_only", "automatic_promotion", "human_review_required"],
+      "properties": {
+        "status": {"enum": ["dynamic-promising-human-review", "keep-all-max", "inconclusive"]},
+        "directional_only": {"const": true},
+        "automatic_promotion": {"const": false},
+        "human_review_required": {"const": true}
+      }
+    },
+    "artifacts_retained_private": {"const": true}
+  },
+  "$defs": {
+    "arm": {
+      "type": "object",
+      "required": ["arm", "disposition", "duration_ms", "timed_out", "acceptance", "usage"],
+      "properties": {
+        "disposition": {"enum": ["accepted", "rejected", "abandoned"]},
+        "duration_ms": {"type": "integer", "minimum": 0},
+        "timed_out": {"type": "boolean"},
+        "acceptance": {"type": "object"},
+        "usage": {"type": "object"}
+      }
+    }
+  }
+}

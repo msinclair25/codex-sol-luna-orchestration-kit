@@ -49,6 +49,12 @@ must return compact evidence with exactly `scope`, `files_or_surfaces`,
 
 ## Policy stability and M4 pilot freeze
 
+The active M4 validation is the bounded
+[single-pair benchmark](M4_BENCHMARK.md). It freezes one fixture and compares
+the same prompt under both policies with 15 minutes per arm. The ten-slot
+observational protocol below was superseded before any start; it remains an
+auditable, empty baseline and must not be mixed with benchmark evidence.
+
 The policy is an experiment, not an invitation to continuous tuning. Before
 M4 starts, predeclare one comparison window of 10 registered milestone starts
 spanning at least three task families. Record the policy assignment schedule,
@@ -87,7 +93,7 @@ with calibrated or replicated evidence and quality and latency
 non-inferiority. If benefit is absent, keep the stable policy, simplify, or
 revert instead of adding more controls or telemetry.
 
-The M4 checkpoint requires complete terminal receipt coverage for registered
+The legacy observational checkpoint requires complete terminal receipt coverage for registered
 terminal or overdue starts, no critical or high-severity defect regression, at
 least 80% spawn precision, and either a directional 20% reduction in total
 estimated weighted usage with quality and latency non-inferiority or a
@@ -97,6 +103,10 @@ promote a policy from an uncalibrated estimate unless the result is replicated.
 
 ### M4 entry conditions
 
+For the active validation command and decision rules, see
+[M4_BENCHMARK.md](M4_BENCHMARK.md). The legacy registry described below is not
+used by that command.
+
 `config/m4-pilot.v1.json` and `scripts/pilot_tool.py` implement the entry gate:
 the frozen assignment ledger, isolated all-Max and dynamic environments,
 strictly sequential registered starts, 30-minute overdue checks, exact
@@ -104,7 +114,7 @@ project/source/policy receipt joins, kill-criterion blocking, and predeclared
 comparison fields. They do not start Codex or register slot 1 by themselves.
 See [M4_PILOT.md](M4_PILOT.md) for setup and operating rules.
 
-The comparison remains unknown until all 10 starts are registered and terminal
+That legacy comparison remains unknown until all 10 starts are registered and terminal
 with matching evidence. Missing full-workflow usage remains unknown. A complete
 window is only checkpoint-ready for human review; the tool never promotes a
 policy automatically.

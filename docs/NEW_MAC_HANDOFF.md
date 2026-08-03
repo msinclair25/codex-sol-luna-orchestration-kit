@@ -5,16 +5,18 @@ all-Max control and dynamic treatment on that Mac with the same Codex binary,
 version, account, and workspace. Do not run one arm on the old Mac and the
 other on the new Mac.
 
-This handoff prepares and tests the installation only. It stops before measured
-slot `m4-01`, does not register a start, and does not create pilot evidence.
+This handoff prepares and tests the installation only. It does not start the
+single-pair benchmark, register legacy slot `m4-01`, or create benchmark
+evidence.
 The preflight and pilot setup never target the ordinary `~/.codex`
 installation. Each pilot arm gets a separate `CODEX_HOME` and must be
 authenticated independently. The Codex task used to perform the handoff may
 still maintain its normal client state in the ordinary root.
 
-Window 02 enforces a 30-minute deadline from registered start to terminal
-receipt. The superseded, unstarted window-01 plan remains archived under
-`pilot-plans/`; never mix its readiness evidence with window 02.
+Window 02 supplies the two frozen environments reused by the active M4
+single-pair benchmark. The benchmark gives each arm 15 minutes and never uses
+the empty ten-slot registry. The superseded window-01 plan remains archived
+under `pilot-plans/`.
 
 The M4 work is currently on branch `codex/m4-pilot-protocol` in draft PR #3.
 Use that branch until the pull request is merged; after merge, use the default
@@ -128,15 +130,19 @@ Do the following:
 8. Re-run the environment and pilot status checks:
    PYTHONDONTWRITEBYTECODE=1 "$PYTHON_BIN" scripts/pilot_tool.py verify-environments --pilot-home "$HOME/codex-sol-luna-pilots/m4-v0.2.1-window-02"
    PYTHONDONTWRITEBYTECODE=1 "$PYTHON_BIN" scripts/pilot_tool.py status --pilot-home "$HOME/codex-sol-luna-pilots/m4-v0.2.1-window-02"
-   Confirm registered_count is still 0 and next slot is
-   m4-01/all-max-control. Do not register it.
+   PYTHONDONTWRITEBYTECODE=1 "$PYTHON_BIN" scripts/run_m4_benchmark.py --pilot-home "$HOME/codex-sol-luna-pilots/m4-v0.2.1-window-02" --dry-run
+   Confirm registered_count is still 0, terminal_count is 0, both environments
+   are 8/8, each benchmark arm is limited to 900 seconds, total model time is
+   1,800 seconds, and automatic_promotion is false. The legacy next slot may
+   still display m4-01/all-max-control; do not register it.
 9. Return one concise readiness receipt with: checkout commit and branch;
    codex, Python, and Git versions; full unit-test count/result; plan hash;
    control and dynamic environment match counts; separate-login results;
    control and dynamic smoke results or "pending user approval"; measured
    starts 0; ordinary ~/.codex targeted false; credentials/sessions copied
-   false; automatic promotion false; next slot m4-01; unresolved risks; and
-   final state READY_FOR_M4_SLOT_1 or BLOCKED. Stop there.
+   false; automatic promotion false; benchmark ID and config hash; per-arm and
+   total model limits; legacy next slot m4-01 unregistered; unresolved risks;
+   and final state READY_FOR_M4_BENCHMARK or BLOCKED. Stop there.
 ```
 
 ## What the preflight proves

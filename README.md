@@ -12,14 +12,14 @@ boundaries.
 </p>
 
 > [!IMPORTANT]
-> V0.2 milestones M0–M3 are implemented and verified. The M4 observational
-> pilot entry gate and frozen 10-slot protocol are implemented, but measured
-> slot 1 has **not** started. This repository makes no claim of calibrated
-> savings or production performance.
+> V0.2 milestones M0–M3 are implemented and verified. M4 now uses one fixed,
+> two-arm benchmark: the same coding fixture runs once under all-Max and once
+> under dynamic routing. No benchmark has started, and this repository makes
+> no claim of calibrated savings or production performance.
 
-The active M4 window enforces a 30-minute deadline from each registered start
-to its terminal receipt. Tasks that cannot finish defensibly in that bound are
-closed as abandoned; the deadline is never silently extended.
+Each arm has a hard 15-minute process deadline, giving the two model calls a
+combined 30-minute execution budget. The older ten-slot observational registry
+remains frozen and empty; the benchmark does not use or modify it.
 
 ## Choose the right kit
 
@@ -128,13 +128,10 @@ malformed, unsupported, or stale request directly to Sol.
 
 ### Stability before optimization
 
-V0.2 is meant to be observed, not continuously tuned. Before M4, predeclare a
-10-milestone comparison window spanning at least three task families, including
-the policy assignments, acceptance criteria, and kill criteria. Freeze that
-schedule plus the routing policy, root instructions, role files, owned
-configuration, and rate card until every registered start is terminal or
-overdue, unless a kill criterion stops the window earlier. Log improvement
-ideas without applying them mid-window.
+V0.2 is meant to be observed, not continuously tuned. M4 freezes one fixture,
+one prompt, one held-out oracle, both policy configurations, the rate card, and
+the decision thresholds before either arm runs. Log improvement ideas without
+changing those inputs during the pair.
 
 An intervention requires a documented, observed correctness or security
 failure or a predeclared quality kill criterion. It ends the comparable window;
@@ -151,19 +148,17 @@ or latency regression. Otherwise keep the stable policy, simplify, or revert.
 The goal is the minimum control required for consistently accepted outcomes,
 not perpetual optimization.
 
-The M4 entry gate now supplies a frozen registered-start ledger, deadline
-enforcement, matched control/dynamic comparison, and predeclared quality,
-latency, usage, and disposition checks. It still does not start the pilot.
-Follow [the M4 protocol](docs/M4_PILOT.md), verify both isolated environments,
-and run an unmeasured smoke before registering slot 1. Policy promotion remains
-manual and requires calibrated or replicated evidence.
+The [M4 single-pair benchmark](docs/M4_BENCHMARK.md) reuses the two verified,
+isolated environments and runs identical disposable workspaces sequentially.
+It asks before two quota-consuming calls, enforces 15 minutes per arm, runs the
+same acceptance oracle, and emits one comparison receipt. Policy promotion is
+always manual; one pair is directional evidence only.
 
 For a clean-machine trial, use the [new Mac handoff](docs/NEW_MAC_HANDOFF.md).
 It provides a copy/paste Codex prompt plus a fail-closed preflight that verifies
-the trusted checkout, prepares both isolated roots without targeting ordinary
-`~/.codex`, and stops before measured slot `m4-01`. Authentication and the two
-small live smokes remain separate, explicit steps because they use account
-state and model quota.
+the trusted checkout and prepares both isolated roots without targeting
+ordinary `~/.codex`. Authentication and the two small live smokes remain
+separate, explicit steps because they use account state and model quota.
 
 ## What you get
 
@@ -178,20 +173,27 @@ codex-sol-luna-orchestration-kit/
 ├── assets/
 │   ├── sol-luna-orchestration-system.png
 │   └── social-preview.jpg
+├── benchmark/m4_single_pair/
+│   ├── PROMPT.txt
+│   ├── oracle.py
+│   └── fixture/
 ├── config-snippet.toml
 ├── config/
 │   ├── install-assets.v1.json
+│   ├── m4-benchmark.v1.json
 │   ├── m4-pilot.v1.json
 │   ├── rate-card.v1.json
 │   └── routing-policy.v1.json
 ├── control-bundles/
 │   └── all-max-v1/
 ├── schemas/
+│   ├── m4-benchmark-receipt.v1.schema.json
 │   ├── m4-pilot-plan.v1.schema.json
 │   ├── milestone-receipt.v1.schema.json
 │   └── pilot-start.v1.schema.json
 ├── docs/
 │   ├── CONTROL_BUNDLES.md
+│   ├── M4_BENCHMARK.md
 │   ├── M4_PILOT.md
 │   ├── NEW_MAC_HANDOFF.md
 │   ├── RECEIPTS.md
@@ -207,6 +209,7 @@ codex-sol-luna-orchestration-kit/
 │   ├── install.py
 │   ├── new_mac_preflight.py
 │   ├── pilot_tool.py
+│   ├── run_m4_benchmark.py
 │   ├── receipt_tool.py
 │   ├── routing_policy.py
 │   ├── usage_report.py
@@ -215,6 +218,7 @@ codex-sol-luna-orchestration-kit/
 │   ├── test_control_bundle.py
 │   ├── test_install.py
 │   ├── test_m1_evidence.py
+│   ├── test_m4_benchmark.py
 │   ├── test_new_mac_preflight.py
 │   ├── test_pilot_tool.py
 │   ├── test_receipt_tool.py
@@ -287,8 +291,10 @@ python3 scripts/receipt_tool.py summarize --receipts-dir .sol-luna/receipts --fo
 Receipts are local audit artifacts, not automation commands or cryptographic
 proof. Their SHA-256 IDs are anchored by the canonical close payload; Git and
 human review remain the provenance anchor. M2 summaries alone cannot infer
-coverage. The M4 registry now computes coverage only by joining pre-registered
-starts to matching terminal receipts; see [the pilot protocol](docs/M4_PILOT.md).
+coverage. The retained observational registry computes coverage only by
+joining pre-registered starts to matching terminal receipts; see the
+[legacy pilot protocol](docs/M4_PILOT.md). The active single-pair benchmark
+uses its own comparison receipt instead.
 
 ## Sol/Luna status skill
 
@@ -297,9 +303,9 @@ Run the repository-local, read-only status report with
 `--format json` for automation. The bounded scanner uses validated local
 receipts and attributable record-schema-v1 rollout JSONL with complete token
 snapshots, redacts sensitive content, and falls back to receipt-only status
-when local session capability or correlation is not provable. During M4 it also
-reports registered, terminal, pending, and overdue starts plus the next frozen
-slot and human-only checkpoint state. It does not use
+when local session capability or correlation is not provable. For the retained
+observational registry it also reports registered, terminal, pending, and
+overdue starts plus the next frozen slot and human-only checkpoint state. It does not use
 a server, plugin, MCP service, dashboard, database, or network surface.
 
 The guided installer offers this as a separate opt-in personal skill under

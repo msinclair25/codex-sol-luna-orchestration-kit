@@ -1,0 +1,19 @@
+Complete the fixed task in TASK.md in this workspace. Treat this as a
+directional orchestration benchmark, not production work.
+
+Use exactly three serialized spawn_agent calls, in this order:
+
+1. Spawn luna_scout_fast with fork_turns "none" for read-only inspection.
+2. After it finishes, spawn luna_worker_fast with fork_turns "none" and give
+   it ownership of inventory.py only.
+3. After it finishes, spawn luna_tester_fast with fork_turns "none" to run the
+   public tests without editing source or tests.
+
+Do not omit fork_turns, use a history fork, retry a failed spawn, run lanes in
+parallel, or allow nested delegation. Do not use the network, install
+dependencies, commit, or read outside this workspace. Do not modify TASK.md,
+README.md, or tests. The only permitted source change is inventory.py.
+
+If a required spawn fails, stop without fabricating success. Otherwise,
+integrate the worker result, wait for the tester, inspect the final workspace,
+and report whether the public tests pass. Keep the final response concise.
