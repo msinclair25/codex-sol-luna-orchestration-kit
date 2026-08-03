@@ -1,5 +1,14 @@
 # New Mac M4 handoff
 
+> [!CAUTION]
+> Historical document only. The prepared v0.2.1 single-pair benchmark began
+> its control arm and was interrupted. It is permanently non-retryable; do not
+> execute the prompt or benchmark commands below. No replacement window is
+> currently authorized. See [M4_BENCHMARK.md](M4_BENCHMARK.md) for the incident
+> status and hardened-runner requirements.
+
+## Archived procedure — do not execute
+
 Use one fresh Mac as the sole host for the entire M4 comparison. Run both the
 all-Max control and dynamic treatment on that Mac with the same Codex binary,
 version, account, and workspace. Do not run one arm on the old Mac and the
@@ -13,8 +22,8 @@ installation. Each pilot arm gets a separate `CODEX_HOME` and must be
 authenticated independently. The Codex task used to perform the handoff may
 still maintain its normal client state in the ordinary root.
 
-Window 02 supplies the two frozen environments reused by the active M4
-single-pair benchmark. The benchmark gives each arm 15 minutes and never uses
+Window 02 supplied the two frozen environments used by the retired M4
+single-pair benchmark. The benchmark gave each arm 15 minutes and never used
 the empty ten-slot registry. The superseded window-01 plan remains archived
 under `pilot-plans/`.
 

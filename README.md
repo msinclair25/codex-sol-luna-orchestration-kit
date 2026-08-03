@@ -12,14 +12,16 @@ boundaries.
 </p>
 
 > [!IMPORTANT]
-> V0.2 milestones M0–M3 are implemented and verified. M4 now uses one fixed,
-> two-arm benchmark: the same coding fixture runs once under all-Max and once
-> under dynamic routing. No benchmark has started, and this repository makes
-> no claim of calibrated savings or production performance.
+> V0.2 milestones M0–M3 are implemented and verified. The first M4 single-pair
+> benchmark started its all-Max control arm but was interrupted before a
+> terminal result; the dynamic arm never started. That pair is permanently
+> retired and provides no policy comparison or savings claim.
 
-Each arm has a hard 15-minute process deadline, giving the two model calls a
-combined 30-minute execution budget. The older ten-slot observational registry
-remains frozen and empty; the benchmark does not use or modify it.
+The incident audit attributed at least 178,564 root tokens to the incomplete
+control workflow; child usage and total arm usage remain unknown. Automatic
+promotion stayed off. The harness is now hardened around durable lifecycle
+evidence, interruption receipts, immutable runtime configuration, and explicit
+Codex capability checks before any new comparison window is proposed.
 
 ## Choose the right kit
 
@@ -128,10 +130,10 @@ malformed, unsupported, or stale request directly to Sol.
 
 ### Stability before optimization
 
-V0.2 is meant to be observed, not continuously tuned. M4 freezes one fixture,
-one prompt, one held-out oracle, both policy configurations, the rate card, and
-the decision thresholds before either arm runs. Log improvement ideas without
-changing those inputs during the pair.
+V0.2 is meant to be observed, not continuously tuned. The retired M4 pair froze
+one fixture, one prompt, one held-out oracle, both policy configurations, the
+rate card, and the decision thresholds before its control arm began. Its
+inconclusive evidence must not be reused or combined with a future window.
 
 An intervention requires a documented, observed correctness or security
 failure or a predeclared quality kill criterion. It ends the comparable window;
@@ -148,17 +150,11 @@ or latency regression. Otherwise keep the stable policy, simplify, or revert.
 The goal is the minimum control required for consistently accepted outcomes,
 not perpetual optimization.
 
-The [M4 single-pair benchmark](docs/M4_BENCHMARK.md) reuses the two verified,
-isolated environments and runs identical disposable workspaces sequentially.
-It asks before two quota-consuming calls, enforces 15 minutes per arm, runs the
-same acceptance oracle, and emits one comparison receipt. Policy promotion is
-always manual; one pair is directional evidence only.
-
-For a clean-machine trial, use the [new Mac handoff](docs/NEW_MAC_HANDOFF.md).
-It provides a copy/paste Codex prompt plus a fail-closed preflight that verifies
-the trusted checkout and prepares both isolated roots without targeting
-ordinary `~/.codex`. Authentication and the two small live smokes remain
-separate, explicit steps because they use account state and model quota.
+The [M4 single-pair benchmark](docs/M4_BENCHMARK.md) documents the interrupted
+run, its non-retry boundary, and the hardened runner requirements. No fresh
+benchmark window is currently authorized. The [new Mac handoff](docs/NEW_MAC_HANDOFF.md)
+is retained as historical setup evidence and must not be used to restart the
+retired pair.
 
 ## What you get
 
@@ -188,6 +184,7 @@ codex-sol-luna-orchestration-kit/
 │   └── all-max-v1/
 ├── schemas/
 │   ├── m4-benchmark-receipt.v1.schema.json
+│   ├── m4-benchmark-terminal.v1.schema.json
 │   ├── m4-pilot-plan.v1.schema.json
 │   ├── milestone-receipt.v1.schema.json
 │   └── pilot-start.v1.schema.json
@@ -202,7 +199,8 @@ codex-sol-luna-orchestration-kit/
 │   ├── STATUS_SKILL.md
 │   └── USAGE_METRICS.md
 ├── evidence/
-│   └── m1-role-smoke-2026-08-02.json
+│   ├── m1-role-smoke-2026-08-02.json
+│   └── m4-v0.2.1-single-pair-01-retired.json
 ├── pilot-plans/
 │   └── m4-v0.2.1-window-01.json
 ├── scripts/
@@ -239,8 +237,13 @@ codex-sol-luna-orchestration-kit/
 The checked-in policy and static tests cover the role contract and routing
 decisions. No live spawn result is promised: model IDs, reasoning levels, Fast
 access, feature flags, concurrency, and CLI diagnostics can vary by Codex
-version, account, workspace policy, and rollout. Seeing a model in an API
-account does not necessarily mean the same model is enabled in every Codex
+version, account, workspace policy, and rollout. The benchmark harness records
+the observed Codex version but gates on the concrete CLI flags and event
+contract it needs instead of assuming one release remains current forever.
+Once a future pair begins, that version and executable digest stay pinned
+across both arms. Missing or changed capabilities fail before measured work.
+Seeing a model in an
+API account does not necessarily mean the same model is enabled in every Codex
 surface. Verify your own model picker or model catalog before installing.
 The static verifier requires Python 3.11 or newer; older runtimes fail closed
 with a clear diagnostic because the policy relies on stdlib `tomllib`.
@@ -293,8 +296,9 @@ proof. Their SHA-256 IDs are anchored by the canonical close payload; Git and
 human review remain the provenance anchor. M2 summaries alone cannot infer
 coverage. The retained observational registry computes coverage only by
 joining pre-registered starts to matching terminal receipts; see the
-[legacy pilot protocol](docs/M4_PILOT.md). The active single-pair benchmark
-uses its own comparison receipt instead.
+[legacy pilot protocol](docs/M4_PILOT.md). The retired single-pair benchmark
+was interrupted before producing a comparison receipt and is now
+permanently non-retryable.
 
 ## Sol/Luna status skill
 

@@ -25,7 +25,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any, Dict, Iterable, Mapping, Optional, Sequence
+from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Sequence
 
 try:
     import tomllib
@@ -46,7 +46,28 @@ EXPECTED_CONFIG_SHA256 = "546858601aaf162ddb144a4b81cdbe293a3ae5ef3084a736393f12
 SCHEMA_VERSION = 1
 ORIGIN = "unsigned-local-audit"
 ARMS = ("all-max-control", "dynamic-v0.2.1")
+RETIRED_BENCHMARK_IDS = {"m4-v0.2.1-single-pair-01"}
+RETIREMENT_EVIDENCE = ROOT / "evidence" / "m4-v0.2.1-single-pair-01-retired.json"
+CAPABILITY_REQUIRED = {
+    "subcommands": ("exec", "sandbox", "login"),
+    "exec_flags": ("--json", "--skip-git-repo-check", "--sandbox", "--output-last-message", "--ignore-user-config", "--strict-config", "--config"),
+}
 REQUIRED_ROLES = ("luna_scout_fast", "luna_worker_fast", "luna_tester_fast")
+ROLE_REASONING = {
+    "luna_scout_fast": {"medium", "max"},
+    "luna_worker_fast": {"high", "max"},
+    "luna_tester_fast": {"medium", "max"},
+}
+ROLE_SANDBOX = {
+    "luna_scout_fast": "read-only",
+    "luna_worker_fast": "workspace-write",
+    "luna_tester_fast": "workspace-write",
+}
+ROLE_CONFIG_KEYS = {
+    "name", "description", "model", "model_reasoning_effort",
+    "service_tier", "sandbox_mode", "developer_instructions",
+}
+TERMINAL_STATUSES = {"interrupted", "timed-out", "failed"}
 MAX_JSON_BYTES = 256 * 1024
 MAX_CAPTURE_BYTES = 64 * 1024 * 1024
 MAX_ORACLE_CAPTURE_BYTES = 1024 * 1024
@@ -69,6 +90,12 @@ class BenchmarkError(ValueError):
     def __init__(self, code: str):
         super().__init__(code)
         self.code = code
+
+
+class BenchmarkRunError(BenchmarkError):
+    def __init__(self, code: str, locator: Optional[dict[str, str]] = None):
+        super().__init__(code)
+        self.locator = locator or {}
 
 
 def _utc_now() -> str:
@@ -106,6 +133,38 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _codex_executable_sha256(codex_binary: str) -> str:
+    path = _codex_executable_path(codex_binary)
+    try:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except OSError as exc:
+        raise BenchmarkError("codex_identity_unavailable") from exc
+
+
+def _codex_executable_path(codex_binary: str) -> Path:
+    candidate = shutil.which(codex_binary) or codex_binary
+    try:
+        path = Path(candidate).resolve(strict=True)
+        if not path.is_file():
+            raise OSError
+        return path
+    except OSError as exc:
+        raise BenchmarkError("codex_identity_unavailable") from exc
+
+
+def _safe_runtime_text(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and 1 <= len(value) <= 120
+        and all(32 <= ord(character) < 127 for character in value)
+        and not any(token in value for token in ("/", "\\", "auth.json", "BEGIN PRIVATE KEY"))
+    )
+
+
 def _safe_relative(value: Any) -> Optional[str]:
     if not isinstance(value, str) or not value or len(value) > 200 or "\\" in value:
         return None
@@ -122,6 +181,11 @@ def _safe_file(root: Path, relative: str, *, max_bytes: int = 512 * 1024) -> tup
     base = root.resolve()
     path = base.joinpath(*PurePosixPath(safe).parts)
     try:
+        current = base
+        for part in PurePosixPath(safe).parts:
+            current = current / part
+            if current.is_symlink():
+                raise BenchmarkError("unsafe_source_file")
         resolved = path.resolve(strict=True)
         resolved.relative_to(base)
         if path.is_symlink() or not resolved.is_file() or resolved.stat().st_size > max_bytes:
@@ -319,15 +383,17 @@ def _minimal_env(codex_home: Path) -> dict[str, str]:
 
 
 def _codex_facts(codex_binary: str, pilot_home: Path) -> dict[str, Any]:
+    pinned_codex = str(_codex_executable_path(codex_binary))
     try:
-        version = subprocess.run([codex_binary, "--version"], text=True, capture_output=True, timeout=10, check=False)
+        version = subprocess.run([pinned_codex, "--version"], text=True, capture_output=True, timeout=10, check=False)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise BenchmarkError("codex_unavailable") from exc
-    if version.returncode != 0 or not version.stdout.strip():
+    version_text = version.stdout.strip().splitlines()[0][:120] if version.returncode == 0 and version.stdout.strip() else ""
+    if not _safe_runtime_text(version_text):
         raise BenchmarkError("codex_unavailable")
     try:
         sandbox_help = subprocess.run(
-            [codex_binary, "sandbox", "--help"], env=_minimal_env(pilot_home / "control" / ".codex"),
+            [pinned_codex, "sandbox", "--help"], env=_minimal_env(pilot_home / "control" / ".codex"),
             text=True, capture_output=True, timeout=10, check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -337,7 +403,7 @@ def _codex_facts(codex_binary: str, pilot_home: Path) -> dict[str, Any]:
     try:
         sandbox_smoke = subprocess.run(
             [
-                codex_binary, "sandbox", "-P", ":workspace", "-C", str(pilot_home),
+                pinned_codex, "sandbox", "-P", ":workspace", "-C", str(pilot_home),
                 "--sandbox-state-disable-network", "--", "/usr/bin/true",
             ],
             env=_minimal_env(pilot_home / "control" / ".codex"),
@@ -352,7 +418,7 @@ def _codex_facts(codex_binary: str, pilot_home: Path) -> dict[str, Any]:
         codex_home = pilot_home / label / ".codex"
         try:
             status_result = subprocess.run(
-                [codex_binary, "login", "status"], env=_minimal_env(codex_home),
+                [pinned_codex, "login", "status"], env=_minimal_env(codex_home),
                 text=True, capture_output=True, timeout=20, check=False,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
@@ -361,10 +427,64 @@ def _codex_facts(codex_binary: str, pilot_home: Path) -> dict[str, Any]:
     if not all(logins.values()):
         raise BenchmarkError("separate_login_required")
     return {
-        "version": version.stdout.strip().splitlines()[0][:120],
+        "version": version_text,
+        "executable_sha256": _codex_executable_sha256(pinned_codex),
+        "_executable_path": pinned_codex,
         "logins": logins,
         "sandbox_smoke": True,
     }
+
+
+def _codex_capabilities(codex_binary: str, pilot_home: Path) -> dict[str, Any]:
+    """Check the stable CLI contract without exact-pinning a version."""
+    try:
+        probes = {
+            "root": subprocess.run([codex_binary, "--help"], env=_minimal_env(pilot_home / "control" / ".codex"), text=True, capture_output=True, timeout=10, check=False),
+            "exec": subprocess.run([codex_binary, "exec", "--help"], env=_minimal_env(pilot_home / "control" / ".codex"), text=True, capture_output=True, timeout=10, check=False),
+            "sandbox": subprocess.run([codex_binary, "sandbox", "--help"], env=_minimal_env(pilot_home / "control" / ".codex"), text=True, capture_output=True, timeout=10, check=False),
+            "login": subprocess.run([codex_binary, "login", "status"], env=_minimal_env(pilot_home / "control" / ".codex"), text=True, capture_output=True, timeout=10, check=False),
+        }
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise BenchmarkError("codex_capability_unavailable") from exc
+    missing = []
+    if probes["root"].returncode != 0:
+        missing.append("subcommand:help")
+    for command in ("exec", "sandbox"):
+        if probes[command].returncode != 0:
+            missing.append(f"subcommand:{command}")
+    exec_help = (probes["exec"].stdout or "") + (probes["exec"].stderr or "")
+    for flag in CAPABILITY_REQUIRED["exec_flags"]:
+        if flag not in exec_help:
+            missing.append(f"flag:{flag}")
+    if probes["login"].returncode != 0:
+        missing.append("subcommand:login")
+    if missing:
+        raise BenchmarkError("codex_capability_missing:" + ",".join(missing))
+    root_help = (probes["root"].stdout or "") + (probes["root"].stderr or "")
+    observed = {
+        "subcommands": [name for name in CAPABILITY_REQUIRED["subcommands"] if name in root_help or probes[name if name != "exec" else "exec"].returncode == 0],
+        "exec_flags": [flag for flag in CAPABILITY_REQUIRED["exec_flags"] if flag in exec_help],
+    }
+    fingerprint = _sha256(_canonical(observed))[:16]
+    return {"required": observed, "fingerprint": fingerprint}
+
+
+def _codex_config_probe(codex_binary: str, pilot_home: Path) -> None:
+    """Check that each frozen policy command remains CLI-parseable, without a turn."""
+    for label in ("control", "dynamic"):
+        codex_home = pilot_home / label / ".codex"
+        command = _codex_command(
+            codex_binary, codex_home, pilot_home,
+            pilot_home / ("config-contract-" + label), None,
+            {"model": "gpt-5.6-sol", "model_reasoning_effort": "xhigh"},
+        )
+        command.append("--help")
+        try:
+            result = subprocess.run(command, cwd=pilot_home, env=_minimal_env(codex_home), text=True, capture_output=True, timeout=20, check=False)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise BenchmarkError("codex_config_probe_failed") from exc
+        if result.returncode != 0:
+            raise BenchmarkError("codex_config_rejected")
 
 
 def preflight(
@@ -376,6 +496,49 @@ def preflight(
 ) -> dict[str, Any]:
     repo = Path(repo_root).resolve()
     benchmark = verify_benchmark(repo, config_path)
+    if benchmark["benchmark_id"] in RETIRED_BENCHMARK_IDS:
+        expected_retirement = {
+            "schema_version": 1,
+            "benchmark_id": benchmark["benchmark_id"],
+            "status": "retired-non-retryable",
+            "reason": "interrupted-control-run",
+            "retry_allowed": False,
+            "model_calls_allowed": False,
+            "automatic_promotion": False,
+            "incident_facts": {
+                "control_arms_started": 1,
+                "dynamic_arms_started": 0,
+                "known_root_tokens_lower_bound": 178564,
+                "environment_matches_before_incident": {"control": "7/8", "dynamic": "8/8"},
+                "repository_and_frozen_hash_integrity_passed": True,
+                "comparison_receipt_present": False,
+                "root_terminal_event_present": False,
+                "replacement_window_authorized": False,
+            },
+            "privacy_note": "No customer content, credentials, session identifiers, or local paths are recorded.",
+        }
+        try:
+            retirement = _strict_json(RETIREMENT_EVIDENCE.read_bytes())
+            if retirement != expected_retirement:
+                raise OSError
+        except (OSError, BenchmarkError, UnicodeError, json.JSONDecodeError):
+            raise BenchmarkError("retirement_evidence_drift")
+        # Keep frozen-config verification available for audit/tests, but never
+        # proceed to environment or CLI work for the incident benchmark.
+        return {
+            "ok": False,
+            "status": "retired-non-retryable",
+            "benchmark_id": benchmark["benchmark_id"],
+            "benchmark_config_sha256": benchmark["benchmark_config_sha256"],
+            "pilot_plan_sha256": benchmark["pilot_plan_sha256"],
+            "model_calls_started": 0,
+            "automatic_promotion": False,
+            "directional_only": True,
+            "retirement": {"retry_allowed": False, "reason": "interrupted-control-run"},
+            "config": benchmark["config"],
+            "benchmark_config_path": benchmark["benchmark_config_path"],
+            "pilot_home": Path(pilot_home).expanduser(),
+        }
     repository = _repository_facts(repo)
     home = _safe_pilot_home(pilot_home, repo)
     config = benchmark["config"]
@@ -389,6 +552,9 @@ def preflight(
     if not pilot.get("ok") or pilot.get("registered_count") != 0 or pilot.get("terminal_count") != 0:
         raise BenchmarkError("observational_registry_not_empty")
     codex = _codex_facts(codex_binary, home)
+    pinned_codex = codex["_executable_path"]
+    codex["capabilities"] = _codex_capabilities(pinned_codex, home)
+    _codex_config_probe(pinned_codex, home)
     return {
         "ok": True,
         "benchmark_id": benchmark["benchmark_id"],
@@ -426,6 +592,20 @@ def _ensure_private_directory(path: Path) -> None:
         path.chmod(0o700)
 
 
+def _fsync_directory(path: Path) -> None:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_DIRECTORY"):
+        flags |= os.O_DIRECTORY
+    descriptor = os.open(path, flags)
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISDIR(info.st_mode):
+            raise BenchmarkError("output_path_unsafe")
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
 def _private_write(path: Path, data: bytes) -> None:
     if path.exists() or path.is_symlink():
         raise BenchmarkError("output_conflict")
@@ -441,6 +621,9 @@ def _private_write(path: Path, data: bytes) -> None:
         except OSError:
             pass
         raise
+    # The file data is already durable. If the directory sync fails, preserve
+    # the readable evidence and report the durability failure to the caller.
+    _fsync_directory(path.parent)
 
 
 def _copy_fixture(repo: Path, config: dict[str, Any], destination: Path) -> None:
@@ -516,7 +699,7 @@ def _session_meta(path: Path) -> dict[str, Any]:
             for raw in handle:
                 if len(raw) > MAX_JSON_BYTES:
                     return {}
-                value = json.loads(raw)
+                value = _strict_json(raw)
                 if isinstance(value, dict) and value.get("type") == "session_meta" and isinstance(value.get("payload"), dict):
                     metadata.append(value["payload"])
     except (OSError, UnicodeError, json.JSONDecodeError):
@@ -589,15 +772,16 @@ def _run_codex(
     prompt: str,
     capture_dir: Path,
     timeout_seconds: int,
+    *,
+    arm: str = "arm",
+    runtime: Optional[dict[str, str]] = None,
+    progress: Optional[Callable[[str], None]] = None,
 ) -> dict[str, Any]:
     stdout_path = capture_dir / "events.jsonl"
     stderr_path = capture_dir / "stderr.log"
     last_path = capture_dir / "last-message.txt"
     _private_write(last_path, b"")
-    command = [
-        codex_binary, "exec", "--json", "--skip-git-repo-check", "--sandbox",
-        "workspace-write", "--output-last-message", str(last_path), prompt,
-    ]
+    command = _codex_command(codex_binary, codex_home, workspace, last_path, prompt, runtime)
     started = time.monotonic()
     with _open_capture(stdout_path) as stdout_file, _open_capture(stderr_path) as stderr_file:
         try:
@@ -610,7 +794,19 @@ def _run_codex(
             raise BenchmarkError("codex_launch_failed") from exc
         timed_out = False
         try:
-            exit_code = proc.wait(timeout=timeout_seconds)
+            deadline = time.monotonic() + timeout_seconds
+            next_heartbeat = time.monotonic() + 30
+            while True:
+                remaining = max(0.05, deadline - time.monotonic())
+                try:
+                    exit_code = proc.wait(timeout=min(1.0, remaining))
+                    break
+                except subprocess.TimeoutExpired:
+                    if time.monotonic() >= deadline:
+                        raise
+                    if progress and time.monotonic() >= next_heartbeat:
+                        progress(f"arm heartbeat {arm} elapsed_seconds={int(timeout_seconds - remaining)}")
+                        next_heartbeat = time.monotonic() + 30
         except subprocess.TimeoutExpired:
             timed_out = True
             _terminate_group(proc, immediate=True)
@@ -631,6 +827,54 @@ def _run_codex(
     }
 
 
+def _codex_command(codex_binary: str, codex_home: Path, workspace: Path, last_path: Path, prompt: Optional[str], runtime: Optional[dict[str, str]]) -> list[str]:
+    """Build an immutable-config command; absolute paths stay private."""
+    command = [codex_binary, "exec", "--json", "--skip-git-repo-check", "--sandbox", "workspace-write",
+               "--ignore-user-config", "--strict-config", "--output-last-message", str(last_path)]
+    command.extend(["-c", f'projects.{json.dumps(str(workspace))}.trust_level="trusted"'])
+    if runtime:
+        if set(runtime) != {"model", "model_reasoning_effort"} or runtime.get("model") != "gpt-5.6-sol" or runtime.get("model_reasoning_effort") != "xhigh":
+            raise BenchmarkError("runtime_root_unreadable")
+        for key in ("model", "model_reasoning_effort"):
+            command.extend(["-c", f"{key}={json.dumps(runtime[key])}"])
+        # These are frozen root declarations; global service_tier is
+        # intentionally omitted by policy.
+        command.extend(["-c", "features.fast_mode=true", "-c", "features.multi_agent=true", "-c", "agents.max_concurrent_threads_per_session=3"])
+        try:
+            instructions = (codex_home / "AGENTS.md").read_text()
+        except (OSError, UnicodeError) as exc:
+            raise BenchmarkError("runtime_agents_unreadable") from exc
+        if not instructions.strip():
+            raise BenchmarkError("runtime_agents_unreadable")
+        command.extend(["-c", "developer_instructions=" + json.dumps(instructions)])
+        agents = codex_home / "agents"
+        for role in REQUIRED_ROLES:
+            role_path = agents / (role + ".toml")
+            if not tomllib:
+                raise BenchmarkError("python_311_required")
+            try:
+                role_config = tomllib.loads(role_path.read_text())
+                description = role_config.get("description")
+                if (
+                    set(role_config) != ROLE_CONFIG_KEYS
+                    or role_config.get("name") != role
+                    or role_config.get("model") != "gpt-5.6-luna"
+                    or role_config.get("model_reasoning_effort") not in ROLE_REASONING[role]
+                    or role_config.get("service_tier") != "fast"
+                    or role_config.get("sandbox_mode") != ROLE_SANDBOX[role]
+                    or not isinstance(description, str) or not description.strip()
+                    or not isinstance(role_config.get("developer_instructions"), str)
+                    or not role_config["developer_instructions"].strip()
+                ):
+                    raise ValueError
+            except (OSError, UnicodeError, ValueError, TypeError) as exc:
+                raise BenchmarkError("runtime_role_unreadable") from exc
+            command.extend(["-c", f'agents.{role}.description={json.dumps(description)}', "-c", f'agents.{role}.config_file={json.dumps(str(role_path))}'])
+    if prompt is not None:
+        command.append(prompt)
+    return command
+
+
 def _event_summary(path: Path) -> dict[str, Any]:
     counts: dict[str, int] = {}
     malformed = 0
@@ -642,7 +886,7 @@ def _event_summary(path: Path) -> dict[str, Any]:
                     malformed += 1
                     continue
                 try:
-                    value = json.loads(raw)
+                    value = _strict_json(raw)
                 except (UnicodeError, json.JSONDecodeError):
                     malformed += 1
                     continue
@@ -818,6 +1062,8 @@ def _arm_result(
     capture_dir: Path,
     prompt: str,
     before_state: dict[str, str],
+    *,
+    progress: Optional[Callable[[str], None]] = None,
 ) -> dict[str, Any]:
     label = next(row["environment_label"] for row in config["arms"] if row["arm"] == arm)
     codex_home = pilot_home / label / ".codex"
@@ -825,7 +1071,9 @@ def _arm_result(
     if not environment.get("ok") or environment["arms"][arm]["matches"] != 8:
         raise BenchmarkError("environment_drift")
     sessions_before = _session_snapshot(codex_home)
-    execution = _run_codex(codex_binary, codex_home, workspace, prompt, capture_dir, config["arm_timeout_seconds"])
+    expected_root = _expected_runtime(codex_home)["root"]
+    runtime = {"model": expected_root["model"], "model_reasoning_effort": expected_root["reasoning_effort"]}
+    execution = _run_codex(codex_binary, codex_home, workspace, prompt, capture_dir, config["arm_timeout_seconds"], arm=arm, runtime=runtime, progress=progress)
     sessions_after = _session_snapshot(codex_home)
     new_session_files, concurrent_session_change = _session_delta(sessions_before, sessions_after)
     session_files, session_attributed = _correlated_sessions(
@@ -936,58 +1184,181 @@ def validate_receipt(value: Any) -> bool:
     return safe(value)
 
 
-def execute(
-    preflight_report: dict[str, Any],
-    repo_root: Path | str,
-    *,
-    codex_binary: str = "codex",
-    output_root: Optional[Path | str] = None,
-) -> tuple[dict[str, Any], Path]:
-    repo = Path(repo_root).resolve()
-    config = preflight_report["config"]
-    pilot_home = Path(preflight_report["pilot_home"]).resolve()
-    root = Path(output_root).expanduser().resolve(strict=False) if output_root else pilot_home / "benchmark-runs"
-    allowed_output = (pilot_home / "benchmark-runs").resolve(strict=False)
+def _journal_append(path: Path, record: dict[str, Any]) -> None:
+    """Append one private write-ahead record and force it to stable storage."""
+    created = not path.exists() and not path.is_symlink()
+    flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = -1
     try:
-        root.relative_to(allowed_output)
-    except ValueError as exc:
-        raise BenchmarkError("output_root_unsafe") from exc
-    if root.exists():
-        _ensure_private_directory(root)
-    else:
-        parent = root.parent.resolve(strict=True)
-        if parent != pilot_home.resolve() and pilot_home.resolve() not in parent.parents:
-            raise BenchmarkError("output_root_unsafe")
-        root.mkdir(mode=0o700)
-    run_id = "br1-" + secrets.token_hex(8)
-    run_dir = root / run_id
-    _ensure_private_directory(run_dir)
-    workspaces = run_dir / "workspaces"
-    captures = run_dir / "captures"
-    _ensure_private_directory(workspaces)
-    _ensure_private_directory(captures)
-    _, prompt_bytes = _safe_file(repo, config["prompt"]["path"])
-    prompt = prompt_bytes.decode("utf-8")
-    results: dict[str, dict[str, Any]] = {}
-    started_at = _utc_now()
-    for arm_row in config["arms"]:
-        current = verify_benchmark(repo, preflight_report["benchmark_config_path"])
-        if any(current[key] != preflight_report[key] for key in ("benchmark_config_sha256", "fixture_manifest_sha256", "prompt_sha256", "oracle_sha256", "pilot_plan_sha256")):
-            raise BenchmarkError("benchmark_drift_after_preflight")
-        arm = arm_row["arm"]
-        workspace = workspaces / arm
-        capture = captures / arm
-        _copy_fixture(repo, config, workspace)
-        _ensure_private_directory(capture)
-        before = _workspace_state(workspace)
-        results[arm] = _arm_result(
-            repo, config, arm, codex_binary, pilot_home, workspace, capture,
-            prompt, before,
-        )
-        post_environment = pilot_tool.verify_environments(repo / config["pilot_plan_path"], repo, pilot_home)
-        if not post_environment.get("ok"):
-            raise BenchmarkError("environment_drift")
-    receipt = {
+        descriptor = os.open(path, flags, 0o600)
+        info = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or stat.S_IMODE(info.st_mode) != 0o600
+            or info.st_nlink != 1
+            or (hasattr(os, "getuid") and info.st_uid != os.getuid())
+        ):
+            raise BenchmarkError("journal_unsafe")
+        with os.fdopen(descriptor, "ab") as handle:
+            descriptor = -1
+            handle.write(_canonical(record))
+            handle.flush()
+            os.fsync(handle.fileno())
+        if created:
+            _fsync_directory(path.parent)
+    except OSError as exc:
+        raise BenchmarkError("journal_unsafe") from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def _prior_attempt_exists(root: Path, benchmark_id: str) -> bool:
+    """Fail closed if any durable evidence already names this benchmark."""
+    if not root.exists():
+        return False
+    for run_dir in root.iterdir():
+        if run_dir.is_symlink():
+            return True
+        if not run_dir.is_dir():
+            continue
+        journal = run_dir / "run-state.jsonl"
+        if journal.is_symlink():
+            return True
+        if journal.exists():
+            try:
+                for raw in journal.read_bytes().splitlines():
+                    value = _strict_json(raw)
+                    if isinstance(value, dict) and value.get("benchmark_id") == benchmark_id:
+                        return True
+            except (OSError, BenchmarkError):
+                return True
+        for artifact in (run_dir / "terminal-receipt.json", run_dir / "comparison-receipt.json"):
+            if artifact.is_symlink():
+                return True
+            if artifact.exists():
+                try:
+                    value = _strict_json(artifact.read_bytes())
+                    if isinstance(value, dict) and value.get("benchmark_id") == benchmark_id:
+                        return True
+                except (OSError, BenchmarkError):
+                    return True
+    return False
+
+
+def _claim_benchmark(root: Path, benchmark_id: str) -> Path:
+    if not SAFE_ID_RE.fullmatch(benchmark_id):
+        raise BenchmarkError("benchmark_id")
+    claim = root / (".claim-" + benchmark_id)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(claim, flags, 0o600)
+        with os.fdopen(descriptor, "wb") as handle:
+            info = os.fstat(handle.fileno())
+            if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1:
+                raise BenchmarkError("benchmark_claim_failed")
+            handle.write(_canonical({"benchmark_id": benchmark_id, "claimed_at": _utc_now()}))
+            handle.flush()
+            os.fsync(handle.fileno())
+        _fsync_directory(root)
+    except FileExistsError as exc:
+        raise BenchmarkError("prior_benchmark_attempt") from exc
+    except OSError as exc:
+        raise BenchmarkError("benchmark_claim_failed") from exc
+    return claim
+
+
+def _sanitized_progress(message: str) -> None:
+    patterns = (
+        r"preflight accepted", r"approval accepted",
+        r"run br1-[0-9a-f]{16} created",
+        r"arm starting (?:all-max-control|dynamic-v0\.2\.1)",
+        r"arm heartbeat (?:all-max-control|dynamic-v0\.2\.1) elapsed_seconds=[0-9]+",
+        r"arm terminal (?:all-max-control|dynamic-v0\.2\.1) (?:accepted|rejected|abandoned)",
+        r"receipt br1-[0-9a-f]{16} (?:terminal|comparison)",
+    )
+    if any(re.fullmatch(pattern, message) for pattern in patterns):
+        print(message, file=sys.stderr, flush=True)
+
+
+def _terminal_receipt(run_id: str, started_at: str, failure_code: str, active_arm: Optional[str], completed: Sequence[str], calls: int, preflight_report: dict[str, Any]) -> dict[str, Any]:
+    status = "interrupted" if failure_code == "interrupted" else ("timed-out" if failure_code == "arm_timeout" else "failed")
+    if not SAFE_ID_RE.fullmatch(failure_code):
+        failure_code = "unclassified_failure"
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "benchmark_id": preflight_report.get("benchmark_id", "retired"),
+        "run_id": run_id,
+        "origin": ORIGIN,
+        "started_at": started_at,
+        "closed_at": _utc_now(),
+        "status": status,
+        "failure_code": failure_code,
+        "active_arm": active_arm,
+        "completed_arms": list(completed),
+        "model_calls_started": max(0, calls),
+        "automatic_promotion": False,
+        "retry_allowed": False,
+        "observed_runtime": {
+            "codex_version": str(preflight_report.get("codex", {}).get("version", "unknown"))[:120],
+            "executable_sha256": preflight_report.get("codex", {}).get("executable_sha256"),
+        },
+        "capability_fingerprint": preflight_report.get("codex", {}).get("capabilities", {}).get("fingerprint"),
+        "frozen_hashes": {key: preflight_report.get(key) for key in ("benchmark_config_sha256", "pilot_plan_sha256", "fixture_manifest_sha256", "prompt_sha256", "oracle_sha256") if preflight_report.get(key)},
+        "artifacts_retained_private": True,
+    }
+
+
+def _validate_terminal_receipt(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    required = {"schema_version", "benchmark_id", "run_id", "origin", "started_at", "closed_at", "status", "failure_code", "active_arm", "completed_arms", "model_calls_started", "automatic_promotion", "retry_allowed", "observed_runtime", "capability_fingerprint", "frozen_hashes", "artifacts_retained_private"}
+    if set(value) != required or value.get("schema_version") != SCHEMA_VERSION or value.get("origin") != ORIGIN:
+        return False
+    if value.get("status") not in TERMINAL_STATUSES or not isinstance(value.get("failure_code"), str) or not SAFE_ID_RE.fullmatch(value["failure_code"]):
+        return False
+    if not SAFE_ID_RE.fullmatch(str(value.get("benchmark_id", ""))) or not re.fullmatch(r"br1-[0-9a-f]{16}", str(value.get("run_id"))):
+        return False
+    if not all(isinstance(value.get(key), str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", value[key]) for key in ("started_at", "closed_at")):
+        return False
+    completed = value.get("completed_arms")
+    active = value.get("active_arm")
+    if (
+        active not in (None, *ARMS)
+        or not isinstance(completed, list)
+        or completed != list(ARMS[:len(completed)])
+        or len(set(completed)) != len(completed)
+        or active in completed
+    ):
+        return False
+    calls = value.get("model_calls_started")
+    if not isinstance(calls, int) or isinstance(calls, bool) or not len(completed) <= calls <= len(ARMS):
+        return False
+    if value.get("automatic_promotion") is not False or value.get("retry_allowed") is not False or value.get("artifacts_retained_private") is not True:
+        return False
+    runtime = value.get("observed_runtime")
+    if not isinstance(runtime, dict) or set(runtime) != {"codex_version", "executable_sha256"}:
+        return False
+    version = runtime.get("codex_version")
+    digest = runtime.get("executable_sha256")
+    if not _safe_runtime_text(version):
+        return False
+    if digest is not None and (not isinstance(digest, str) or not HASH_RE.fullmatch(digest)):
+        return False
+    fingerprint = value.get("capability_fingerprint")
+    if fingerprint is not None and (not isinstance(fingerprint, str) or not re.fullmatch(r"[0-9a-f]{16}", fingerprint)):
+        return False
+    hashes = value.get("frozen_hashes")
+    allowed_hashes = {"benchmark_config_sha256", "pilot_plan_sha256", "fixture_manifest_sha256", "prompt_sha256", "oracle_sha256"}
+    return isinstance(hashes, dict) and set(hashes).issubset(allowed_hashes) and all(isinstance(item, str) and HASH_RE.fullmatch(item) for item in hashes.values())
+
+
+def _comparison_receipt(preflight_report: dict[str, Any], config: dict[str, Any], run_id: str, started_at: str, results: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    return {
         "schema_version": SCHEMA_VERSION,
         "benchmark_id": config["benchmark_id"],
         "run_id": run_id,
@@ -1021,21 +1392,183 @@ def execute(
         "comparison": _comparison(config, results),
         "artifacts_retained_private": True,
     }
-    if not validate_receipt(receipt):
-        raise BenchmarkError("receipt_validation_failed")
-    receipt_path = run_dir / "comparison-receipt.json"
-    _private_write(receipt_path, _canonical(receipt))
-    return receipt, receipt_path
+
+
+def _terminalize(
+    exc: BaseException,
+    run_dir: Path,
+    journal: Path,
+    run_id: str,
+    started_at: str,
+    active_arm: Optional[str],
+    completed: Sequence[str],
+    calls_started: int,
+    preflight_report: dict[str, Any],
+) -> None:
+    """Best-effort terminal evidence that never replaces the original error."""
+    failure_code = "interrupted" if isinstance(exc, KeyboardInterrupt) else getattr(exc, "code", "unclassified_failure")
+    terminal = _terminal_receipt(run_id, started_at, failure_code, active_arm, completed, calls_started, preflight_report)
+    if not _validate_terminal_receipt(terminal):
+        terminal = _terminal_receipt(run_id, started_at, "unclassified_failure", active_arm, completed, calls_started, preflight_report)
+    terminal_path = run_dir / "terminal-receipt.json"
+    try:
+        if not terminal_path.exists() and not terminal_path.is_symlink():
+            _private_write(terminal_path, _canonical(terminal))
+    except BaseException:
+        pass
+    try:
+        _journal_append(journal, {
+            "event": "run_terminal",
+            "timestamp": _utc_now(),
+            "status": terminal["status"],
+            "failure_code": terminal["failure_code"],
+            "model_calls_started": calls_started,
+        })
+    except BaseException:
+        pass
+    locator = {"run_id": run_id}
+    if terminal_path.exists() and not terminal_path.is_symlink() and terminal_path.is_file():
+        locator["terminal_receipt"] = terminal_path.name
+        _sanitized_progress(f"receipt {run_id} terminal")
+    try:
+        setattr(exc, "locator", locator)
+    except Exception:
+        pass
+
+
+def execute(
+    preflight_report: dict[str, Any],
+    repo_root: Path | str,
+    *,
+    codex_binary: str = "codex",
+    output_root: Optional[Path | str] = None,
+) -> tuple[dict[str, Any], Path]:
+    repo = Path(repo_root).resolve()
+    config = preflight_report["config"]
+    if config.get("benchmark_id") in RETIRED_BENCHMARK_IDS or preflight_report.get("status") == "retired-non-retryable":
+        raise BenchmarkError("benchmark_retired_non_retryable")
+    pilot_home = Path(preflight_report["pilot_home"]).resolve()
+    runtime_codex = str(preflight_report.get("codex", {}).get("_executable_path") or codex_binary)
+    root = Path(output_root).expanduser().resolve(strict=False) if output_root else pilot_home / "benchmark-runs"
+    allowed_output = (pilot_home / "benchmark-runs").resolve(strict=False)
+    try:
+        root.relative_to(allowed_output)
+    except ValueError as exc:
+        raise BenchmarkError("output_root_unsafe") from exc
+    if root.exists():
+        _ensure_private_directory(root)
+    else:
+        parent = root.parent.resolve(strict=True)
+        if parent != pilot_home.resolve() and pilot_home.resolve() not in parent.parents:
+            raise BenchmarkError("output_root_unsafe")
+        root.mkdir(mode=0o700)
+    if _prior_attempt_exists(root, config.get("benchmark_id", "")):
+        raise BenchmarkError("prior_benchmark_attempt")
+    _claim_benchmark(root, config["benchmark_id"])
+    run_id = "br1-" + secrets.token_hex(8)
+    run_dir = root / run_id
+    _ensure_private_directory(run_dir)
+    workspaces = run_dir / "workspaces"
+    captures = run_dir / "captures"
+    _ensure_private_directory(workspaces)
+    _ensure_private_directory(captures)
+    journal = run_dir / "run-state.jsonl"
+    started_at = _utc_now()
+    _journal_append(journal, {"event": "run_created", "run_id": run_id, "benchmark_id": config["benchmark_id"], "timestamp": started_at, "model_calls_started": 0})
+    _sanitized_progress(f"run {run_id} created")
+    results: dict[str, dict[str, Any]] = {}
+    completed: list[str] = []
+    active_arm: Optional[str] = None
+    calls_started = 0
+    try:
+        _, prompt_bytes = _safe_file(repo, config["prompt"]["path"])
+        prompt = prompt_bytes.decode("utf-8")
+        for arm_row in config["arms"]:
+            current = verify_benchmark(repo, preflight_report["benchmark_config_path"])
+            if any(current[key] != preflight_report[key] for key in ("benchmark_config_sha256", "fixture_manifest_sha256", "prompt_sha256", "oracle_sha256", "pilot_plan_sha256")):
+                raise BenchmarkError("benchmark_drift_after_preflight")
+            arm = arm_row["arm"]
+            active_arm = arm
+            if preflight_report.get("codex", {}).get("capabilities"):
+                try:
+                    version_now = subprocess.run([runtime_codex, "--version"], text=True, capture_output=True, timeout=10, check=False)
+                except (OSError, subprocess.TimeoutExpired) as exc:
+                    raise BenchmarkError("codex_unavailable") from exc
+                observed_version = version_now.stdout.strip().splitlines()[0][:120] if version_now.returncode == 0 and version_now.stdout.strip() else ""
+                observed_digest = _codex_executable_sha256(runtime_codex)
+                if (
+                    not _safe_runtime_text(observed_version)
+                    or observed_version != preflight_report.get("codex", {}).get("version")
+                    or observed_digest != preflight_report.get("codex", {}).get("executable_sha256")
+                ):
+                    raise BenchmarkError("codex_identity_drift")
+                observed_capabilities = _codex_capabilities(runtime_codex, pilot_home)
+                expected_fingerprint = preflight_report["codex"]["capabilities"].get("fingerprint")
+                if observed_capabilities.get("fingerprint") != expected_fingerprint:
+                    raise BenchmarkError("codex_capability_drift")
+            _sanitized_progress(f"arm starting {arm}")
+            # Write-ahead: conservatively count before Popen can occur.
+            calls_started += 1
+            _journal_append(journal, {"event": "arm_launching", "arm": arm, "timestamp": _utc_now(), "model_calls_started": calls_started})
+            workspace = workspaces / arm
+            capture = captures / arm
+            _copy_fixture(repo, config, workspace)
+            _ensure_private_directory(capture)
+            before = _workspace_state(workspace)
+            results[arm] = _arm_result(repo, config, arm, runtime_codex, pilot_home, workspace, capture, prompt, before, progress=_sanitized_progress)
+            _journal_append(journal, {"event": "arm_terminal", "arm": arm, "timestamp": _utc_now(), "disposition": results[arm]["disposition"], "model_calls_started": calls_started})
+            if results[arm].get("timed_out"):
+                raise BenchmarkError("arm_timeout")
+            completed.append(arm)
+            active_arm = None
+            _sanitized_progress(f"arm terminal {arm} {results[arm]['disposition']}")
+            post_environment = pilot_tool.verify_environments(repo / config["pilot_plan_path"], repo, pilot_home)
+            if not post_environment.get("ok") or any(row.get("matches") != 8 for row in post_environment.get("arms", {}).values()):
+                raise BenchmarkError("environment_drift")
+        receipt = _comparison_receipt(preflight_report, config, run_id, started_at, results)
+        if not validate_receipt(receipt):
+            raise BenchmarkError("receipt_validation_failed")
+        receipt_path = run_dir / "comparison-receipt.json"
+        _private_write(receipt_path, _canonical(receipt))
+        _journal_append(journal, {"event": "run_terminal", "timestamp": _utc_now(), "status": "completed", "model_calls_started": calls_started})
+        _sanitized_progress(f"receipt {run_id} comparison")
+        return receipt, receipt_path
+    except BaseException as exc:
+        _terminalize(
+            exc, run_dir, journal, run_id, started_at, active_arm,
+            completed, calls_started, preflight_report,
+        )
+        raise
 
 
 def _public_preflight(report: dict[str, Any]) -> dict[str, Any]:
-    return {key: report[key] for key in (
+    result = {key: report[key] for key in (
         "ok", "benchmark_id", "benchmark_config_sha256", "fixture_manifest_sha256",
         "prompt_sha256", "oracle_sha256", "pilot_plan_id", "pilot_plan_sha256",
         "repository", "codex", "environment_matches", "registered_count",
         "terminal_count", "model_calls_started", "arm_timeout_seconds",
         "total_model_timeout_seconds", "automatic_promotion", "directional_only",
-    )}
+    ) if key in report}
+    if isinstance(report.get("codex"), dict):
+        codex = report["codex"]
+        public_codex: dict[str, Any] = {
+            "version": codex.get("version") if _safe_runtime_text(codex.get("version")) else "unavailable",
+            "sandbox_smoke": codex.get("sandbox_smoke") is True,
+        }
+        digest = codex.get("executable_sha256")
+        if isinstance(digest, str) and HASH_RE.fullmatch(digest):
+            public_codex["executable_sha256"] = digest
+        if isinstance(codex.get("logins"), dict):
+            public_codex["logins"] = {label: codex["logins"].get(label) is True for label in ("control", "dynamic")}
+        capabilities = codex.get("capabilities")
+        if isinstance(capabilities, dict) and isinstance(capabilities.get("fingerprint"), str) and re.fullmatch(r"[0-9a-f]{16}", capabilities["fingerprint"]):
+            public_codex["capabilities"] = {"fingerprint": capabilities["fingerprint"], "required": CAPABILITY_REQUIRED}
+        result["codex"] = public_codex
+    if report.get("status"):
+        result["status"] = report["status"]
+    if report.get("retirement"):
+        result["retirement"] = report["retirement"]
+    return result
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -1058,9 +1591,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 2
     try:
         report = preflight(args.root, args.config, args.pilot_home, codex_binary=args.codex)
+        if report.get("status") != "retired-non-retryable":
+            _sanitized_progress("preflight accepted")
         if args.dry_run:
             print(json.dumps(_public_preflight(report), sort_keys=True, separators=(",", ":")))
             return 0
+        if report.get("status") == "retired-non-retryable":
+            print(json.dumps({**_public_preflight(report), "ok": False, "model_calls_started": 0}, sort_keys=True, separators=(",", ":")))
+            return 2
         approved = args.approve_model_calls
         if not approved and sys.stdin.isatty():
             print("This will make two sequential quota-consuming Codex calls, limited to 15 minutes each.")
@@ -1070,6 +1608,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             output.update({"ok": False, "status": "approval-required", "model_calls_started": 0})
             print(json.dumps(output, sort_keys=True, separators=(",", ":")))
             return 4
+        _sanitized_progress("approval accepted")
         receipt, receipt_path = execute(
             report, args.root, codex_binary=args.codex, output_root=args.output_root,
         )
@@ -1095,10 +1634,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 0 if public["ok"] else 3
     except (BenchmarkError, pilot_tool.PilotError) as exc:
         code = exc.code if hasattr(exc, "code") else "benchmark_failed"
-        print(json.dumps({"ok": False, "error": code, "automatic_promotion": False}, sort_keys=True, separators=(",", ":")))
+        output = {"ok": False, "error": code, "automatic_promotion": False}
+        if getattr(exc, "locator", None):
+            output.update(exc.locator)
+        print(json.dumps(output, sort_keys=True, separators=(",", ":")))
         return 2
     except KeyboardInterrupt:
-        print(json.dumps({"ok": False, "error": "interrupted", "automatic_promotion": False}, sort_keys=True, separators=(",", ":")))
+        output = {"ok": False, "error": "interrupted", "automatic_promotion": False}
+        if getattr(sys.exc_info()[1], "locator", None):
+            output.update(sys.exc_info()[1].locator)
+        print(json.dumps(output, sort_keys=True, separators=(",", ":")))
         return 130
 
 

@@ -49,11 +49,11 @@ must return compact evidence with exactly `scope`, `files_or_surfaces`,
 
 ## Policy stability and M4 pilot freeze
 
-The active M4 validation is the bounded
-[single-pair benchmark](M4_BENCHMARK.md). It freezes one fixture and compares
-the same prompt under both policies with 15 minutes per arm. The ten-slot
-observational protocol below was superseded before any start; it remains an
-auditable, empty baseline and must not be mixed with benchmark evidence.
+The bounded [single-pair benchmark](M4_BENCHMARK.md) started its all-Max
+control arm and was interrupted before a terminal result. The dynamic arm did
+not start. That benchmark is retired and non-retryable, and its partial evidence
+must not be mixed with a future window. The ten-slot observational protocol
+below was superseded before any start and remains an auditable, empty baseline.
 
 The policy is an experiment, not an invitation to continuous tuning. Before
 M4 starts, predeclare one comparison window of 10 registered milestone starts
@@ -103,9 +103,9 @@ promote a policy from an uncalibrated estimate unless the result is replicated.
 
 ### M4 entry conditions
 
-For the active validation command and decision rules, see
-[M4_BENCHMARK.md](M4_BENCHMARK.md). The legacy registry described below is not
-used by that command.
+For the retired validation command, incident boundary, and decision rules, see
+[M4_BENCHMARK.md](M4_BENCHMARK.md). No replacement window is currently
+authorized. The legacy registry described below is not a retry path.
 
 `config/m4-pilot.v1.json` and `scripts/pilot_tool.py` implement the entry gate:
 the frozen assignment ledger, isolated all-Max and dynamic environments,

@@ -1,10 +1,22 @@
-# M4 single-pair benchmark
+# M4 single-pair benchmark (v0.2.1 retired)
 
-M4 answers one question: can dynamic Luna reasoning complete the same coding
-task as the all-Max baseline with comparable quality and less estimated usage?
+The interrupted `m4-v0.2.1-single-pair-01` control is permanently
+non-retryable. A dry run reports `retired-non-retryable` with
+`model_calls_started: 0`; a live invocation stops before creating a run or
+launching Codex. Any future M4 run requires a separately approved protocol
+window and a new benchmark ID.
 
-The active validation is one bounded A/B pair. It is not the older ten-task
-observational schedule, and it does not require inventing future project work.
+Future IDs are also single-attempt: an atomic private claim closes concurrent
+launches, and any existing claim, write-ahead journal, terminal receipt, or
+comparison receipt naming that ID blocks execution before model work. A
+timed-out arm terminalizes the run and prevents the next arm from launching.
+
+M4 was designed to answer one question: can dynamic Luna reasoning complete
+the same coding task as the all-Max baseline with comparable quality and less
+estimated usage? The interrupted pair did not answer it.
+
+The retired design was one bounded A/B pair, not the older ten-task
+observational schedule. No replacement design is active.
 The old registry remains checked in only because its frozen hashes created the
 two already authenticated and readiness-tested `CODEX_HOME` environments. The
 benchmark never registers `m4-01` or writes to `.sol-luna/starts` or
@@ -37,14 +49,31 @@ the fixed hash and identical treatment of both arms provide the fairness check.
 Preflight and oracle overhead are outside the 30-minute model-execution budget.
 Raw JSONL, stderr, final messages, session state, and disposable source remain
 inside a private mode-`0700` run directory beneath the prepared pilot home.
+The runner writes an append-only write-ahead journal before each arm, prints
+only sanitized lifecycle heartbeats to stderr, and emits one private terminal
+receipt on interruption, timeout, launch failure, or environment drift. If the
+filesystem itself fails, terminalization preserves the original error and any
+receipt file that was successfully written. These
+receipts conservatively identify active/completed arms and calls started,
+never fabricate usage or oracle results, and always set
+`retry_allowed: false` and `automatic_promotion: false`.
 The runner caps capture and workspace growth, kills timed-out process groups,
 and treats concurrent session changes as unattributable evidence. The printed
 result contains only aggregate evidence; raw captures are never printed.
+Codex compatibility is checked by required subcommands/flags and a normalized
+capability fingerprint rather than a repository-wide version pin. A future
+window may qualify a newer Codex build, but its exact version and executable
+digest are then pinned across both arms so an in-place update cannot invalidate
+the comparison. The contract is rechecked immediately before each arm. Each
+future `codex exec` uses
+`--ignore-user-config` and `--strict-config`, with frozen root/role settings
+transported through explicit `-c` overrides; authentication and sessions stay
+in the existing `CODEX_HOME`.
 
-## Run it on the prepared Mac
+## Audit the retirement
 
-Use the same Python 3.11-or-newer interpreter and pilot home from the readiness
-receipt:
+The only supported invocation for this benchmark ID is the zero-model-call
+retirement audit:
 
 ```sh
 SOL_LUNA_PILOT_HOME="$HOME/codex-sol-luna-pilots/m4-v0.2.1-window-02"
@@ -53,27 +82,10 @@ PYTHONDONTWRITEBYTECODE=1 python3 scripts/run_m4_benchmark.py \
   --dry-run
 ```
 
-The dry run consumes no model quota. It must report two 8/8 environments, zero
-registered starts, two 900-second arm limits, a 1,800-second total limit, and
-`automatic_promotion: false`.
-
-To run from an interactive terminal, omit `--dry-run`. The command asks you to
-type `RUN` before either model call:
-
-```sh
-PYTHONDONTWRITEBYTECODE=1 python3 scripts/run_m4_benchmark.py \
-  --pilot-home "$SOL_LUNA_PILOT_HOME"
-```
-
-When a Codex task launches the command non-interactively, it must first run the
-dry run, show the aggregate preflight, and ask you to approve two
-quota-consuming calls. Only after approval may it run:
-
-```sh
-PYTHONDONTWRITEBYTECODE=1 python3 scripts/run_m4_benchmark.py \
-  --pilot-home "$SOL_LUNA_PILOT_HOME" \
-  --approve-model-calls
-```
+It must report `retired-non-retryable`, `retry_allowed: false`,
+`model_calls_started: 0`, and `automatic_promotion: false`. The retirement gate
+runs before pilot-home, login, sandbox, or Codex capability checks. Omitting
+`--dry-run` also stops before run creation; it is not a retry path.
 
 ## How to read the result
 

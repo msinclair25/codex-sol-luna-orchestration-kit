@@ -5,7 +5,7 @@ import stat
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -94,7 +94,261 @@ def _arm(disposition="accepted", duration=1000, coverage="complete-full-workflow
     }
 
 
+def _write_runtime(home: Path, *, control: bool = False) -> None:
+    (home / "AGENTS.md").write_text("frozen instructions")
+    (home / "agents").mkdir()
+    reasoning = {
+        "luna_scout_fast": "medium",
+        "luna_worker_fast": "high",
+        "luna_tester_fast": "medium",
+    }
+    sandboxes = {
+        "luna_scout_fast": "read-only",
+        "luna_worker_fast": "workspace-write",
+        "luna_tester_fast": "workspace-write",
+    }
+    for role in run_m4_benchmark.REQUIRED_ROLES:
+        effort = "max" if control else reasoning[role]
+        (home / "agents" / f"{role}.toml").write_text(
+            f'name = "{role}"\n'
+            f'description = "role"\n'
+            'model = "gpt-5.6-luna"\n'
+            f'model_reasoning_effort = "{effort}"\n'
+            'service_tier = "fast"\n'
+            f'sandbox_mode = "{sandboxes[role]}"\n'
+            'developer_instructions = "bounded"\n'
+        )
+
+
+def _future_report(pilot_home: Path, benchmark_id: str = "m4-future-test") -> dict:
+    verified = run_m4_benchmark.verify_benchmark(ROOT, CONFIG)
+    return {
+        "benchmark_id": benchmark_id,
+        "config": {**verified["config"], "benchmark_id": benchmark_id},
+        "pilot_home": pilot_home,
+        "benchmark_config_sha256": verified["benchmark_config_sha256"],
+        "fixture_manifest_sha256": verified["fixture_manifest_sha256"],
+        "prompt_sha256": verified["prompt_sha256"],
+        "oracle_sha256": verified["oracle_sha256"],
+        "pilot_plan_sha256": verified["pilot_plan_sha256"],
+        "repository": {"commit": "f" * 40, "branch": "test"},
+        "codex": {"version": "codex-cli test"},
+        "environment_matches": {"all-max-control": 8, "dynamic-v0.2.1": 8},
+        "benchmark_config_path": CONFIG,
+    }
+
+
 class M4BenchmarkTests(unittest.TestCase):
+    def test_retired_preflight_blocks_without_model_call(self):
+        with mock.patch.object(run_m4_benchmark, "_codex_facts") as facts:
+            result = run_m4_benchmark.preflight(ROOT, CONFIG, tempfile.mkdtemp(), codex_binary="codex")
+        self.assertEqual(result["status"], "retired-non-retryable")
+        self.assertEqual(result["model_calls_started"], 0)
+        facts.assert_not_called()
+
+    def test_command_uses_immutable_cli_transport_without_public_path_receipt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            _write_runtime(home)
+            command = run_m4_benchmark._codex_command("codex", home, Path("/private/ws"), Path("/private/capture/last"), "prompt", {"model": "gpt-5.6-sol", "model_reasoning_effort": "xhigh"})
+        self.assertIn("--ignore-user-config", command)
+        self.assertIn("--strict-config", command)
+        self.assertIn("features.fast_mode=true", command)
+        self.assertTrue(any("trust_level=\"trusted\"" in item for item in command))
+        self.assertTrue(any("model_reasoning_effort" in item for item in command))
+        self.assertTrue(any("config_file" in item for item in command))
+
+    def test_capability_contract_rejects_missing_flag(self):
+        class Result:
+            returncode = 0
+            stdout = "codex exec sandbox login --json"
+            stderr = ""
+        with mock.patch.object(run_m4_benchmark.subprocess, "run", return_value=Result()):
+            with self.assertRaisesRegex(run_m4_benchmark.BenchmarkError, "codex_capability_missing"):
+                run_m4_benchmark._codex_capabilities("codex", Path("/private/pilot"))
+
+    def test_policy_files_fail_closed_when_missing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(run_m4_benchmark.BenchmarkError, "runtime_agents_unreadable"):
+                run_m4_benchmark._codex_command("codex", Path(directory), Path("/private/ws"), Path("/private/last"), "p", {"model": "gpt-5.6-sol", "model_reasoning_effort": "xhigh"})
+
+    def test_prior_attempt_guard_reads_write_ahead_benchmark_id(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run = root / "br1-test"
+            run.mkdir()
+            (run / "run-state.jsonl").write_text('{"event":"run_created","benchmark_id":"m4-future"}\n')
+            self.assertTrue(run_m4_benchmark._prior_attempt_exists(root, "m4-future"))
+            self.assertFalse(run_m4_benchmark._prior_attempt_exists(root, "other"))
+
+    def test_prior_attempt_guard_rejects_symlinked_artifacts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run = root / "br1-test"
+            run.mkdir()
+            target = root / "unrelated.json"
+            target.write_text('{"benchmark_id":"other"}\n')
+            (run / "run-state.jsonl").symlink_to(target)
+            self.assertTrue(run_m4_benchmark._prior_attempt_exists(root, "m4-future"))
+
+    def test_retirement_evidence_requires_incident_facts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = Path(directory) / "retired.json"
+            evidence.write_text('{"benchmark_id":"m4-v0.2.1-single-pair-01","status":"retired-non-retryable","retry_allowed":false}')
+            with mock.patch.object(run_m4_benchmark, "RETIREMENT_EVIDENCE", evidence):
+                with self.assertRaisesRegex(run_m4_benchmark.BenchmarkError, "retirement_evidence_drift"):
+                    run_m4_benchmark.preflight(ROOT, CONFIG, Path(directory) / "missing", codex_binary="never")
+
+    def test_runtime_role_contract_rejects_semantic_drift(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            _write_runtime(home)
+            role = home / "agents" / "luna_worker_fast.toml"
+            role.write_text(role.read_text().replace('model = "gpt-5.6-luna"', 'model = "other"'))
+            with self.assertRaisesRegex(run_m4_benchmark.BenchmarkError, "runtime_role_unreadable"):
+                run_m4_benchmark._codex_command(
+                    "codex", home, Path("/private/ws"), Path("/private/last"),
+                    "prompt", {"model": "gpt-5.6-sol", "model_reasoning_effort": "xhigh"},
+                )
+
+    def test_duplicate_json_keys_fail_closed_for_events_and_sessions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            events = base / "events.jsonl"
+            events.write_text('{"type":"thread.started","type":"turn.completed","thread_id":"root"}\n')
+            with self.assertRaisesRegex(run_m4_benchmark.BenchmarkError, "duplicate_json_key"):
+                run_m4_benchmark._event_summary(events)
+            session = base / "session.jsonl"
+            session.write_text('{"type":"session_meta","payload":{"id":"a","id":"b"}}\n')
+            with self.assertRaisesRegex(run_m4_benchmark.BenchmarkError, "duplicate_json_key"):
+                run_m4_benchmark._session_meta(session)
+
+    def test_atomic_claim_is_private_and_nonretryable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            claim = run_m4_benchmark._claim_benchmark(root, "m4-future")
+            self.assertEqual(stat.S_IMODE(claim.stat().st_mode), 0o600)
+            with self.assertRaisesRegex(run_m4_benchmark.BenchmarkError, "prior_benchmark_attempt"):
+                run_m4_benchmark._claim_benchmark(root, "m4-future")
+
+    def test_journal_rejects_symlink(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "target"
+            target.write_text("unchanged")
+            journal = root / "journal"
+            journal.symlink_to(target)
+            with self.assertRaisesRegex(run_m4_benchmark.BenchmarkError, "journal_unsafe"):
+                run_m4_benchmark._journal_append(journal, {"event": "unsafe"})
+            self.assertEqual(target.read_text(), "unchanged")
+
+    def test_progress_rejects_path_like_or_unknown_messages(self):
+        output = io.StringIO()
+        with redirect_stderr(output):
+            run_m4_benchmark._sanitized_progress("run /Users/private created")
+            run_m4_benchmark._sanitized_progress("arm heartbeat all-max-control elapsed_seconds=30")
+        self.assertEqual(output.getvalue(), "arm heartbeat all-max-control elapsed_seconds=30\n")
+
+    def test_prompt_failure_after_run_creation_writes_terminal_receipt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pilot_home = Path(directory) / "pilot"
+            pilot_home.mkdir(mode=0o700)
+            report = _future_report(pilot_home, "m4-prompt-failure")
+            with mock.patch.object(run_m4_benchmark, "_safe_file", side_effect=run_m4_benchmark.BenchmarkError("prompt_unreadable")):
+                with self.assertRaises(run_m4_benchmark.BenchmarkError) as caught:
+                    run_m4_benchmark.execute(report, ROOT, codex_binary="never")
+            locator = caught.exception.locator
+            self.assertEqual(set(locator), {"run_id", "terminal_receipt"})
+            terminal = json.loads((pilot_home / "benchmark-runs" / locator["run_id"] / locator["terminal_receipt"]).read_text())
+            self.assertEqual(terminal["failure_code"], "prompt_unreadable")
+            self.assertEqual(terminal["model_calls_started"], 0)
+            self.assertFalse(terminal["retry_allowed"])
+            self.assertTrue(run_m4_benchmark._validate_terminal_receipt(terminal))
+
+    def test_terminal_write_failure_never_masks_original_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pilot_home = Path(directory) / "pilot"
+            pilot_home.mkdir(mode=0o700)
+            report = _future_report(pilot_home, "m4-terminal-write-failure")
+            original = run_m4_benchmark.BenchmarkError("prompt_unreadable")
+            with mock.patch.object(run_m4_benchmark, "_safe_file", side_effect=original), mock.patch.object(run_m4_benchmark, "_private_write", side_effect=OSError("disk")):
+                with self.assertRaises(run_m4_benchmark.BenchmarkError) as caught:
+                    run_m4_benchmark.execute(report, ROOT, codex_binary="never")
+            self.assertIs(caught.exception, original)
+            self.assertEqual(set(caught.exception.locator), {"run_id"})
+
+    def test_public_preflight_filters_internal_and_path_like_runtime_fields(self):
+        report = {
+            "ok": True,
+            "codex": {
+                "version": "/private/secret/codex",
+                "_executable_path": "/private/secret/codex",
+                "executable_sha256": "a" * 64,
+                "logins": {"control": True, "dynamic": True},
+                "sandbox_smoke": True,
+                "capabilities": {"fingerprint": "b" * 16, "required": {"secret": "/private/path"}},
+            },
+        }
+        public = run_m4_benchmark._public_preflight(report)
+        rendered = json.dumps(public)
+        self.assertNotIn("/private", rendered)
+        self.assertNotIn("_executable_path", rendered)
+        self.assertEqual(public["codex"]["version"], "unavailable")
+
+    def test_timeout_is_write_ahead_terminal_and_does_not_start_arm_two(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pilot_home = Path(directory) / "pilot"
+            pilot_home.mkdir(mode=0o700)
+            report = _future_report(pilot_home, "m4-timeout")
+
+            def timed_out(*args, **kwargs):
+                del args, kwargs
+                journals = list((pilot_home / "benchmark-runs").glob("br1-*/run-state.jsonl"))
+                records = [json.loads(line) for line in journals[0].read_text().splitlines()]
+                self.assertEqual(records[-1]["event"], "arm_launching")
+                self.assertEqual(records[-1]["model_calls_started"], 1)
+                return {"arm": "all-max-control", "disposition": "abandoned", "timed_out": True}
+
+            with mock.patch.object(run_m4_benchmark, "_arm_result", side_effect=timed_out) as arm_result:
+                with self.assertRaisesRegex(run_m4_benchmark.BenchmarkError, "arm_timeout") as caught:
+                    run_m4_benchmark.execute(report, ROOT, codex_binary="never")
+            self.assertEqual(arm_result.call_count, 1)
+            locator = caught.exception.locator
+            terminal = json.loads((pilot_home / "benchmark-runs" / locator["run_id"] / locator["terminal_receipt"]).read_text())
+            self.assertEqual(terminal["status"], "timed-out")
+            self.assertEqual(terminal["active_arm"], "all-max-control")
+            self.assertEqual(terminal["completed_arms"], [])
+            self.assertEqual(terminal["model_calls_started"], 1)
+
+    def test_mid_pair_runtime_identity_change_stops_before_model_launch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pilot_home = Path(directory) / "pilot"
+            pilot_home.mkdir(mode=0o700)
+            report = _future_report(pilot_home, "m4-identity-drift")
+            report["codex"] = {
+                "version": "codex-cli before",
+                "executable_sha256": "a" * 64,
+                "capabilities": {"fingerprint": "b" * 16},
+            }
+            version = mock.Mock(returncode=0, stdout="codex-cli after\n")
+            with mock.patch.object(run_m4_benchmark.subprocess, "run", return_value=version), mock.patch.object(run_m4_benchmark, "_codex_executable_sha256", return_value="a" * 64), mock.patch.object(run_m4_benchmark, "_arm_result") as arm_result:
+                with self.assertRaisesRegex(run_m4_benchmark.BenchmarkError, "codex_identity_drift") as caught:
+                    run_m4_benchmark.execute(report, ROOT, codex_binary="codex")
+            arm_result.assert_not_called()
+            locator = caught.exception.locator
+            terminal = json.loads((pilot_home / "benchmark-runs" / locator["run_id"] / locator["terminal_receipt"]).read_text())
+            self.assertEqual(terminal["model_calls_started"], 0)
+            self.assertEqual(terminal["failure_code"], "codex_identity_drift")
+
+    def test_main_error_never_reuses_a_stale_locator(self):
+        output = io.StringIO()
+        with mock.patch.object(run_m4_benchmark, "preflight", side_effect=run_m4_benchmark.BenchmarkError("preflight_failed")), redirect_stdout(output):
+            code = run_m4_benchmark.main(["--pilot-home", "/private/tmp/missing"])
+        self.assertEqual(code, 2)
+        result = json.loads(output.getvalue())
+        self.assertNotIn("run_id", result)
+        self.assertNotIn("terminal_receipt", result)
+
     def test_frozen_config_fixture_and_baselines_verify(self):
         result = run_m4_benchmark.verify_benchmark(ROOT, CONFIG)
         self.assertTrue(result["ok"])
@@ -362,8 +616,9 @@ print(json.dumps({{"type":"turn.completed","usage":{{"input_tokens":1}}}}))
             fake.write_text(fake_source)
             fake.chmod(0o700)
             verified = run_m4_benchmark.verify_benchmark(ROOT, CONFIG)
+            verified_config = {**verified["config"], "benchmark_id": "m4-future-test"}
             preflight = {
-                "config": verified["config"],
+                "config": verified_config,
                 "pilot_home": pilot_home,
                 "benchmark_config_sha256": verified["benchmark_config_sha256"],
                 "fixture_manifest_sha256": verified["fixture_manifest_sha256"],
@@ -395,7 +650,7 @@ print(json.dumps({{"type":"turn.completed","usage":{{"input_tokens":1}}}}))
             pilot_home.mkdir(mode=0o700)
             outside.mkdir(mode=0o700)
             report = {
-                "config": run_m4_benchmark.verify_benchmark(ROOT, CONFIG)["config"],
+                "config": {**run_m4_benchmark.verify_benchmark(ROOT, CONFIG)["config"], "benchmark_id": "m4-future-test"},
                 "pilot_home": pilot_home,
                 "benchmark_config_path": CONFIG,
             }

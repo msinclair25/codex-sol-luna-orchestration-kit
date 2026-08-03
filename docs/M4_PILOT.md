@@ -1,9 +1,10 @@
 # M4 observational pilot
 
-> This ten-slot protocol was superseded before its first measured start by the
-> simpler [M4 single-pair benchmark](M4_BENCHMARK.md). Its plan and tooling are
-> retained unchanged as an auditable baseline and to verify the two prepared
-> `CODEX_HOME` environments. Do not register `m4-01` for the active benchmark.
+> This ten-slot protocol was superseded before its first measured start. The
+> replacement [M4 single-pair benchmark](M4_BENCHMARK.md) began its control arm
+> and was interrupted, so it is now retired and non-retryable. This plan and
+> tooling remain only as an auditable baseline. Do not register `m4-01`, launch
+> either retired benchmark arm, or treat these files as a replacement window.
 
 M4 is a local, observational comparison. It uses the same Codex build and
 account with two persistent, isolated `CODEX_HOME` roots:
@@ -17,9 +18,10 @@ copies authentication or sessions, reads prompts or source, sends data, or
 promotes a policy. It adds no dashboard, server, database, MCP service, Sites
 surface, or plugin.
 
-The active plan is `m4-v0.2.1-window-02`. Window 01 was superseded before any
-measured start solely to replace its seven-day stale ceiling with a hard
-30-minute task deadline; its original plan is preserved under `pilot-plans/`.
+The last prepared plan was `m4-v0.2.1-window-02`. It is no longer active.
+Window 01 was superseded before any measured start solely to replace its
+seven-day stale ceiling with a hard 30-minute task deadline; its original plan
+is preserved under `pilot-plans/`.
 
 Codex documents `CODEX_HOME` as the stable way to relocate Codex state for the
 CLI, IDE extension, app server, and installers. The directory must already

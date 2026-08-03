@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "benchmark_id": "m4-v0.2.1-single-pair-01",
+  "status": "retired-non-retryable",
+  "reason": "interrupted-control-run",
+  "retry_allowed": false,
+  "model_calls_allowed": false,
+  "automatic_promotion": false,
+  "incident_facts": {
+    "control_arms_started": 1,
+    "dynamic_arms_started": 0,
+    "known_root_tokens_lower_bound": 178564,
+    "environment_matches_before_incident": {"control": "7/8", "dynamic": "8/8"},
+    "repository_and_frozen_hash_integrity_passed": true,
+    "comparison_receipt_present": false,
+    "root_terminal_event_present": false,
+    "replacement_window_authorized": false
+  },
+  "privacy_note": "No customer content, credentials, session identifiers, or local paths are recorded."
+}
