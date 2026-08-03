@@ -2,7 +2,7 @@
 
 **Sol leads. Luna specializes. Every milestone ends in evidence.**
 
-The advanced V0.2 orchestration and measurement edition for Codex. GPT-5.6
+The advanced V0.2.2 orchestration and measurement edition for Codex. GPT-5.6
 Sol owns planning, routing, integration, and final acceptance; dynamically
 routed GPT-5.6 Luna Fast roles scout, build, challenge, and test within explicit
 boundaries.
@@ -16,6 +16,11 @@ boundaries.
 > benchmark started its all-Max control arm but was interrupted before a
 > terminal result; the dynamic arm never started. That pair is permanently
 > retired and provides no policy comparison or savings claim.
+
+V0.2.2 adds one compatibility variable without retuning models: every Luna
+spawn is context-free (`fork_turns = "none"`), receives a self-contained task
+packet, and fails directly to Sol without a spawn retry. The frozen V0.2.1 M4
+inputs and immutable all-Max control bundle remain unchanged.
 
 The incident audit attributed at least 178,564 root tokens to the incomplete
 control workflow; child usage and total arm usage remain unknown. Automatic
@@ -166,6 +171,7 @@ codex-sol-luna-orchestration-kit/
 ├── LICENSE
 ├── SECURITY.md
 ├── AGENTS.md
+├── AGENTS.override.md
 ├── assets/
 │   ├── sol-luna-orchestration-system.png
 │   └── social-preview.jpg
@@ -179,7 +185,8 @@ codex-sol-luna-orchestration-kit/
 │   ├── m4-benchmark.v1.json
 │   ├── m4-pilot.v1.json
 │   ├── rate-card.v1.json
-│   └── routing-policy.v1.json
+│   ├── routing-policy.v1.json
+│   └── routing-policy.v1.1.json
 ├── control-bundles/
 │   └── all-max-v1/
 ├── schemas/
@@ -245,6 +252,13 @@ across both arms. Missing or changed capabilities fail before measured work.
 Seeing a model in an
 API account does not necessarily mean the same model is enabled in every Codex
 surface. Verify your own model picker or model catalog before installing.
+The active V0.2.2 contract requires context-free Luna launches; a task that
+cannot be expressed as a self-contained packet stays with Sol. The original
+V0.2.1 `AGENTS.md` and routing-policy file remain as frozen M4 inputs, while
+`AGENTS.override.md` and `routing-policy.v1.1.json` define new installations.
+The advisory evaluator requires callers to provide `fork_turns` explicitly;
+omission and history-fork values fail closed. It does not parse free-form task
+prose, so Sol still owns the judgment that a child packet is self-contained.
 The static verifier requires Python 3.11 or newer; older runtimes fail closed
 with a clear diagnostic because the policy relies on stdlib `tomllib`.
 
@@ -498,7 +512,7 @@ roles to one trusted repository instead, place them under that project's
 
 If a non-empty `~/.codex/AGENTS.override.md` exists, manually merge the
 **Role-based subagent policy** section there because Codex gives it precedence.
-Otherwise, copy this kit's `AGENTS.md` to `~/.codex/AGENTS.md` when absent, or
+Otherwise, copy this kit's `AGENTS.override.md` to `~/.codex/AGENTS.md` when absent, or
 merge the policy into the existing file. Do not overwrite unrelated
 instructions.
 
@@ -510,7 +524,7 @@ if [ -s "$HOME/.codex/AGENTS.override.md" ]; then
 elif [ -e "$HOME/.codex/AGENTS.md" ]; then
   echo "Merge the policy into $HOME/.codex/AGENTS.md"
 else
-  cp AGENTS.md "$HOME/.codex/AGENTS.md"
+  cp AGENTS.override.md "$HOME/.codex/AGENTS.md"
 fi
 ```
 
@@ -524,7 +538,7 @@ if ((Test-Path $override) -and (Get-Content $override -Raw).Trim()) {
 } elseif (Test-Path $destination) {
     Write-Host "Merge the policy into $destination"
 } else {
-    Copy-Item (Join-Path (Get-Location).Path "AGENTS.md") $destination
+    Copy-Item (Join-Path (Get-Location).Path "AGENTS.override.md") $destination
 }
 ```
 
@@ -630,8 +644,9 @@ and enter (the Max exception reason is explicit):
 
 ```text
 Spawn a luna_max_fast subagent for a bounded read-only analysis with max
-upgrade reason `genuine_ambiguity`. Have it calculate 6 × 7 and return only the
-integer. Wait for it and report the result.
+upgrade reason `genuine_ambiguity` and `fork_turns` set explicitly to `none`.
+Give it a self-contained task: calculate 6 × 7 and return only the integer.
+Wait for it and report the result. Do not retry if the spawn is rejected.
 ```
 
 Expected result: `42`.
@@ -639,7 +654,13 @@ Expected result: `42`.
 For a more complete, explicitly bounded check:
 
 ```text
-Use the custom Luna roles to run a read-only smoke test. Have Scout inspect a tiny specification, Worker describe—but not make—a bounded change, Critic review the proposal, and Tester validate an explicit acceptance condition. Wait for every role and report each status. Treat runtime model, reasoning, and tier metadata as observational only; the static contract remains authoritative for policy validation.
+Use the custom Luna roles to run a read-only smoke test. Set `fork_turns` to
+`none` explicitly on every spawn and give each child a self-contained task.
+Have Scout inspect a tiny specification, Worker describe—but not make—a bounded
+change, Critic review the proposal, and Tester validate an explicit acceptance
+condition. Wait for every role and report each status. Do not retry a rejected
+spawn. Treat runtime model, reasoning, and tier metadata as observational only;
+the static contract remains authoritative for policy validation.
 ```
 
 Every direct or child test can consume quota. Fast and Max availability and
@@ -647,7 +668,7 @@ limits depend on the account and workspace.
 
 ## Routing rules that matter
 
-The included `AGENTS.md` gives the Sol root these operating rules:
+The active `AGENTS.override.md` gives the Sol root these operating rules:
 
 1. Delegate only independent, bounded work that materially improves speed or
    accuracy.
@@ -656,14 +677,16 @@ The included `AGENTS.md` gives the Sol root these operating rules:
    to Sol.
 3. Give every child an outcome, relevant inputs, ownership or read-only scope,
    constraints, acceptance checks, evidence requirements, and a deadline.
-4. Never run overlapping writers concurrently; exact and directory-prefix
+4. Explicitly use `fork_turns = "none"` for Luna, pass a self-contained task,
+   and route a rejected spawn directly to Sol without retrying or substitution.
+5. Never run overlapping writers concurrently; exact and directory-prefix
    ownership conflicts are rejected.
-5. Serialize dependent work in waves; parallelize independent review and
+6. Serialize dependent work in waves; parallelize independent review and
    validation, with no more than three concurrently active lanes. Total lanes
    and waves are not capped by this policy.
-6. Keep commits, pushes, deployments, migrations, destructive cleanup, and
+7. Keep commits, pushes, deployments, migrations, destructive cleanup, and
    other external effects with Sol unless the user explicitly authorizes them.
-7. Require compact evidence from every role—`scope`, `files_or_surfaces`,
+8. Require compact evidence from every role—`scope`, `files_or_surfaces`,
    `commands_or_checks`, `assumptions`, `failures`, `risks`, `confidence`, and
    `recommendation`—and independently verify material
    claims before the final answer.
@@ -671,7 +694,7 @@ The included `AGENTS.md` gives the Sol root these operating rules:
 The practical default is one Worker at a time, followed by Critic and Tester in
 parallel. Trivial tasks should remain with Sol because orchestration overhead
 can be slower and noisier than doing the work directly. Max is only selected
-for the enumerated exception codes in `AGENTS.md`, including for general
+for the enumerated exception codes in `AGENTS.override.md`, including for general
 analysis.
 
 ## Safety and privacy
@@ -700,6 +723,9 @@ See [SECURITY.md](SECURITY.md) for the public-reporting policy.
 
 If direct Luna works but a custom Luna agent does not, the likely issue is the
 current launcher/model registry or workspace policy—not the role prompt itself.
+Do not repair a rejected custom-role spawn by omitting `fork_turns` or using a
+full-history fork. Start from a self-contained `fork_turns = "none"` request;
+if that is rejected, keep the work with Sol and record the compatibility issue.
 
 ### Custom roles are missing
 

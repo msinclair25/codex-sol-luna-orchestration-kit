@@ -33,6 +33,8 @@ AGENTS_END = "# <<< sol-luna-orchestration-kit managed block <<<\n"
 KNOWN_EXACT_AGENTS_REVISIONS = frozenset({
     # V0.2 policy before the M4 stability guardrail. Exact-match only.
     "b608e3436ec958c140a5e718c9f24e5231512e8f8f57af7cce174c72eb3fd249",
+    # Frozen V0.2.1 policy used by the retired M4 inputs. Exact-match only.
+    "769910295dc442b19366f8ef7d6a073e4f22c47bdfc76999dcff74ac53ffb23e",
 })
 MAX_AGENTS_BYTES = 32 * 1024
 MAX_CONFIG_BYTES = 256 * 1024
@@ -549,7 +551,7 @@ def install(
         raise InstallError("codex_home_outside_home") from exc
     if not relative_codex_home.parts:
         raise InstallError("codex_home_equals_home")
-    agents_source = _read(repo / "AGENTS.md", MAX_AGENTS_BYTES)
+    agents_source = _read(repo / routing_policy.POLICY_AGENTS_RELATIVE, MAX_AGENTS_BYTES)
     config_source = _read(repo / "config-snippet.toml", MAX_CONFIG_BYTES)
     plan: Dict[str, Any] = {"roles": [], "agents": None, "config": None, "usage": "declined" if not with_usage else None}
     writes: Dict[Path, bytes] = {}

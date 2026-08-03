@@ -59,6 +59,11 @@ it.
 
 ## Entry-gate setup
 
+> **RETIRED REFERENCE — DO NOT RUN:** The commands below document the frozen
+> V0.2.1 setup only. They are not an authorized retry or replacement window.
+> Any future experiment requires a newly approved protocol, plan hash, and
+> benchmark ID before setup or model work begins.
+
 Run these commands from the repository root. Choose a dedicated path that is
 not your everyday `~/.codex` directory:
 

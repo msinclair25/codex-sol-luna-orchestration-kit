@@ -25,9 +25,10 @@ except ImportError:  # pragma: no cover - supported Python versions include it.
 
 
 SCHEMA_VERSION = 1
-POLICY_VERSION = "routing-policy.v1"
+POLICY_VERSION = "routing-policy.v1.1"
 DEFAULT_ROOT = Path(__file__).resolve().parents[1]
-POLICY_RELATIVE = "config/routing-policy.v1.json"
+POLICY_RELATIVE = "config/routing-policy.v1.1.json"
+POLICY_AGENTS_RELATIVE = "AGENTS.override.md"
 AGENTS_RELATIVE = "AGENTS.md"
 MANAGED_AGENTS_START = "# >>> sol-luna-orchestration-kit managed block >>>\n"
 MANAGED_AGENTS_END = "# <<< sol-luna-orchestration-kit managed block <<<\n"
@@ -41,6 +42,14 @@ MAX_OWNERSHIP_ENTRIES = 2048
 MAX_CONFLICTS = 256
 MAX_LANES = 3
 MAX_CONCURRENT_LANES = MAX_LANES
+LUNA_TRANSPORT = {
+    "fork_turns": "none",
+    "history_inherited": False,
+    "assignment": "self-contained",
+    "nested_delegation": False,
+    "on_spawn_error": "sol",
+    "retry_spawn": False,
+}
 MAX_UPGRADE_REASON_CODES = (
     "genuine_ambiguity",
     "cross_cutting_risk",
@@ -189,6 +198,7 @@ REQUEST_FIELDS = {
     "reasoning",
     "service_tier",
     "sandbox_mode",
+    "fork_turns",
     "evidence",
 }
 
@@ -446,6 +456,7 @@ def _contract_shape(contract: Any) -> List[str]:
         "root",
         "runtime",
         "roles",
+        "transport",
         "split",
         "concurrency",
         "max_upgrade_reason_codes",
@@ -474,7 +485,7 @@ def _contract_shape(contract: Any) -> List[str]:
     else:
         if set(runtime) != {"agents_path", "agents_sha256", "config_snippet_path", "config_snippet_sha256"}:
             errors.append("unknown_runtime_key")
-        if runtime.get("agents_path") != AGENTS_RELATIVE or not isinstance(runtime.get("agents_sha256"), str) or not SHA256.fullmatch(runtime.get("agents_sha256", "")):
+        if runtime.get("agents_path") != POLICY_AGENTS_RELATIVE or not isinstance(runtime.get("agents_sha256"), str) or not SHA256.fullmatch(runtime.get("agents_sha256", "")):
             errors.append("runtime_agents_contract")
         if runtime.get("config_snippet_path") != SNIPPET_RELATIVE or not isinstance(runtime.get("config_snippet_sha256"), str) or not SHA256.fullmatch(runtime.get("config_snippet_sha256", "")):
             errors.append("runtime_config_contract")
@@ -504,6 +515,10 @@ def _contract_shape(contract: Any) -> List[str]:
                 continue
             if not isinstance(value.get("sha256"), str) or not SHA256.fullmatch(value["sha256"]):
                 errors.append("role_hash_contract")
+
+    transport = contract.get("transport")
+    if not isinstance(transport, dict) or transport != LUNA_TRANSPORT:
+        errors.append("transport_contract")
 
     split = contract.get("split")
     expected_checks = [
@@ -680,7 +695,7 @@ def verify_contract(root: Path | str = DEFAULT_ROOT) -> Dict[str, Any]:
 
     assert isinstance(contract, dict)
     runtime = contract["runtime"]
-    agents_path = _safe_path(root_path, AGENTS_RELATIVE)
+    agents_path = _safe_path(root_path, POLICY_AGENTS_RELATIVE)
     snippet_path = _safe_path(root_path, SNIPPET_RELATIVE)
     agents_hash = _hash_file(agents_path)
     snippet_hash = _hash_file(snippet_path)
@@ -751,7 +766,7 @@ def verify_active_root(
         return report
     runtime = contract["runtime"]
     agents_path = _active_agents_path(active_path)
-    repository_agents = _safe_path(repository_path, AGENTS_RELATIVE)
+    repository_agents = _safe_path(repository_path, POLICY_AGENTS_RELATIVE)
     report["active_agents_match"], report["active_agents_managed_block"] = _agents_match(agents_path, repository_agents)
     report["active_agents_path"] = AGENTS_OVERRIDE_RELATIVE if agents_path is not None and agents_path.name == AGENTS_OVERRIDE_RELATIVE else AGENTS_RELATIVE
     if not report["active_agents_match"]:
@@ -910,6 +925,8 @@ def evaluate(request: Any, root: Path | str = DEFAULT_ROOT) -> Dict[str, Any]:
     if not isinstance(kind, str) or len(kind) > 48 or kind not in KIND_ALIASES:
         return _sol_fallback(["unsupported_kind"])
     canonical_kind = KIND_ALIASES[kind]
+    if "fork_turns" not in request:
+        return _sol_fallback(["fork_turns_required"])
 
     nested_split = request.get("split")
     if nested_split is not None:
@@ -964,6 +981,7 @@ def evaluate(request: Any, root: Path | str = DEFAULT_ROOT) -> Dict[str, Any]:
         ("reasoning", configured_kind["reasoning"]),
         ("service_tier", configured_kind["service_tier"]),
         ("sandbox_mode", configured_kind["sandbox_mode"]),
+        ("fork_turns", LUNA_TRANSPORT["fork_turns"]),
     ):
         if field in request and request[field] != expected:
             gate_values["tier_appropriate"] = False
@@ -982,6 +1000,7 @@ def evaluate(request: Any, root: Path | str = DEFAULT_ROOT) -> Dict[str, Any]:
         "reasoning": configured_kind["reasoning"],
         "service_tier": configured_kind["service_tier"],
         "sandbox_mode": configured_kind["sandbox_mode"],
+        "transport": dict(LUNA_TRANSPORT),
         "fallback": False,
         "kind": canonical_kind,
         "max_upgrade_reason": max_reason,

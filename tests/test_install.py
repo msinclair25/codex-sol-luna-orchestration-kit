@@ -15,7 +15,7 @@ from pathlib import Path
 from unittest import mock
 
 from scripts import install
-from scripts.routing_policy import verify_active_root
+from scripts.routing_policy import POLICY_AGENTS_RELATIVE, verify_active_root
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -183,8 +183,12 @@ class InstallerTests(unittest.TestCase):
             )
 
         self.assertEqual(plan["agents"], "refresh-known-exact")
-        self.assertEqual(agents.read_bytes(), (ROOT / "AGENTS.md").read_bytes())
+        self.assertEqual(agents.read_bytes(), (ROOT / POLICY_AGENTS_RELATIVE).read_bytes())
         self.assertTrue(plan["verification"]["ok"])
+
+    def test_frozen_v021_policy_is_an_explicit_refresh_source(self):
+        frozen_digest = hashlib.sha256((ROOT / "AGENTS.md").read_bytes()).hexdigest()
+        self.assertIn(frozen_digest, install.KNOWN_EXACT_AGENTS_REVISIONS)
 
     def test_conflicts_fail_closed_and_repeat_is_idempotent(self):
         self.codex.mkdir()

@@ -319,8 +319,8 @@ class SolLunaStatusTests(unittest.TestCase):
             "--as-of", "2026-08-02T23:45:00Z",
         )
         self.assertEqual(ready["pilot"]["state"], "ready")
-        self.assertTrue(ready["drift"]["active_runtime"])
-        self.assertIn("register only the next predeclared M4 slot", ready["routing_recommendation"])
+        self.assertFalse(ready["drift"]["active_runtime"])
+        self.assertIn("control or rate-card drift requires review", ready["routing_recommendation"])
         pilot_tool.register_start(
             ROOT / "config" / "m4-pilot.v1.json",
             ROOT,
@@ -351,7 +351,7 @@ class SolLunaStatusTests(unittest.TestCase):
             "--as-of", "2026-08-03T00:15:00Z",
         )
         self.assertEqual(overdue["pilot"]["state"], "blocked")
-        self.assertIn("stop the M4 window", overdue["routing_recommendation"])
+        self.assertIn("control or rate-card drift requires review", overdue["routing_recommendation"])
 
     def test_active_drift_changes_recommendation_and_invalid_args_are_nonzero(self):
         temporary, base, receipts, sessions = self._workspace()

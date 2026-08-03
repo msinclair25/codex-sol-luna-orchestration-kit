@@ -1,10 +1,13 @@
 # Dynamic routing policy
 
-`config/routing-policy.v1.json` is the public, versioned contract for the
+`config/routing-policy.v1.1.json` is the active public contract for the
 Sol-root and Luna-role runtime policy. It is descriptive and advisory: it does
 not spawn agents, change Codex configuration, or replace Sol's judgment.
 The verifier requires Python 3.11 or newer for stdlib `tomllib`; older
 versions fail closed with a diagnostic instead of guessing at TOML semantics.
+The earlier `routing-policy.v1.json` and `AGENTS.md` remain unchanged as frozen
+V0.2.1 M4 inputs; `AGENTS.override.md` is the V0.2.2 policy source installed by
+the guided installer.
 
 ## Runtime contract
 
@@ -25,6 +28,26 @@ the Max path. Every route to Max, including general analysis, requires one
 exact reason code from the contract: `genuine_ambiguity`,
 `cross_cutting_risk`, `failed_high_attempt`, or
 `high_impact_adversarial_review`.
+
+## Context-free Luna transport
+
+Every routed Luna lane uses `fork_turns = "none"`; omitting the value, using
+`"all"`, or requesting a numeric history fork is not allowed. The assignment
+must be self-contained and include the outcome, relevant inputs, scope or file
+ownership, constraints, acceptance checks, evidence contract, risk boundary,
+and deadline. Work that cannot meet that boundary stays with Sol.
+
+Luna children return only to Sol and do not coordinate proactively with other
+children. Sol serializes dependencies. A rejected or unavailable Luna spawn is
+not retried or silently substituted: the evaluator's operational contract is
+direct Sol fallback. The routing result exposes the exact transport object so
+callers do not have to infer these settings. The evaluator requires callers to
+provide `fork_turns` explicitly and fails closed when it is missing.
+
+The evaluator does not parse or grade free-form task prose, so it cannot prove
+that an assignment is truly self-contained. That part remains an instruction-
+level contract enforced by Sol's task packet and independent acceptance checks,
+not a security boundary or a guarantee supplied by the advisory evaluator.
 
 ## SPLIT gate
 
@@ -128,7 +151,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 scripts/routing_policy.py verify --format json
 ```
 
 The verifier checks the JSON schema, safe repository-relative paths, SHA-256
-hashes for `AGENTS.md` and all five role files, role TOML settings, and the
+hashes for `AGENTS.override.md` and all five role files, role TOML settings, and the
 config snippet's concurrency setting. `runtime_root_match` is true only when
 the checked-in runtime files match the contract. Any malformed contract or
 runtime drift fails closed; no files are written.
