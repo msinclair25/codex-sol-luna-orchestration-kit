@@ -262,6 +262,40 @@ prose, so Sol still owns the judgment that a child packet is self-contained.
 The static verifier requires Python 3.11 or newer; older runtimes fail closed
 with a clear diagnostic because the policy relies on stdlib `tomllib`.
 
+### Luna support boundary
+
+As of August 3, 2026, OpenAI's
+[subagent guide](https://learn.chatgpt.com/docs/agent-configuration/subagents)
+explicitly recommends `gpt-5.6-luna` for fast, narrowly scoped agents and
+includes Luna custom-agent examples. At the same time, the open-source Codex
+[model catalog](https://github.com/openai/codex/blob/main/codex-rs/models-manager/models.json)
+labels Sol and Terra as multi-agent V2 and Luna as V1, while the
+[V2 child-model filter](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/handlers/multi_agents_common.rs)
+requires a requested child model to match the active multi-agent backend.
+That makes Sol-to-Luna custom-role launches a version-, account-, and
+workspace-dependent compatibility boundary rather than a universal guarantee.
+
+This kit does not replace or edit Codex's model catalog. It narrows Luna to
+bounded, context-free lanes, prohibits nested Luna delegation, and routes a
+rejected spawn directly back to Sol without retrying or silently substituting
+a model. Work that depends on proactive child-to-child coordination or hidden
+conversation history stays with Sol.
+
+### Evidence so far
+
+| Evidence | Result | What it establishes |
+| --- | --- | --- |
+| Static policy and installer tests | Passing on the V0.2.2 branch | The checked-in configuration is internally consistent; this is not proof of runtime availability. |
+| [M1 role smoke](evidence/m1-role-smoke-2026-08-02.json) | All five Luna roles launched and completed on the tested account and Codex build | The configured roles worked in one observed environment. |
+| Maintainer operational sample (August 3, 2026 snapshot) | 63 of 64 privacy-safe named Luna role runs completed | Practical reliability evidence from mixed work; completion does not prove correctness or savings. |
+| M4 matched comparison | Interrupted control; dynamic arm not started; pair retired | No verified whole-workflow savings percentage exists yet. |
+
+The working economic hypothesis remains that dynamic reasoning and better Sol
+focus can reduce weighted usage on suitable workflows. The previous 20% figure
+is a benchmark target, not a result or promise. A new claim requires a fresh,
+predeclared comparison with quality and latency non-inferiority; ordinary use
+is useful reliability evidence but is not a controlled A/B test.
+
 Subagents generally use **more total tokens** than an equivalent single-agent
 run because every child performs its own model and tool work. This setup is for
 better throughput, cleaner parent context, specialization, and independent
