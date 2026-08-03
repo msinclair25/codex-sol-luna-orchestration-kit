@@ -4,8 +4,8 @@ Choose the smallest installation that matches what you want.
 
 | Goal | Install path | Changes global Codex roles or instructions? |
 | --- | --- | --- |
-| Use the workflow, status skill, and optional spawn guard | Git-backed plugin marketplace | No |
-| Use the five custom Luna roles with the complete Sol policy | Full guided installer | Yes, with a preview, backups, and verification |
+| Use the workflow, status skill, and optional spawn guard | Install the Git-backed plugin and stop | No |
+| Use the five custom Luna roles with the complete Sol policy | Install the plugin, then invoke `$sol-luna-setup` | Yes, with a preview, backups, and verification |
 
 ## Workflow-only plugin
 
@@ -19,7 +19,32 @@ codex plugin add sol-luna-orchestration-kit@sol-luna
 Review and trust the plugin hook before enabling it. Start a new thread after
 installation so Codex loads the bundled skills and hook.
 
-To update the plugin later:
+For the full role configuration, say in that new Codex task:
+
+```text
+$sol-luna-setup Install Sol/Luna with Standard Luna subagents.
+```
+
+Use `Fast` in the prompt when preferred. The skill runs the bundled
+transactional implementation internally; the user does not run a Python
+script or manipulate installer flags.
+
+To update everything later, say in Codex:
+
+```text
+$sol-luna-setup Update Sol/Luna.
+```
+
+The skill refreshes the marketplace and plugin, then stops because Codex must
+reload the replaced plugin. Restart Codex, start a new task, and use the prompt
+it provides:
+
+```text
+$sol-luna-setup Finish updating my Sol/Luna roles.
+```
+
+The underlying plugin-package commands remain available as a troubleshooting
+fallback:
 
 ```sh
 codex plugin marketplace upgrade sol-luna
@@ -30,12 +55,14 @@ Start another new thread after the reinstall. Marketplace refresh and plugin
 installation are separate operations; the second command refreshes the
 installed plugin cache from the newly fetched marketplace version.
 
-The plugin does not modify `~/.codex/config.toml`, global instructions, or
-custom role TOMLs. Use the full installer when you want the named Luna roles.
+Plugin installation alone does not modify `~/.codex/config.toml`, global
+instructions, or custom role TOMLs. The setup skill changes those surfaces
+only in response to an explicit install, update, or tier-switch request.
 
-## Full role installation
+## Full role installation without the skill
 
-Clone the repository and run the guided installer:
+The direct CLI remains a fallback for maintainers and troubleshooting. Clone
+the repository and run the guided installer:
 
 ```sh
 git clone https://github.com/msinclair25/codex-sol-luna-orchestration-kit.git
@@ -74,7 +101,16 @@ Every M6+ full install writes a bounded state file at
 and SHA-256 values for kit-managed assets—no prompts, repository paths, tokens,
 or credentials.
 
-Update the checkout and apply the recorded profile and usage choice:
+With the plugin installed, ask Codex:
+
+```text
+$sol-luna-setup Update Sol/Luna.
+```
+
+After the required restart, the skill's provided "Finish updating" prompt uses
+the refreshed plugin bundle and retains the recorded tier. For a
+direct-checkout fallback, update the checkout and apply the recorded profile
+and usage choice:
 
 ```sh
 git pull --ff-only
@@ -89,6 +125,13 @@ creates a new backup, verifies the active root, and preserves unrelated
 
 Switch tiers during an update explicitly:
 
+```text
+$sol-luna-setup Switch Luna subagents to Standard.
+$sol-luna-setup Switch Luna subagents to Fast.
+```
+
+Direct-checkout equivalents are:
+
 ```sh
 python3 scripts/install.py --update --luna-tier standard
 python3 scripts/install.py --update --luna-tier fast
@@ -97,10 +140,11 @@ python3 scripts/install.py --update --luna-tier fast
 The installer retains previously installed role aliases so switching back is
 safe, while the managed Sol instructions select only the active profile.
 
-An installation made before M6 has no state file. Run the normal installer
-once to establish state. If a pre-M6 optional status skill differs from the
-new source, inspect it and use the existing explicit conflict approvals for
-that one migration:
+An installation made before M6 has no state file. Ask `$sol-luna-setup` to
+install the desired tier; it previews a normal installation and stops for
+explicit approval if an older managed file conflicts. The direct-checkout
+fallback below remains available for a reviewed one-time migration when a
+pre-M6 optional status skill differs from the new source:
 
 ```sh
 python3 scripts/install.py --dry-run --luna-tier fast --with-usage \
@@ -115,6 +159,14 @@ after reviewing the preview and the conflicting files. Subsequent updates can
 use `--update` without broad conflict approval.
 
 ## Verify either profile
+
+Ask the skill to perform a read-only verification:
+
+```text
+$sol-luna-setup Verify my Sol/Luna installation.
+```
+
+The underlying direct commands remain available for diagnostics:
 
 ```sh
 python3 scripts/routing_policy.py verify --profile fast --format json
@@ -133,5 +185,7 @@ python3 scripts/routing_policy.py active-root \
 
 Codex documents Git-backed marketplace refresh through
 [`codex plugin marketplace upgrade`](https://learn.chatgpt.com/docs/developer-commands?surface=cli#cli-codex-plugin-marketplace)
-and custom subagent roles in the
+and distributes reusable workflows as
+[skills bundled in plugins](https://learn.chatgpt.com/docs/build-skills). Custom
+subagent roles are documented in the
 [Subagents guide](https://learn.chatgpt.com/docs/agent-configuration/subagents).

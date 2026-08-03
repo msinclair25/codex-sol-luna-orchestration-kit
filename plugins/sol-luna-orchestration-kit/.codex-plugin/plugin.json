@@ -1,6 +1,6 @@
 {
   "name": "sol-luna-orchestration-kit",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Evidence-driven Sol/Luna routing, status, and spawn guardrails for Codex",
   "author": {
     "name": "msinclair25",
@@ -14,14 +14,14 @@
   "interface": {
     "displayName": "Sol Luna Orchestration Kit",
     "shortDescription": "Route bounded Luna work with evidence and guardrails.",
-    "longDescription": "Adds Fast and Standard Sol/Luna routing profiles, privacy-safe milestone status, and an opt-in PreToolUse guard for supported subagent spawns.",
+    "longDescription": "Adds conversational setup and updates, Fast and Standard Sol/Luna routing profiles, privacy-safe milestone status, and an opt-in PreToolUse guard for supported subagent spawns.",
     "developerName": "msinclair25",
     "category": "Productivity",
     "capabilities": ["Skills", "Lifecycle hooks", "Read-only status"],
     "defaultPrompt": [
+      "Set up or update my Sol/Luna roles.",
       "Route this milestone with the Sol/Luna SPLIT policy.",
-      "Report Sol/Luna milestone status and drift.",
-      "Prepare a guarded Luna assignment envelope."
+      "Report Sol/Luna milestone status and drift."
     ]
   }
 }

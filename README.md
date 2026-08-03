@@ -36,7 +36,9 @@ assignment envelope, and declared wave ownership before supported `Agent`
 calls. It is a partial guardrail, not universal write enforcement. M5 did not
 promote the policy, claim savings, add a dashboard, or send local evidence to
 a hosted surface. M6 adds a selectable Standard configuration profile without
-claiming a controlled cost comparison. See [M5 plugin and guardrails](docs/M5_PLUGIN_GUARDRAILS.md).
+claiming a controlled cost comparison. M7 adds a bundled setup skill so users
+install, update, verify, and switch tiers conversationally instead of operating
+the Python installer. See [M5 plugin and guardrails](docs/M5_PLUGIN_GUARDRAILS.md).
 
 ## Choose the right kit
 
@@ -56,16 +58,34 @@ boundary and excluded local artifacts.
 
 ## Quick start
 
-For a first-time guided install on macOS or Linux, paste this in a terminal:
+Add the plugin once:
 
 ```sh
-git clone --depth 1 https://github.com/msinclair25/codex-sol-luna-orchestration-kit.git && python3 codex-sol-luna-orchestration-kit/scripts/install.py
+codex plugin marketplace add msinclair25/codex-sol-luna-orchestration-kit
+codex plugin add sol-luna-orchestration-kit@sol-luna
 ```
 
-The installer previews its plan, asks before installing the core, then asks
-separately about the optional local usage/status skill. It requires Python 3.11
-or newer, launches no models, enables no telemetry, and sends no data over the
-network.
+Start a new Codex task and say:
+
+```text
+$sol-luna-setup Install Sol/Luna with Standard Luna subagents.
+```
+
+Use `Fast` instead of `Standard` when you want priority service. The setup
+skill previews and applies the bundled transactional installer, preserves
+unrelated configuration, refuses unapproved conflicts, and verifies the
+result. The user never needs to operate its Python implementation.
+
+Later, update or switch tiers conversationally:
+
+```text
+$sol-luna-setup Update Sol/Luna.
+$sol-luna-setup Switch Luna subagents to Fast.
+```
+
+For a package update, the skill refreshes the Git marketplace and plugin, then
+hands back one restart prompt to finish updating the global roles from the new
+bundle. It never continues from a plugin snapshot that was just replaced.
 
 To inspect the repository without installing anything, run its local checks:
 
@@ -76,13 +96,10 @@ PYTHONDONTWRITEBYTECODE=1 python3 scripts/routing_policy.py verify --format json
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
 ```
 
-Use the [guided installer](#guided-installer-recommended) for setup; the manual
-steps remain available as a fallback. Model IDs, Fast access, and custom-agent
-availability still depend on your Codex version, account, and workspace
-policy.
-
-Add `--luna-tier standard` to the guided command when you prefer normal Luna
-service over Fast.
+Use the [setup skill](#installation) for normal installation and updates; the
+direct installer and manual steps remain troubleshooting fallbacks. Model IDs,
+Fast access, and custom-agent availability still depend on your Codex version,
+account, and workspace policy.
 
 ## Why this setup exists
 
@@ -360,10 +377,11 @@ savings without a comparable baseline.
 ## Optional plugin and spawn guard
 
 The repository now includes a source plugin at
-`plugins/sol-luna-orchestration-kit`. It packages the orchestration and status
-skills plus an opt-in `PreToolUse` hook for supported `Agent` calls. The core
-installer is still required for custom role TOMLs and global Sol instructions;
-the plugin does not silently modify either surface.
+`plugins/sol-luna-orchestration-kit`. It packages conversational setup,
+orchestration, and status skills plus an opt-in `PreToolUse` hook for supported
+`Agent` calls. Installing the plugin alone does not modify custom roles or
+global instructions. The setup skill changes those surfaces only after the
+user explicitly asks it to install, update, or switch profiles.
 
 For workflow-only installation from GitHub:
 
@@ -374,7 +392,7 @@ codex plugin add sol-luna-orchestration-kit@sol-luna
 
 The plugin supports both `fast` and `standard` routing envelopes. See the
 [install and update guide](docs/INSTALLING_AND_UPDATING.md) for marketplace
-updates and the full-role installer.
+updates and the full-role setup skill.
 
 Validate the bundle before local marketplace installation or publication:
 
@@ -435,32 +453,53 @@ There are now two supported paths:
 
 - **Workflow-only:** install the Git-backed plugin for the skills, status, and
   optional guard without changing global roles or instructions.
-- **Full roles:** use the guided installer for custom Luna roles, global Sol
-  policy, backups, state-tracked updates, and a Fast or Standard tier choice.
+- **Full roles:** invoke the bundled `$sol-luna-setup` skill for custom Luna
+  roles, global Sol policy, backups, state-tracked updates, and a Fast or
+  Standard tier choice.
 
 See [Installing and updating](docs/INSTALLING_AND_UPDATING.md) for the concise
 decision guide and exact update commands.
 
-### Guided installer (recommended)
+### Setup skill (recommended)
 
-From an existing checkout, run:
+After installing the plugin and starting a new task, ask Codex:
 
-```sh
-python3 scripts/install.py
+```text
+$sol-luna-setup Install Sol/Luna with Fast Luna subagents.
+$sol-luna-setup Install Sol/Luna with Standard Luna subagents.
 ```
 
-Fast Luna is the compatibility default. Choose Standard Luna explicitly:
+The skill finds the trusted plugin bundle, previews the exact managed changes,
+applies the requested profile, and verifies the active installation. A direct
+request authorizes ordinary managed writes, but conflicting user edits still
+stop for a separate explanation and approval.
 
-```sh
-python3 scripts/install.py --luna-tier standard
+For a package update, start with this prompt:
+
+```text
+$sol-luna-setup Update Sol/Luna.
 ```
 
-It performs the following bounded flow:
+The skill stops after refreshing the plugin. Restart Codex, begin a new task,
+and use its handoff prompt:
+
+```text
+$sol-luna-setup Finish updating my Sol/Luna roles.
+```
+
+Tier switches and verification do not need the package-update handoff:
+
+```text
+$sol-luna-setup Switch Luna subagents to Standard.
+$sol-luna-setup Verify my Sol/Luna installation.
+```
+
+The internal installer performs the following bounded flow:
 
 1. Verifies the checked-in core routing policy and all five role files before
    any write.
-2. Prints a JSON preview and asks whether to install the core roles,
-   instructions, and owned configuration keys.
+2. Runs a non-mutating preview and summarizes the core roles, instructions,
+   and owned configuration keys in plain language.
 3. Preserves unrelated `config.toml` settings and existing global instructions.
    A non-empty `AGENTS.override.md` is updated because that is the active global
    instruction file; otherwise the managed policy is placed in `AGENTS.md`.
@@ -468,12 +507,21 @@ It performs the following bounded flow:
    `~/codex-config-backups/sol-luna-<unique-id>/`, writes an installation
    receipt listing every created or replaced relative path, and verifies the
    installed active root.
-5. Separately asks whether to install the optional privacy-safe local
-   usage/status skill and hash-verifies its three installable assets. It never
-   enables OTLP or another telemetry exporter.
+5. Uses the plugin's bundled privacy-safe status skill instead of installing a
+   duplicate global copy. It never enables OTLP or another telemetry exporter.
 6. Records only managed-asset hashes and the chosen tier in
    `~/.codex/.sol-luna-install-state.json` so later updates can distinguish an
    unchanged managed file from a user edit.
+
+### Direct installer (fallback)
+
+Maintainers and troubleshooting sessions can still run the deterministic
+installer from a trusted checkout:
+
+```sh
+python3 scripts/install.py
+python3 scripts/install.py --luna-tier standard
+```
 
 Core and optional usage are separate transactions. If the optional phase is
 declined or blocked, the already verified core remains installed and the
@@ -537,16 +585,11 @@ You can paste this request into a Codex task instead of entering shell steps
 yourself:
 
 ```text
-Install the Codex Sol/Luna Orchestration Kit globally from
-https://github.com/msinclair25/codex-sol-luna-orchestration-kit. If I do not
-already have a trusted checkout, clone it into a permanent local folder. Read
-scripts/install.py, run it interactively, show me its preview, and relay its
-Fast-or-Standard tier, core, and optional usage/status questions without
-choosing for me. Do not
-enable telemetry, install a plugin, overwrite a conflict, or remove unrelated
-Codex settings or instructions without my explicit approval. When finished,
-show me the verification result plus backup and receipt paths, then remind me
-to restart Codex.
+Install the Sol/Luna Orchestration Kit plugin from
+https://github.com/msinclair25/codex-sol-luna-orchestration-kit using its
+Git-backed Codex marketplace. Do not clone the repository or modify my global
+roles and instructions yet. After the plugin is installed, tell me to restart
+Codex and give me the exact `$sol-luna-setup` prompt for a Standard install.
 ```
 
 ### Manual installation

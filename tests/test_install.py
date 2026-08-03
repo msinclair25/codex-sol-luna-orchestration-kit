@@ -498,6 +498,26 @@ class InstallerTests(unittest.TestCase):
             install.install(ROOT, self.codex, self.home, apply=False, with_usage=False, update=True)
 
         install.install(ROOT, self.codex, self.home, apply=True, with_usage=True)
+        role = self.codex / "agents" / "luna_scout_fast.toml"
+        before_role = role.read_bytes()
+        before_state = (self.codex / install.INSTALL_STATE_NAME).read_bytes()
+        preview_output = io.StringIO()
+        with contextlib.redirect_stdout(preview_output):
+            preview_result = install.main([
+                "--repo-root", str(ROOT),
+                "--codex-home", str(self.codex),
+                "--home", str(self.home),
+                "--dry-run",
+                "--update",
+                "--without-usage",
+            ])
+        self.assertEqual(preview_result, 0)
+        preview = json.loads(preview_output.getvalue().splitlines()[-1])
+        self.assertEqual(preview["mode"], "update")
+        self.assertEqual(preview["status"], "dry-run")
+        self.assertEqual(role.read_bytes(), before_role)
+        self.assertEqual((self.codex / install.INSTALL_STATE_NAME).read_bytes(), before_state)
+
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             result = install.main([

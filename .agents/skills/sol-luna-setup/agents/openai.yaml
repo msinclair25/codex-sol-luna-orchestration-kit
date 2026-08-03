@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sol/Luna Setup"
+  short_description: "Install, update, and switch Sol/Luna profiles"
+  default_prompt: "Use $sol-luna-setup to set up Sol/Luna with Standard Luna subagents."

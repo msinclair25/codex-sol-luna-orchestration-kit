@@ -1,3 +1,4 @@
+import importlib.util
 import json
 import os
 import shutil
@@ -97,7 +98,7 @@ class M5PluginTests(unittest.TestCase):
     def test_manifest_and_default_hook_discovery_are_valid(self):
         manifest = json.loads((PLUGIN / ".codex-plugin" / "plugin.json").read_text())
         self.assertEqual(manifest["name"], PLUGIN.name)
-        self.assertEqual(manifest["version"], "0.2.0")
+        self.assertEqual(manifest["version"], "0.2.1")
         self.assertEqual(manifest["skills"], "./skills/")
         self.assertNotIn("hooks", manifest)
         self.assertIsInstance(manifest["interface"]["defaultPrompt"], list)
@@ -109,7 +110,15 @@ class M5PluginTests(unittest.TestCase):
         command = matcher["hooks"][0]["command"]
         self.assertIn("$PLUGIN_ROOT/scripts/pre_tool_use_guard.py", command)
         self.assertTrue((PLUGIN / "skills" / "sol-luna-orchestration" / "SKILL.md").is_file())
+        self.assertTrue((PLUGIN / "skills" / "sol-luna-setup" / "SKILL.md").is_file())
         self.assertTrue((PLUGIN / "skills" / "sol-luna-status" / "SKILL.md").is_file())
+        setup = (PLUGIN / "skills" / "sol-luna-setup" / "SKILL.md").read_text()
+        self.assertIn("without manually operating the installer", setup)
+        self.assertIn("--dry-run --update", setup)
+        self.assertIn("Never pass `--approve-conflicts`", setup)
+        self.assertIn("codex plugin marketplace upgrade sol-luna", setup)
+        self.assertIn("codex plugin marketplace list --json", setup)
+        self.assertIn("Finish updating my Sol/Luna roles", setup)
 
         marketplace = json.loads((ROOT / ".agents" / "plugins" / "marketplace.json").read_text())
         self.assertEqual(marketplace["name"], "sol-luna")
@@ -128,15 +137,45 @@ class M5PluginTests(unittest.TestCase):
             for source in sorted((ROOT / directory).rglob("*")):
                 if source.is_file() and "__pycache__" not in source.parts:
                     direct_pairs.append((source, PLUGIN / source.relative_to(ROOT)))
-        for name in ("pilot_tool.py", "receipt_tool.py", "routing_policy.py", "usage_report.py", "verify_control_bundle.py"):
+        for name in ("install.py", "pilot_tool.py", "receipt_tool.py", "routing_policy.py", "usage_report.py", "verify_control_bundle.py"):
             direct_pairs.append((ROOT / "scripts" / name, PLUGIN / "scripts" / name))
-        for source in sorted((ROOT / ".agents" / "skills" / "sol-luna-status").rglob("*")):
-            if source.is_file() and "__pycache__" not in source.parts:
-                destination = PLUGIN / "skills" / "sol-luna-status" / source.relative_to(ROOT / ".agents" / "skills" / "sol-luna-status")
-                direct_pairs.append((source, destination))
+        for skill_name in ("sol-luna-setup", "sol-luna-status"):
+            canonical_skill = ROOT / ".agents" / "skills" / skill_name
+            for source in sorted(canonical_skill.rglob("*")):
+                if source.is_file() and "__pycache__" not in source.parts:
+                    destination = PLUGIN / "skills" / skill_name / source.relative_to(canonical_skill)
+                    direct_pairs.append((source, destination))
         for source, destination in direct_pairs:
             self.assertTrue(destination.is_file(), destination)
             self.assertEqual(source.read_bytes(), destination.read_bytes(), destination)
+
+    def test_bundled_setup_installer_applies_standard_profile(self):
+        previous_dont_write_bytecode = sys.dont_write_bytecode
+        sys.dont_write_bytecode = True
+        try:
+            spec = importlib.util.spec_from_file_location("bundled_sol_luna_install", PLUGIN / "scripts" / "install.py")
+            self.assertIsNotNone(spec)
+            self.assertIsNotNone(spec.loader)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            with tempfile.TemporaryDirectory() as temporary:
+                home = Path(temporary) / "home"
+                home.mkdir()
+                codex_home = home / ".codex"
+                plan = module.install(
+                    PLUGIN,
+                    codex_home,
+                    home,
+                    apply=True,
+                    with_usage=False,
+                    luna_tier="standard",
+                )
+                self.assertTrue(plan["verification"]["ok"])
+                self.assertTrue((codex_home / "agents" / "luna_worker_standard.toml").is_file())
+                role = (codex_home / "agents" / "luna_worker_standard.toml").read_text()
+                self.assertNotIn("service_tier", role)
+        finally:
+            sys.dont_write_bytecode = previous_dont_write_bytecode
 
     def test_bundled_routing_contract_verifies(self):
         result = subprocess.run(
