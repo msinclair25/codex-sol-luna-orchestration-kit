@@ -1,0 +1,20 @@
+# Merge these settings into ~/.codex/config.toml.
+# Do not overwrite unrelated existing configuration.
+
+model = "gpt-5.6-sol"
+model_reasoning_effort = "xhigh"
+
+# Leave the global service_tier unset for normal/Standard Sol service.
+# The selected Luna role files control their own tier: *_fast roles pin Fast,
+# while *_standard roles omit the override and use normal service.
+
+[features]
+fast_mode = true
+multi_agent = true
+
+[agents]
+max_concurrent_threads_per_session = 3
+
+# Compatibility note:
+# Do not initially set agents.default_subagent_model. Each custom role pins
+# gpt-5.6-luna directly, avoiding the launcher conflict observed in some builds.

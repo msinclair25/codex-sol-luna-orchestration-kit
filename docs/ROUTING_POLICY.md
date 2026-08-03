@@ -1,23 +1,33 @@
 # Dynamic routing policy
 
-`config/routing-policy.v1.json` is the public, versioned contract for the
-Sol-root and Luna-role runtime policy. It is descriptive and advisory: it does
-not spawn agents, change Codex configuration, or replace Sol's judgment.
+`config/routing-policy.v1.1.json` is the Fast contract and
+`config/routing-policy.standard.v1.1.json` is the Standard contract for the
+Sol-root and Luna-role runtime policy. They are descriptive and advisory: they
+do not spawn agents, change Codex configuration, or replace Sol's judgment.
 The verifier requires Python 3.11 or newer for stdlib `tomllib`; older
 versions fail closed with a diagnostic instead of guessing at TOML semantics.
+The earlier `routing-policy.v1.json` and `AGENTS.md` remain unchanged as frozen
+V0.2.1 M4 inputs; `AGENTS.override.md` is the V0.2.2 policy source installed by
+the guided installer.
 
 ## Runtime contract
 
 The root uses `gpt-5.6-sol`, the user's selected reasoning level, and Standard
-service by leaving the global `service_tier` unset. The role table is:
+service by leaving the global `service_tier` unset. Both profiles preserve the
+same reasoning and sandbox policy:
 
-| Work kind | Role | Reasoning | Tier | Sandbox |
+| Work kind | Fast role | Standard role | Reasoning | Sandbox |
 | --- | --- | --- | --- | --- |
-| `scout` | `luna_scout_fast` | `medium` | `fast` | `read-only` |
-| `worker` | `luna_worker_fast` | `high` | `fast` | `workspace-write` |
-| `critic` | `luna_critic_fast` | `high` | `fast` | `read-only` |
-| `tester` | `luna_tester_fast` | `medium` | `fast` | `workspace-write` |
-| `max` | `luna_max_fast` | `max` | `fast` | `read-only` |
+| `scout` | `luna_scout_fast` | `luna_scout_standard` | `medium` | `read-only` |
+| `worker` | `luna_worker_fast` | `luna_worker_standard` | `high` | `workspace-write` |
+| `critic` | `luna_critic_fast` | `luna_critic_standard` | `high` | `read-only` |
+| `tester` | `luna_tester_fast` | `luna_tester_standard` | `medium` | `workspace-write` |
+| `max` | `luna_max_fast` | `luna_max_standard` | `max` | `read-only` |
+
+Fast roles explicitly set `service_tier = "fast"`. Standard roles omit the
+key and inherit normal service. A route request selects the profile with
+`"profile":"fast"` or `"profile":"standard"`; omitted profile remains Fast
+for compatibility.
 
 Routine kinds include `scout`, `mapping`, `worker`, `implementation`, `write`,
 `critic`, `review`, `tester`, `test`, and `validation`. General `analysis` is
@@ -25,6 +35,26 @@ the Max path. Every route to Max, including general analysis, requires one
 exact reason code from the contract: `genuine_ambiguity`,
 `cross_cutting_risk`, `failed_high_attempt`, or
 `high_impact_adversarial_review`.
+
+## Context-free Luna transport
+
+Every routed Luna lane uses `fork_turns = "none"`; omitting the value, using
+`"all"`, or requesting a numeric history fork is not allowed. The assignment
+must be self-contained and include the outcome, relevant inputs, scope or file
+ownership, constraints, acceptance checks, evidence contract, risk boundary,
+and deadline. Work that cannot meet that boundary stays with Sol.
+
+Luna children return only to Sol and do not coordinate proactively with other
+children. Sol serializes dependencies. A rejected or unavailable Luna spawn is
+not retried or silently substituted: the evaluator's operational contract is
+direct Sol fallback. The routing result exposes the exact transport object so
+callers do not have to infer these settings. The evaluator requires callers to
+provide `fork_turns` explicitly and fails closed when it is missing.
+
+The evaluator does not parse or grade free-form task prose, so it cannot prove
+that an assignment is truly self-contained. That part remains an instruction-
+level contract enforced by Sol's task packet and independent acceptance checks,
+not a security boundary or a guarantee supplied by the advisory evaluator.
 
 ## SPLIT gate
 
@@ -48,6 +78,12 @@ must return compact evidence with exactly `scope`, `files_or_surfaces`,
 `recommendation`.
 
 ## Policy stability and M4 pilot freeze
+
+The bounded [single-pair benchmark](M4_BENCHMARK.md) started its all-Max
+control arm and was interrupted before a terminal result. The dynamic arm did
+not start. That benchmark is retired and non-retryable, and its partial evidence
+must not be mixed with a future window. The ten-slot observational protocol
+below was superseded before any start and remains an auditable, empty baseline.
 
 The policy is an experiment, not an invitation to continuous tuning. Before
 M4 starts, predeclare one comparison window of 10 registered milestone starts
@@ -87,7 +123,7 @@ with calibrated or replicated evidence and quality and latency
 non-inferiority. If benefit is absent, keep the stable policy, simplify, or
 revert instead of adding more controls or telemetry.
 
-The M4 checkpoint requires complete terminal receipt coverage for registered
+The legacy observational checkpoint requires complete terminal receipt coverage for registered
 terminal or overdue starts, no critical or high-severity defect regression, at
 least 80% spawn precision, and either a directional 20% reduction in total
 estimated weighted usage with quality and latency non-inferiority or a
@@ -95,16 +131,23 @@ documented quality or speed gain that justifies the difference. Ten milestones
 are directional evidence, not proof of a precise savings percentage; do not
 promote a policy from an uncalibrated estimate unless the result is replicated.
 
-### M4 entry conditions not implemented by V0.2
+### M4 entry conditions
 
-This freeze guardrail does not start the pilot. M0–M3 do not provide a
-registered-start and assignment ledger, an overdue deadline checker, a
-cross-family all-Max-versus-dynamic aggregation method, or predeclared quality
-and latency metric definitions. Before the first M4 start, define those bounded
-inputs and their evidence path. Until then, report M4 coverage, the total
-cross-policy comparison, and any promotion decision as blocked or unknown. Do
-not substitute manual estimates or add further controls to manufacture a
-result.
+For the retired validation command, incident boundary, and decision rules, see
+[M4_BENCHMARK.md](M4_BENCHMARK.md). No replacement window is currently
+authorized. The legacy registry described below is not a retry path.
+
+`config/m4-pilot.v1.json` and `scripts/pilot_tool.py` implement the entry gate:
+the frozen assignment ledger, isolated all-Max and dynamic environments,
+strictly sequential registered starts, 30-minute overdue checks, exact
+project/source/policy receipt joins, kill-criterion blocking, and predeclared
+comparison fields. They do not start Codex or register slot 1 by themselves.
+See [M4_PILOT.md](M4_PILOT.md) for setup and operating rules.
+
+That legacy comparison remains unknown until all 10 starts are registered and terminal
+with matching evidence. Missing full-workflow usage remains unknown. A complete
+window is only checkpoint-ready for human review; the tool never promotes a
+policy automatically.
 
 ## Static verification
 
@@ -112,10 +155,11 @@ Run from the repository root:
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/routing_policy.py verify --format json
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/routing_policy.py verify --profile standard --format json
 ```
 
 The verifier checks the JSON schema, safe repository-relative paths, SHA-256
-hashes for `AGENTS.md` and all five role files, role TOML settings, and the
+hashes for `AGENTS.override.md` and all five role files, role TOML settings, and the
 config snippet's concurrency setting. `runtime_root_match` is true only when
 the checked-in runtime files match the contract. Any malformed contract or
 runtime drift fails closed; no files are written.
@@ -125,6 +169,7 @@ the five role TOMLs) with this repository's contract, run:
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/routing_policy.py active-root \
+  --profile standard \
   --active-root /path/to/active-root \
   --active-config /path/to/config.toml \
   --format json
@@ -143,7 +188,7 @@ decision. For example:
 
 ```sh
 python3 scripts/routing_policy.py route \
-  --request '{"kind":"scout","separate":true,"provable":true,"large_enough":true,"isolated":true,"tier_appropriate":true,"ownership":{"scout":["docs/spec.md"]}}'
+  --request '{"kind":"scout","profile":"standard","fork_turns":"none","separate":true,"provable":true,"large_enough":true,"isolated":true,"tier_appropriate":true,"ownership":{"scout":["docs/spec.md"]}}'
 ```
 
 The result identifies the selected role or the Sol fallback and gives compact

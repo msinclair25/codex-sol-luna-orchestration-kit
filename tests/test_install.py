@@ -15,7 +15,7 @@ from pathlib import Path
 from unittest import mock
 
 from scripts import install
-from scripts.routing_policy import verify_active_root
+from scripts.routing_policy import POLICY_AGENTS_RELATIVE, verify_active_root
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -43,7 +43,7 @@ class InstallerTests(unittest.TestCase):
         self.assertTrue(receipt_path.is_file())
         receipt = json.loads(receipt_path.read_text())
         self.assertTrue(receipt["verification"]["ok"])
-        self.assertEqual(len(receipt["changes"]), 7)
+        self.assertEqual(len(receipt["changes"]), 8)
         self.assertTrue(all(change["path"].startswith("codex-home/") for change in receipt["changes"]))
         self.assertTrue(receipt_path.is_relative_to(self.home / install.BACKUP_DIRECTORY))
         self.assertFalse((self.home / ".agents" / "skills" / "sol-luna-status").exists())
@@ -183,8 +183,12 @@ class InstallerTests(unittest.TestCase):
             )
 
         self.assertEqual(plan["agents"], "refresh-known-exact")
-        self.assertEqual(agents.read_bytes(), (ROOT / "AGENTS.md").read_bytes())
+        self.assertEqual(agents.read_bytes(), (ROOT / POLICY_AGENTS_RELATIVE).read_bytes())
         self.assertTrue(plan["verification"]["ok"])
+
+    def test_frozen_v021_policy_is_an_explicit_refresh_source(self):
+        frozen_digest = hashlib.sha256((ROOT / "AGENTS.md").read_bytes()).hexdigest()
+        self.assertIn(frozen_digest, install.KNOWN_EXACT_AGENTS_REVISIONS)
 
     def test_conflicts_fail_closed_and_repeat_is_idempotent(self):
         self.codex.mkdir()
@@ -365,8 +369,8 @@ class InstallerTests(unittest.TestCase):
                 ("optional-usage", "applied"),
             ],
         )
-        self.assertEqual(records[1]["write_count"], 7)
-        self.assertEqual(records[3]["write_count"], 4)
+        self.assertEqual(records[1]["write_count"], 8)
+        self.assertEqual(records[3]["write_count"], 5)
         self.assertNotEqual(records[1]["receipt"], records[3]["receipt"])
         self.assertTrue(records[1]["verification"]["ok"])
         self.assertTrue(records[3]["verification"]["ok"])
@@ -396,6 +400,136 @@ class InstallerTests(unittest.TestCase):
         )
         self.assertEqual(pointer.read_text(), str(ROOT.resolve()) + "\n")
         self.assertEqual(plan["changes"], [{"action": "replace", "path": "home/.agents/skills/sol-luna-status/.sol-luna-kit-root"}])
+
+    def test_standard_profile_installs_and_switches_safely(self):
+        standard = install.install(
+            ROOT,
+            self.codex,
+            self.home,
+            apply=True,
+            with_usage=False,
+            luna_tier="standard",
+        )
+        self.assertEqual(standard["luna_tier"], "standard")
+        self.assertTrue(standard["verification"]["ok"])
+        scout = self.codex / "agents" / "luna_scout_standard.toml"
+        self.assertTrue(scout.is_file())
+        with scout.open("rb") as handle:
+            standard_role = tomllib.load(handle)
+        self.assertNotIn("service_tier", standard_role)
+        self.assertFalse((self.codex / "agents" / "luna_scout_fast.toml").exists())
+        self.assertTrue(verify_active_root(self.codex, ROOT, self.codex / "config.toml", "standard")["ok"])
+
+        switched = install.install(
+            ROOT,
+            self.codex,
+            self.home,
+            apply=True,
+            with_usage=False,
+            luna_tier="fast",
+            update=True,
+        )
+        self.assertEqual(switched["mode"], "update")
+        self.assertTrue(switched["verification"]["ok"])
+        self.assertTrue((self.codex / "agents" / "luna_scout_fast.toml").is_file())
+        state = json.loads((self.codex / install.INSTALL_STATE_NAME).read_text())
+        self.assertEqual(state["active_luna_tier"], "fast")
+        self.assertEqual(len(state["roles"]), 10)
+
+        restored = install.install(
+            ROOT,
+            self.codex,
+            self.home,
+            apply=True,
+            with_usage=False,
+            luna_tier="standard",
+            update=True,
+        )
+        self.assertTrue(restored["verification"]["ok"])
+        self.assertEqual(json.loads((self.codex / install.INSTALL_STATE_NAME).read_text())["active_luna_tier"], "standard")
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = install.main([
+                "--repo-root", str(ROOT),
+                "--codex-home", str(self.codex),
+                "--home", str(self.home),
+                "--update",
+            ])
+        self.assertEqual(result, 0)
+        self.assertEqual(json.loads(output.getvalue().splitlines()[-1])["luna_tier"], "standard")
+
+    def test_state_tracked_update_replaces_only_unchanged_managed_assets(self):
+        install.install(ROOT, self.codex, self.home, apply=True, with_usage=False)
+        checkout = self.base / "checkout"
+        shutil.copytree(ROOT, checkout, ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"))
+        source = checkout / "agents" / "luna_scout_fast.toml"
+        source.write_text(source.read_text() + "\n# compatible update\n")
+        policy_path = checkout / "config" / "routing-policy.v1.1.json"
+        policy = json.loads(policy_path.read_text())
+        policy["roles"]["luna_scout_fast"]["sha256"] = hashlib.sha256(source.read_bytes()).hexdigest()
+        policy_path.write_text(json.dumps(policy, indent=2) + "\n")
+
+        updated = install.install(
+            checkout,
+            self.codex,
+            self.home,
+            apply=True,
+            with_usage=False,
+            update=True,
+        )
+        actions = {role["name"]: role["action"] for role in updated["roles"]}
+        self.assertEqual(actions["luna_scout_fast.toml"], "update-managed")
+        self.assertEqual((self.codex / "agents" / "luna_scout_fast.toml").read_bytes(), source.read_bytes())
+
+        (self.codex / "agents" / "luna_scout_fast.toml").write_text("user edit\n")
+        with self.assertRaisesRegex(install.InstallError, "role_conflict_luna_scout_fast"):
+            install.install(
+                checkout,
+                self.codex,
+                self.home,
+                apply=False,
+                with_usage=False,
+                update=True,
+            )
+
+    def test_update_requires_valid_state_and_cli_remembers_usage_choice(self):
+        with self.assertRaisesRegex(install.InstallError, "update_state_missing"):
+            install.install(ROOT, self.codex, self.home, apply=False, with_usage=False, update=True)
+
+        install.install(ROOT, self.codex, self.home, apply=True, with_usage=True)
+        role = self.codex / "agents" / "luna_scout_fast.toml"
+        before_role = role.read_bytes()
+        before_state = (self.codex / install.INSTALL_STATE_NAME).read_bytes()
+        preview_output = io.StringIO()
+        with contextlib.redirect_stdout(preview_output):
+            preview_result = install.main([
+                "--repo-root", str(ROOT),
+                "--codex-home", str(self.codex),
+                "--home", str(self.home),
+                "--dry-run",
+                "--update",
+                "--without-usage",
+            ])
+        self.assertEqual(preview_result, 0)
+        preview = json.loads(preview_output.getvalue().splitlines()[-1])
+        self.assertEqual(preview["mode"], "update")
+        self.assertEqual(preview["status"], "dry-run")
+        self.assertEqual(role.read_bytes(), before_role)
+        self.assertEqual((self.codex / install.INSTALL_STATE_NAME).read_bytes(), before_state)
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = install.main([
+                "--repo-root", str(ROOT),
+                "--codex-home", str(self.codex),
+                "--home", str(self.home),
+                "--update",
+            ])
+        self.assertEqual(result, 0)
+        records = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual(records[-1]["usage"], "identical")
+        self.assertEqual(records[-1]["mode"], "update")
 
 
 if __name__ == "__main__":

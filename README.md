@@ -2,7 +2,7 @@
 
 **Sol leads. Luna specializes. Every milestone ends in evidence.**
 
-The advanced V0.2 orchestration and measurement edition for Codex. GPT-5.6
+The advanced V0.2.2 orchestration and measurement edition for Codex. GPT-5.6
 Sol owns planning, routing, integration, and final acceptance; dynamically
 routed GPT-5.6 Luna Fast roles scout, build, challenge, and test within explicit
 boundaries.
@@ -12,9 +12,33 @@ boundaries.
 </p>
 
 > [!IMPORTANT]
-> V0.2 milestones M0–M3 are implemented and verified. The M4 observational
-> pilot has **not** run, so this repository makes no claim of calibrated
-> savings or production performance.
+> V0.2 milestones M0–M3 are implemented and verified. The first M4 single-pair
+> benchmark started its all-Max control arm but was interrupted before a
+> terminal result; the dynamic arm never started. That pair is permanently
+> retired and provides no policy comparison or savings claim. M4 is terminal;
+> its negative result constrains M5 but does not leave the retired experiment
+> open.
+
+V0.2.2 adds one compatibility variable without retuning models: every Luna
+spawn is context-free (`fork_turns = "none"`), receives a self-contained task
+packet, and fails directly to Sol without a spawn retry. The frozen V0.2.1 M4
+inputs and immutable all-Max control bundle remain unchanged.
+
+The incident audit attributed at least 178,564 root tokens to the incomplete
+control workflow; child usage and total arm usage remain unknown. Automatic
+promotion stayed off. The harness is now hardened around durable lifecycle
+evidence, interruption receipts, immutable runtime configuration, and explicit
+Codex capability checks before any new comparison window is proposed.
+
+M5 adds an optional, shareable plugin and a hook-covered spawn admission guard.
+The guard checks context-free transport, routing-policy integrity, the complete
+assignment envelope, and declared wave ownership before supported `Agent`
+calls. It is a partial guardrail, not universal write enforcement. M5 did not
+promote the policy, claim savings, add a dashboard, or send local evidence to
+a hosted surface. M6 adds a selectable Standard configuration profile without
+claiming a controlled cost comparison. M7 adds a bundled setup skill so users
+install, update, verify, and switch tiers conversationally instead of operating
+the Python installer. See [M5 plugin and guardrails](docs/M5_PLUGIN_GUARDRAILS.md).
 
 ## Choose the right kit
 
@@ -34,16 +58,34 @@ boundary and excluded local artifacts.
 
 ## Quick start
 
-For a first-time guided install on macOS or Linux, paste this in a terminal:
+Add the plugin once:
 
 ```sh
-git clone --depth 1 https://github.com/msinclair25/codex-sol-luna-orchestration-kit.git && python3 codex-sol-luna-orchestration-kit/scripts/install.py
+codex plugin marketplace add msinclair25/codex-sol-luna-orchestration-kit
+codex plugin add sol-luna-orchestration-kit@sol-luna
 ```
 
-The installer previews its plan, asks before installing the core, then asks
-separately about the optional local usage/status skill. It requires Python 3.11
-or newer, launches no models, enables no telemetry, and sends no data over the
-network.
+Start a new Codex task and say:
+
+```text
+$sol-luna-setup Install Sol/Luna with Standard Luna subagents.
+```
+
+Use `Fast` instead of `Standard` when you want priority service. The setup
+skill previews and applies the bundled transactional installer, preserves
+unrelated configuration, refuses unapproved conflicts, and verifies the
+result. The user never needs to operate its Python implementation.
+
+Later, update or switch tiers conversationally:
+
+```text
+$sol-luna-setup Update Sol/Luna.
+$sol-luna-setup Switch Luna subagents to Fast.
+```
+
+For a package update, the skill refreshes the Git marketplace and plugin, then
+hands back one restart prompt to finish updating the global roles from the new
+bundle. It never continues from a plugin snapshot that was just replaced.
 
 To inspect the repository without installing anything, run its local checks:
 
@@ -54,10 +96,10 @@ PYTHONDONTWRITEBYTECODE=1 python3 scripts/routing_policy.py verify --format json
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
 ```
 
-Use the [guided installer](#guided-installer-recommended) for setup; the manual
-steps remain available as a fallback. Model IDs, Fast access, and custom-agent
-availability still depend on your Codex version, account, and workspace
-policy.
+Use the [setup skill](#installation) for normal installation and updates; the
+direct installer and manual steps remain troubleshooting fallbacks. Model IDs,
+Fast access, and custom-agent availability still depend on your Codex version,
+account, and workspace policy.
 
 ## Why this setup exists
 
@@ -67,16 +109,17 @@ acceptance checks, and evidence contracts**.
 
 | Role | Responsibility | Default access |
 | --- | --- | --- |
-| `luna_scout_fast` | Map code, dependencies, logs, and documentation before edits | Luna, medium, Fast, read-only |
-| `luna_worker_fast` | Make one bounded change in explicitly owned files | Luna, high, Fast, workspace-write |
-| `luna_critic_fast` | Adversarially review correctness, security, regressions, and test gaps | Luna, high, Fast, read-only |
-| `luna_tester_fast` | Run a named validation plan and report evidence without repairing failures | Luna, medium, Fast, workspace-write |
-| `luna_max_fast` | Handle bounded read-only analysis or an enumerated exception | Luna, max, Fast, read-only |
+| `luna_scout_{fast,standard}` | Map code, dependencies, logs, and documentation before edits | Luna, medium, read-only |
+| `luna_worker_{fast,standard}` | Make one bounded change in explicitly owned files | Luna, high, workspace-write |
+| `luna_critic_{fast,standard}` | Adversarially review correctness, security, regressions, and test gaps | Luna, high, read-only |
+| `luna_tester_{fast,standard}` | Run a named validation plan and report evidence without repairing failures | Luna, medium, workspace-write |
+| `luna_max_{fast,standard}` | Handle bounded read-only analysis or an enumerated exception | Luna, max, read-only |
 
 The root remains `gpt-5.6-sol` with user-selected reasoning and Standard /
 default service (the global `service_tier` stays unset). Each role TOML pins
-`gpt-5.6-luna` and `service_tier = "fast"`; Scout and Tester use `medium`,
-Worker and Critic use `high`, and Max uses `max` reasoning.
+`gpt-5.6-luna`; Fast roles set `service_tier = "fast"`, while Standard roles
+omit the key and inherit normal service. Scout and Tester use `medium`, Worker
+and Critic use `high`, and Max uses `max` reasoning.
 
 The recommended flow is:
 
@@ -123,13 +166,10 @@ malformed, unsupported, or stale request directly to Sol.
 
 ### Stability before optimization
 
-V0.2 is meant to be observed, not continuously tuned. Before M4, predeclare a
-10-milestone comparison window spanning at least three task families, including
-the policy assignments, acceptance criteria, and kill criteria. Freeze that
-schedule plus the routing policy, root instructions, role files, owned
-configuration, and rate card until every registered start is terminal or
-overdue, unless a kill criterion stops the window earlier. Log improvement
-ideas without applying them mid-window.
+V0.2 is meant to be observed, not continuously tuned. The retired M4 pair froze
+one fixture, one prompt, one held-out oracle, both policy configurations, the
+rate card, and the decision thresholds before its control arm began. Its
+inconclusive evidence must not be reused or combined with a future window.
 
 An intervention requires a documented, observed correctness or security
 failure or a predeclared quality kill criterion. It ends the comparable window;
@@ -146,11 +186,11 @@ or latency regression. Otherwise keep the stable policy, simplify, or revert.
 The goal is the minimum control required for consistently accepted outcomes,
 not perpetual optimization.
 
-This guardrail does not start M4. V0.2 still has no registered-start ledger,
-overdue deadline enforcement, cross-family/control comparison, or predeclared
-quality and latency metric set. Those are M4 entry requirements; until they are
-available, the pilot and any policy-promotion decision remain blocked or
-unknown rather than estimated by hand.
+The [M4 single-pair benchmark](docs/M4_BENCHMARK.md) documents the interrupted
+run, its non-retry boundary, and the hardened runner requirements. No fresh
+benchmark window is currently authorized. The [new Mac handoff](docs/NEW_MAC_HANDOFF.md)
+is retained as historical setup evidence and must not be used to restart the
+retired pair.
 
 ## What you get
 
@@ -162,37 +202,73 @@ codex-sol-luna-orchestration-kit/
 ├── LICENSE
 ├── SECURITY.md
 ├── AGENTS.md
+├── AGENTS.override.md
 ├── assets/
 │   ├── sol-luna-orchestration-system.png
 │   └── social-preview.jpg
+├── benchmark/m4_single_pair/
+│   ├── PROMPT.txt
+│   ├── oracle.py
+│   └── fixture/
 ├── config-snippet.toml
 ├── config/
 │   ├── install-assets.v1.json
+│   ├── m4-benchmark.v1.json
+│   ├── m4-pilot.v1.json
 │   ├── rate-card.v1.json
-│   └── routing-policy.v1.json
+│   ├── routing-policy.v1.json
+│   ├── routing-policy.v1.1.json
+│   └── routing-policy.standard.v1.1.json
 ├── control-bundles/
 │   └── all-max-v1/
 ├── schemas/
-│   └── milestone-receipt.v1.schema.json
+│   ├── m4-benchmark-receipt.v1.schema.json
+│   ├── m4-benchmark-terminal.v1.schema.json
+│   ├── m4-pilot-plan.v1.schema.json
+│   ├── milestone-receipt.v1.schema.json
+│   └── pilot-start.v1.schema.json
 ├── docs/
 │   ├── CONTROL_BUNDLES.md
+│   ├── M4_BENCHMARK.md
+│   ├── M4_PILOT.md
+│   ├── M5_PLUGIN_GUARDRAILS.md
+│   ├── INSTALLING_AND_UPDATING.md
+│   ├── NEW_MAC_HANDOFF.md
 │   ├── RECEIPTS.md
 │   ├── PROVENANCE.md
 │   ├── ROUTING_POLICY.md
 │   ├── STATUS_SKILL.md
 │   └── USAGE_METRICS.md
 ├── evidence/
-│   └── m1-role-smoke-2026-08-02.json
+│   ├── m1-role-smoke-2026-08-02.json
+│   └── m4-v0.2.1-single-pair-01-retired.json
+├── pilot-plans/
+│   └── m4-v0.2.1-window-01.json
 ├── scripts/
 │   ├── install.py
+│   ├── new_mac_preflight.py
+│   ├── pilot_tool.py
+│   ├── run_m4_benchmark.py
 │   ├── receipt_tool.py
 │   ├── routing_policy.py
 │   ├── usage_report.py
 │   └── verify_control_bundle.py
+├── plugins/
+│   └── sol-luna-orchestration-kit/
+│       ├── .codex-plugin/plugin.json
+│       ├── hooks/hooks.json
+│       ├── skills/
+│       └── scripts/pre_tool_use_guard.py
+├── profiles/standard/
+│   ├── AGENTS.override.md
+│   └── config-snippet.toml
 ├── tests/
 │   ├── test_control_bundle.py
 │   ├── test_install.py
 │   ├── test_m1_evidence.py
+│   ├── test_m4_benchmark.py
+│   ├── test_new_mac_preflight.py
+│   ├── test_pilot_tool.py
 │   ├── test_receipt_tool.py
 │   ├── test_routing_policy.py
 │   ├── test_sol_luna_status.py
@@ -203,7 +279,12 @@ codex-sol-luna-orchestration-kit/
     ├── luna_scout_fast.toml
     ├── luna_worker_fast.toml
     ├── luna_critic_fast.toml
-    └── luna_tester_fast.toml
+    ├── luna_tester_fast.toml
+    ├── luna_max_standard.toml
+    ├── luna_scout_standard.toml
+    ├── luna_worker_standard.toml
+    ├── luna_critic_standard.toml
+    └── luna_tester_standard.toml
 ```
 
 ## Compatibility and expectations
@@ -211,11 +292,57 @@ codex-sol-luna-orchestration-kit/
 The checked-in policy and static tests cover the role contract and routing
 decisions. No live spawn result is promised: model IDs, reasoning levels, Fast
 access, feature flags, concurrency, and CLI diagnostics can vary by Codex
-version, account, workspace policy, and rollout. Seeing a model in an API
-account does not necessarily mean the same model is enabled in every Codex
+version, account, workspace policy, and rollout. The benchmark harness records
+the observed Codex version but gates on the concrete CLI flags and event
+contract it needs instead of assuming one release remains current forever.
+Once a future pair begins, that version and executable digest stay pinned
+across both arms. Missing or changed capabilities fail before measured work.
+Seeing a model in an
+API account does not necessarily mean the same model is enabled in every Codex
 surface. Verify your own model picker or model catalog before installing.
+The active V0.2.2 contract requires context-free Luna launches; a task that
+cannot be expressed as a self-contained packet stays with Sol. The original
+V0.2.1 `AGENTS.md` and routing-policy file remain as frozen M4 inputs, while
+`AGENTS.override.md` and `routing-policy.v1.1.json` define new installations.
+The advisory evaluator requires callers to provide `fork_turns` explicitly;
+omission and history-fork values fail closed. It does not parse free-form task
+prose, so Sol still owns the judgment that a child packet is self-contained.
 The static verifier requires Python 3.11 or newer; older runtimes fail closed
 with a clear diagnostic because the policy relies on stdlib `tomllib`.
+
+### Luna support boundary
+
+As of August 3, 2026, OpenAI's
+[subagent guide](https://learn.chatgpt.com/docs/agent-configuration/subagents)
+explicitly recommends `gpt-5.6-luna` for fast, narrowly scoped agents and
+includes Luna custom-agent examples. At the same time, the open-source Codex
+[model catalog](https://github.com/openai/codex/blob/main/codex-rs/models-manager/models.json)
+labels Sol and Terra as multi-agent V2 and Luna as V1, while the
+[V2 child-model filter](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/handlers/multi_agents_common.rs)
+requires a requested child model to match the active multi-agent backend.
+That makes Sol-to-Luna custom-role launches a version-, account-, and
+workspace-dependent compatibility boundary rather than a universal guarantee.
+
+This kit does not replace or edit Codex's model catalog. It narrows Luna to
+bounded, context-free lanes, prohibits nested Luna delegation, and routes a
+rejected spawn directly back to Sol without retrying or silently substituting
+a model. Work that depends on proactive child-to-child coordination or hidden
+conversation history stays with Sol.
+
+### Evidence so far
+
+| Evidence | Result | What it establishes |
+| --- | --- | --- |
+| Static policy and installer tests | Passing on the V0.2.2 branch | The checked-in configuration is internally consistent; this is not proof of runtime availability. |
+| [M1 role smoke](evidence/m1-role-smoke-2026-08-02.json) | All five Luna roles launched and completed on the tested account and Codex build | The configured roles worked in one observed environment. |
+| Maintainer operational sample (August 3, 2026 snapshot) | 63 of 64 privacy-safe named Luna role runs completed | Practical reliability evidence from mixed work; completion does not prove correctness or savings. |
+| M4 matched comparison | Interrupted control; dynamic arm not started; pair retired | No verified whole-workflow savings percentage exists yet. |
+
+The working economic hypothesis remains that dynamic reasoning and better Sol
+focus can reduce weighted usage on suitable workflows. The previous 20% figure
+is a benchmark target, not a result or promise. A new claim requires a fresh,
+predeclared comparison with quality and latency non-inferiority; ordinary use
+is useful reliability evidence but is not a controlled A/B test.
 
 Subagents generally use **more total tokens** than an equivalent single-agent
 run because every child performs its own model and tool work. This setup is for
@@ -247,6 +374,38 @@ The local JSONL adapter is best-effort because session persistence is not a
 public stable API. Neither report is provider billing, and neither proves cost
 savings without a comparable baseline.
 
+## Optional plugin and spawn guard
+
+The repository now includes a source plugin at
+`plugins/sol-luna-orchestration-kit`. It packages conversational setup,
+orchestration, and status skills plus an opt-in `PreToolUse` hook for supported
+`Agent` calls. Installing the plugin alone does not modify custom roles or
+global instructions. The setup skill changes those surfaces only after the
+user explicitly asks it to install, update, or switch profiles.
+
+For workflow-only installation from GitHub:
+
+```sh
+codex plugin marketplace add msinclair25/codex-sol-luna-orchestration-kit
+codex plugin add sol-luna-orchestration-kit@sol-luna
+```
+
+The plugin supports both `fast` and `standard` routing envelopes. See the
+[install and update guide](docs/INSTALLING_AND_UPDATING.md) for marketplace
+updates and the full-role setup skill.
+
+Validate the bundle before local marketplace installation or publication:
+
+```sh
+python3 /path/to/plugin-creator/scripts/validate_plugin.py plugins/sol-luna-orchestration-kit
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_m5_plugin -v
+```
+
+Plugin hooks require explicit trust review and can be disabled. Current hook
+inputs cannot universally attribute every later write to a specific child, so
+the hook enforces spawn admission and declared ownership—not actual filesystem
+ownership after launch. See the [M5 coverage and bypass limits](docs/M5_PLUGIN_GUARDRAILS.md#coverage-and-bypass-limits).
+
 ## Milestone receipts
 
 M2 adds a local, unsigned audit receipt flow. Close a validated milestone into
@@ -262,8 +421,12 @@ python3 scripts/receipt_tool.py summarize --receipts-dir .sol-luna/receipts --fo
 
 Receipts are local audit artifacts, not automation commands or cryptographic
 proof. Their SHA-256 IDs are anchored by the canonical close payload; Git and
-human review remain the provenance anchor. No start registry is created in M2,
-so receipt coverage is reported as unknown even when terminal receipts exist.
+human review remain the provenance anchor. M2 summaries alone cannot infer
+coverage. The retained observational registry computes coverage only by
+joining pre-registered starts to matching terminal receipts; see the
+[legacy pilot protocol](docs/M4_PILOT.md). The retired single-pair benchmark
+was interrupted before producing a comparison receipt and is now
+permanently non-retryable.
 
 ## Sol/Luna status skill
 
@@ -272,8 +435,12 @@ Run the repository-local, read-only status report with
 `--format json` for automation. The bounded scanner uses validated local
 receipts and attributable record-schema-v1 rollout JSONL with complete token
 snapshots, redacts sensitive content, and falls back to receipt-only status
-when local session capability or correlation is not provable. It does not use
-a server, plugin, MCP service, dashboard, database, or network surface.
+when local session capability or correlation is not provable. M4 now reports
+terminal and non-retryable by default with no next slot. Historical registry
+inspection requires the explicit audit-only flag plus a plan and never
+authorizes registration or model work. The report itself remains local and
+uses no server, MCP service, dashboard, database, or network surface; M5 can
+distribute the same workflow in the optional plugin.
 
 The guided installer offers this as a separate opt-in personal skill under
 `~/.agents/skills/sol-luna-status`. Choosing no installs only the core routing
@@ -282,20 +449,57 @@ local data is inspected only when you later invoke the status or usage tools.
 
 ## Installation
 
-### Guided installer (recommended)
+There are now two supported paths:
 
-From an existing checkout, run:
+- **Workflow-only:** install the Git-backed plugin for the skills, status, and
+  optional guard without changing global roles or instructions.
+- **Full roles:** invoke the bundled `$sol-luna-setup` skill for custom Luna
+  roles, global Sol policy, backups, state-tracked updates, and a Fast or
+  Standard tier choice.
 
-```sh
-python3 scripts/install.py
+See [Installing and updating](docs/INSTALLING_AND_UPDATING.md) for the concise
+decision guide and exact update commands.
+
+### Setup skill (recommended)
+
+After installing the plugin and starting a new task, ask Codex:
+
+```text
+$sol-luna-setup Install Sol/Luna with Fast Luna subagents.
+$sol-luna-setup Install Sol/Luna with Standard Luna subagents.
 ```
 
-It performs the following bounded flow:
+The skill finds the trusted plugin bundle, previews the exact managed changes,
+applies the requested profile, and verifies the active installation. A direct
+request authorizes ordinary managed writes, but conflicting user edits still
+stop for a separate explanation and approval.
+
+For a package update, start with this prompt:
+
+```text
+$sol-luna-setup Update Sol/Luna.
+```
+
+The skill stops after refreshing the plugin. Restart Codex, begin a new task,
+and use its handoff prompt:
+
+```text
+$sol-luna-setup Finish updating my Sol/Luna roles.
+```
+
+Tier switches and verification do not need the package-update handoff:
+
+```text
+$sol-luna-setup Switch Luna subagents to Standard.
+$sol-luna-setup Verify my Sol/Luna installation.
+```
+
+The internal installer performs the following bounded flow:
 
 1. Verifies the checked-in core routing policy and all five role files before
    any write.
-2. Prints a JSON preview and asks whether to install the core roles,
-   instructions, and owned configuration keys.
+2. Runs a non-mutating preview and summarizes the core roles, instructions,
+   and owned configuration keys in plain language.
 3. Preserves unrelated `config.toml` settings and existing global instructions.
    A non-empty `AGENTS.override.md` is updated because that is the active global
    instruction file; otherwise the managed policy is placed in `AGENTS.md`.
@@ -303,9 +507,21 @@ It performs the following bounded flow:
    `~/codex-config-backups/sol-luna-<unique-id>/`, writes an installation
    receipt listing every created or replaced relative path, and verifies the
    installed active root.
-5. Separately asks whether to install the optional privacy-safe local
-   usage/status skill and hash-verifies its three installable assets. It never
-   enables OTLP or another telemetry exporter.
+5. Uses the plugin's bundled privacy-safe status skill instead of installing a
+   duplicate global copy. It never enables OTLP or another telemetry exporter.
+6. Records only managed-asset hashes and the chosen tier in
+   `~/.codex/.sol-luna-install-state.json` so later updates can distinguish an
+   unchanged managed file from a user edit.
+
+### Direct installer (fallback)
+
+Maintainers and troubleshooting sessions can still run the deterministic
+installer from a trusted checkout:
+
+```sh
+python3 scripts/install.py
+python3 scripts/install.py --luna-tier standard
+```
 
 Core and optional usage are separate transactions. If the optional phase is
 declined or blocked, the already verified core remains installed and the
@@ -337,7 +553,21 @@ For non-interactive automation, the usage choice is mandatory:
 python3 scripts/install.py --apply --without-usage
 # Or explicitly opt in:
 python3 scripts/install.py --apply --with-usage
+# Standard Luna instead of Fast:
+python3 scripts/install.py --apply --luna-tier standard --with-usage
 ```
+
+For M6+ updates, pull the trusted checkout and reuse the recorded tier and
+usage choice:
+
+```sh
+git pull --ff-only
+python3 scripts/install.py --update
+```
+
+Update mode fails closed when a managed file no longer matches the recorded
+hash. Switch profiles with `--update --luna-tier standard` or
+`--update --luna-tier fast`.
 
 The optional personal skill keeps a local pointer to this checkout. Keep the
 checkout in place. After moving it, refresh only that installer-owned pointer:
@@ -355,15 +585,11 @@ You can paste this request into a Codex task instead of entering shell steps
 yourself:
 
 ```text
-Install the Codex Sol/Luna Orchestration Kit globally from
-https://github.com/msinclair25/codex-sol-luna-orchestration-kit. If I do not
-already have a trusted checkout, clone it into a permanent local folder. Read
-scripts/install.py, run it interactively, show me its preview, and relay its
-core and optional usage/status questions without choosing for me. Do not
-enable telemetry, install a plugin, overwrite a conflict, or remove unrelated
-Codex settings or instructions without my explicit approval. When finished,
-show me the verification result plus backup and receipt paths, then remind me
-to restart Codex.
+Install the Sol/Luna Orchestration Kit plugin from
+https://github.com/msinclair25/codex-sol-luna-orchestration-kit using its
+Git-backed Codex marketplace. Do not clone the repository or modify my global
+roles and instructions yet. After the plugin is installed, tell me to restart
+Codex and give me the exact `$sol-luna-setup` prompt for a Standard install.
 ```
 
 ### Manual installation
@@ -455,15 +681,19 @@ Get-ChildItem (Join-Path $kitDir "agents\*.toml") | ForEach-Object {
 
 Custom agents placed under `~/.codex/agents/` apply globally. To scope the
 roles to one trusted repository instead, place them under that project's
-`.codex/agents/` directory.
+`.codex/agents/` directory. The commands above install both the `*_fast` and
+`*_standard` aliases; the instruction policy in the next step selects which
+set is active.
 
 #### 4. Merge the routing policy
 
 If a non-empty `~/.codex/AGENTS.override.md` exists, manually merge the
 **Role-based subagent policy** section there because Codex gives it precedence.
-Otherwise, copy this kit's `AGENTS.md` to `~/.codex/AGENTS.md` when absent, or
-merge the policy into the existing file. Do not overwrite unrelated
-instructions.
+Otherwise, use `AGENTS.override.md` for Fast Luna or
+`profiles/standard/AGENTS.override.md` for Standard Luna. Copy the selected
+policy to `~/.codex/AGENTS.md` when absent, or merge it into the existing file.
+Do not overwrite unrelated instructions. The shell examples below show the
+Fast/default path; substitute the Standard profile path when desired.
 
 macOS or Linux:
 
@@ -473,7 +703,7 @@ if [ -s "$HOME/.codex/AGENTS.override.md" ]; then
 elif [ -e "$HOME/.codex/AGENTS.md" ]; then
   echo "Merge the policy into $HOME/.codex/AGENTS.md"
 else
-  cp AGENTS.md "$HOME/.codex/AGENTS.md"
+  cp AGENTS.override.md "$HOME/.codex/AGENTS.md"
 fi
 ```
 
@@ -487,7 +717,7 @@ if ((Test-Path $override) -and (Get-Content $override -Raw).Trim()) {
 } elseif (Test-Path $destination) {
     Write-Host "Merge the policy into $destination"
 } else {
-    Copy-Item (Join-Path (Get-Location).Path "AGENTS.md") $destination
+    Copy-Item (Join-Path (Get-Location).Path "AGENTS.override.md") $destination
 }
 ```
 
@@ -497,7 +727,8 @@ repository.
 #### 5. Merge the Codex settings
 
 Open `~/.codex/config.toml` and merge the relevant values from
-`config-snippet.toml`:
+`config-snippet.toml` for Fast or `profiles/standard/config-snippet.toml` for
+Standard:
 
 ```toml
 model = "gpt-5.6-sol"
@@ -524,8 +755,8 @@ Important details:
   your existing preference; do that only intentionally.
 - Keep `max_concurrent_threads_per_session = 3`; the policy caps concurrently
   active delegated lanes at three and processes dependent work in waves.
-- The Luna role files select their dynamic reasoning level and Fast
-  independently.
+- The selected policy chooses either the `*_fast` roles, which explicitly pin
+  Fast, or the `*_standard` roles, which omit a service-tier override.
 - Do not initially add `agents.default_subagent_model`. Each role already pins
   Luna directly, and some tested desktop builds rejected Luna custom-agent
   launches when that global default was present.
@@ -593,8 +824,9 @@ and enter (the Max exception reason is explicit):
 
 ```text
 Spawn a luna_max_fast subagent for a bounded read-only analysis with max
-upgrade reason `genuine_ambiguity`. Have it calculate 6 × 7 and return only the
-integer. Wait for it and report the result.
+upgrade reason `genuine_ambiguity` and `fork_turns` set explicitly to `none`.
+Give it a self-contained task: calculate 6 × 7 and return only the integer.
+Wait for it and report the result. Do not retry if the spawn is rejected.
 ```
 
 Expected result: `42`.
@@ -602,7 +834,13 @@ Expected result: `42`.
 For a more complete, explicitly bounded check:
 
 ```text
-Use the custom Luna roles to run a read-only smoke test. Have Scout inspect a tiny specification, Worker describe—but not make—a bounded change, Critic review the proposal, and Tester validate an explicit acceptance condition. Wait for every role and report each status. Treat runtime model, reasoning, and tier metadata as observational only; the static contract remains authoritative for policy validation.
+Use the custom Luna roles to run a read-only smoke test. Set `fork_turns` to
+`none` explicitly on every spawn and give each child a self-contained task.
+Have Scout inspect a tiny specification, Worker describe—but not make—a bounded
+change, Critic review the proposal, and Tester validate an explicit acceptance
+condition. Wait for every role and report each status. Do not retry a rejected
+spawn. Treat runtime model, reasoning, and tier metadata as observational only;
+the static contract remains authoritative for policy validation.
 ```
 
 Every direct or child test can consume quota. Fast and Max availability and
@@ -610,7 +848,7 @@ limits depend on the account and workspace.
 
 ## Routing rules that matter
 
-The included `AGENTS.md` gives the Sol root these operating rules:
+The active `AGENTS.override.md` gives the Sol root these operating rules:
 
 1. Delegate only independent, bounded work that materially improves speed or
    accuracy.
@@ -619,14 +857,16 @@ The included `AGENTS.md` gives the Sol root these operating rules:
    to Sol.
 3. Give every child an outcome, relevant inputs, ownership or read-only scope,
    constraints, acceptance checks, evidence requirements, and a deadline.
-4. Never run overlapping writers concurrently; exact and directory-prefix
+4. Explicitly use `fork_turns = "none"` for Luna, pass a self-contained task,
+   and route a rejected spawn directly to Sol without retrying or substitution.
+5. Never run overlapping writers concurrently; exact and directory-prefix
    ownership conflicts are rejected.
-5. Serialize dependent work in waves; parallelize independent review and
+6. Serialize dependent work in waves; parallelize independent review and
    validation, with no more than three concurrently active lanes. Total lanes
    and waves are not capped by this policy.
-6. Keep commits, pushes, deployments, migrations, destructive cleanup, and
+7. Keep commits, pushes, deployments, migrations, destructive cleanup, and
    other external effects with Sol unless the user explicitly authorizes them.
-7. Require compact evidence from every role—`scope`, `files_or_surfaces`,
+8. Require compact evidence from every role—`scope`, `files_or_surfaces`,
    `commands_or_checks`, `assumptions`, `failures`, `risks`, `confidence`, and
    `recommendation`—and independently verify material
    claims before the final answer.
@@ -634,7 +874,7 @@ The included `AGENTS.md` gives the Sol root these operating rules:
 The practical default is one Worker at a time, followed by Critic and Tester in
 parallel. Trivial tasks should remain with Sol because orchestration overhead
 can be slower and noisier than doing the work directly. Max is only selected
-for the enumerated exception codes in `AGENTS.md`, including for general
+for the enumerated exception codes in `AGENTS.override.md`, including for general
 analysis.
 
 ## Safety and privacy
@@ -663,6 +903,9 @@ See [SECURITY.md](SECURITY.md) for the public-reporting policy.
 
 If direct Luna works but a custom Luna agent does not, the likely issue is the
 current launcher/model registry or workspace policy—not the role prompt itself.
+Do not repair a rejected custom-role spawn by omitting `fork_turns` or using a
+full-history fork. Start from a self-contained `fork_turns = "none"` request;
+if that is rejected, keep the work with Sol and record the compatibility issue.
 
 ### Custom roles are missing
 
@@ -701,11 +944,15 @@ before restoring them.
    installation. If a file was absent and created solely for this kit, remove
    only that newly created file instead.
 3. Restore the previous `agents` directory when one existed. Otherwise, remove
-   only the five role files introduced by this kit—do not delete unrelated
-   custom agents.
+   only the selected `*_fast` or `*_standard` role files introduced by this
+   kit—do not delete unrelated custom agents.
 4. If you opted into the personal status skill, restore its backed-up files or
    remove only `~/.agents/skills/sol-luna-status` when the installer created it.
 5. Reopen Codex and create a new task.
+
+Restore the backed-up `.sol-luna-install-state.json` together with the other
+Codex-home files. If the installer created it for the first time, remove only
+that file during a complete rollback.
 
 This setup does not store or delete project source code. Rollback affects only
 the Codex configuration files you changed.
@@ -714,6 +961,7 @@ the Codex configuration files you changed.
 
 - [Codex subagents and custom agents](https://learn.chatgpt.com/docs/agent-configuration/subagents)
 - [Codex configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference#configtoml)
+- [Codex environment variables and `CODEX_HOME`](https://learn.chatgpt.com/docs/config-file/environment-variables)
 
 ## Share the project
 

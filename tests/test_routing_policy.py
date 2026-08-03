@@ -10,8 +10,12 @@ from pathlib import Path
 
 from scripts.routing_policy import (
     DEFAULT_ROOT,
+    LUNA_TRANSPORT,
     MAX_UPGRADE_REASON_CODES,
+    POLICY_AGENTS_RELATIVE,
+    POLICY_RELATIVE,
     ROLE_DEFINITIONS,
+    STANDARD_ROLE_DEFINITIONS,
     detect_ownership_conflicts,
     evaluate,
     validate_evidence,
@@ -37,6 +41,11 @@ class RoutingPolicyTests(unittest.TestCase):
         self.assertTrue(report["runtime_config_match"])
         self.assertEqual(report["role_matches"], 5)
 
+        standard = verify_contract(ROOT, "standard")
+        self.assertTrue(standard["ok"], standard)
+        self.assertEqual(standard["profile"], "standard")
+        self.assertEqual(standard["role_matches"], 5)
+
     def test_role_reasoning_and_tier_table_is_dynamic(self):
         expected = {
             "luna_scout_fast": ("medium", "fast", "read-only"),
@@ -50,6 +59,8 @@ class RoutingPolicyTests(unittest.TestCase):
                 (definition["reasoning"], definition["service_tier"], definition["sandbox_mode"]),
                 expected[definition["role"]],
             )
+        self.assertTrue(all(role["service_tier"] == "standard" for role in STANDARD_ROLE_DEFINITIONS.values()))
+        self.assertTrue(all(role["service_tier_configured"] is False for role in STANDARD_ROLE_DEFINITIONS.values()))
 
     def test_valid_delegation_routes_to_routine_role(self):
         result = evaluate(self.cases["valid_delegation"], ROOT)
@@ -58,6 +69,49 @@ class RoutingPolicyTests(unittest.TestCase):
         self.assertEqual(result["route"], "luna_scout_fast")
         self.assertEqual(result["reasoning"], "medium")
         self.assertFalse(result["fallback"])
+        self.assertEqual(result["transport"], LUNA_TRANSPORT)
+
+        request = dict(self.cases["valid_delegation"])
+        request["profile"] = "standard"
+        standard = evaluate(request, ROOT)
+        self.assertTrue(standard["ok"], standard)
+        self.assertEqual(standard["route"], "luna_scout_standard")
+        self.assertEqual(standard["service_tier"], "standard")
+        self.assertEqual(standard["profile"], "standard")
+
+        unsupported = dict(request)
+        unsupported["profile"] = "priority-plus"
+        denied = evaluate(unsupported, ROOT)
+        self.assertFalse(denied["ok"])
+        self.assertIn("unsupported_profile", denied["reason_codes"])
+
+    def test_context_free_transport_is_explicit_and_history_forks_fail_closed(self):
+        allowed = dict(self.cases["valid_delegation"])
+        result = evaluate(allowed, ROOT)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["transport"], {
+            "fork_turns": "none",
+            "history_inherited": False,
+            "assignment": "self-contained",
+            "nested_delegation": False,
+            "on_spawn_error": "sol",
+            "retry_spawn": False,
+        })
+
+        omitted = dict(allowed)
+        del omitted["fork_turns"]
+        result = evaluate(omitted, ROOT)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["route"], "sol")
+        self.assertIn("fork_turns_required", result["reason_codes"])
+
+        for history_fork in ("all", "1", 1, None):
+            rejected = dict(allowed)
+            rejected["fork_turns"] = history_fork
+            result = evaluate(rejected, ROOT)
+            self.assertFalse(result["ok"], history_fork)
+            self.assertEqual(result["route"], "sol")
+            self.assertIn("split_tier_appropriate", result["reason_codes"])
 
     def test_failed_gate_routes_directly_to_sol(self):
         for case_name in ("direct_work", "rejected_gate"):
@@ -193,7 +247,7 @@ class RoutingPolicyTests(unittest.TestCase):
         try:
             role = copy / "agents" / "luna_scout_fast.toml"
             role.write_text(role.read_text().replace("`scope`", "`scope_removed`", 1))
-            policy_path = copy / "config" / "routing-policy.v1.json"
+            policy_path = copy / POLICY_RELATIVE
             policy = json.loads(policy_path.read_text())
             digest = hashlib.sha256(role.read_bytes()).hexdigest()
             policy["roles"]["luna_scout_fast"]["sha256"] = digest
@@ -207,7 +261,7 @@ class RoutingPolicyTests(unittest.TestCase):
     def test_unknown_contract_and_role_keys_fail_closed(self):
         temporary, copy = self._copy_runtime()
         try:
-            policy_path = copy / "config" / "routing-policy.v1.json"
+            policy_path = copy / POLICY_RELATIVE
             policy = json.loads(policy_path.read_text())
             policy["unexpected"] = True
             policy_path.write_text(json.dumps(policy, indent=2) + "\n")
@@ -219,7 +273,7 @@ class RoutingPolicyTests(unittest.TestCase):
 
         temporary, copy = self._copy_runtime()
         try:
-            policy_path = copy / "config" / "routing-policy.v1.json"
+            policy_path = copy / POLICY_RELATIVE
             policy = json.loads(policy_path.read_text())
             policy["roles"]["luna_scout_fast"]["unexpected"] = True
             policy_path.write_text(json.dumps(policy, indent=2) + "\n")
@@ -237,7 +291,7 @@ class RoutingPolicyTests(unittest.TestCase):
         ):
             temporary, copy = self._copy_runtime()
             try:
-                (copy / "config" / "routing-policy.v1.json").write_text(raw)
+                (copy / POLICY_RELATIVE).write_text(raw)
                 report = verify_contract(copy)
                 self.assertFalse(report["ok"])
                 self.assertTrue(
@@ -251,7 +305,7 @@ class RoutingPolicyTests(unittest.TestCase):
         try:
             snippet = copy / "config-snippet.toml"
             snippet.write_text(snippet.read_text().replace('model = "gpt-5.6-sol"', 'model = "gpt-5.6-luna"', 1))
-            policy_path = copy / "config" / "routing-policy.v1.json"
+            policy_path = copy / POLICY_RELATIVE
             policy = json.loads(policy_path.read_text())
             policy["runtime"]["config_snippet_sha256"] = hashlib.sha256(snippet.read_bytes()).hexdigest()
             policy_path.write_text(json.dumps(policy, indent=2) + "\n")
@@ -264,9 +318,9 @@ class RoutingPolicyTests(unittest.TestCase):
     def test_active_root_comparison_does_not_require_snippet(self):
         temporary, copy = self._copy_runtime()
         active = Path(temporary.name) / "active"
-        for relative in ("AGENTS.md", *(d["path"] for d in ROLE_DEFINITIONS.values())):
+        for relative in (POLICY_AGENTS_RELATIVE, *(d["path"] for d in ROLE_DEFINITIONS.values())):
             source = copy / relative
-            destination = active / relative
+            destination = active / ("AGENTS.md" if relative == POLICY_AGENTS_RELATIVE else relative)
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, destination)
         try:
@@ -287,9 +341,9 @@ class RoutingPolicyTests(unittest.TestCase):
     def test_active_root_can_validate_sanitized_installed_config(self):
         temporary, copy = self._copy_runtime()
         active = Path(temporary.name) / "active"
-        for relative in ("AGENTS.md", *(d["path"] for d in ROLE_DEFINITIONS.values())):
+        for relative in (POLICY_AGENTS_RELATIVE, *(d["path"] for d in ROLE_DEFINITIONS.values())):
             source = copy / relative
-            destination = active / relative
+            destination = active / ("AGENTS.md" if relative == POLICY_AGENTS_RELATIVE else relative)
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, destination)
         active_config = Path(temporary.name) / "config.toml"
@@ -317,9 +371,9 @@ class RoutingPolicyTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         copy = Path(temporary.name) / "root"
         for relative in (
-            "AGENTS.md",
+            POLICY_AGENTS_RELATIVE,
             "config-snippet.toml",
-            "config/routing-policy.v1.json",
+            POLICY_RELATIVE,
             "agents/luna_critic_fast.toml",
             "agents/luna_max_fast.toml",
             "agents/luna_scout_fast.toml",
@@ -335,7 +389,7 @@ class RoutingPolicyTests(unittest.TestCase):
     def test_runtime_hash_and_settings_drift_fail_closed(self):
         temporary, copy = self._copy_runtime()
         try:
-            agents = copy / "AGENTS.md"
+            agents = copy / POLICY_AGENTS_RELATIVE
             agents.write_text(agents.read_text() + "\n# drift\n")
             report = verify_contract(copy)
             self.assertFalse(report["ok"])
@@ -393,7 +447,8 @@ class RoutingPolicyTests(unittest.TestCase):
 
         temporary, copy = self._copy_runtime()
         try:
-            (copy / "AGENTS.md").write_text((copy / "AGENTS.md").read_text() + "\n# drift\n")
+            agents = copy / POLICY_AGENTS_RELATIVE
+            agents.write_text(agents.read_text() + "\n# drift\n")
             completed = subprocess.run(
                 [sys.executable, "scripts/routing_policy.py", "verify", "--root", str(copy), "--format", "json"],
                 cwd=ROOT,
@@ -409,9 +464,9 @@ class RoutingPolicyTests(unittest.TestCase):
     def test_active_root_cli_reports_pass_and_drift(self):
         temporary, copy = self._copy_runtime()
         active = Path(temporary.name) / "active"
-        for relative in ("AGENTS.md", *(d["path"] for d in ROLE_DEFINITIONS.values())):
+        for relative in (POLICY_AGENTS_RELATIVE, *(d["path"] for d in ROLE_DEFINITIONS.values())):
             source = copy / relative
-            destination = active / relative
+            destination = active / ("AGENTS.md" if relative == POLICY_AGENTS_RELATIVE else relative)
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, destination)
         environment = dict(os.environ)
@@ -431,20 +486,21 @@ class RoutingPolicyTests(unittest.TestCase):
     def test_active_root_accepts_exact_managed_override_and_rejects_duplicate_markers(self):
         temporary, copy = self._copy_runtime()
         active = Path(temporary.name) / "active"
-        for relative in ("AGENTS.md", *(d["path"] for d in ROLE_DEFINITIONS.values())):
+        for relative in (POLICY_AGENTS_RELATIVE, *(d["path"] for d in ROLE_DEFINITIONS.values())):
             source = copy / relative
-            destination = active / relative
+            destination = active / ("AGENTS.md" if relative == POLICY_AGENTS_RELATIVE else relative)
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, destination)
         start = b"# >>> sol-luna-orchestration-kit managed block >>>\n"
         end = b"# <<< sol-luna-orchestration-kit managed block <<<\n"
         try:
-            (active / "AGENTS.override.md").write_bytes(b"user override\n" + start + (copy / "AGENTS.md").read_bytes() + end)
+            policy_agents = (copy / POLICY_AGENTS_RELATIVE).read_bytes()
+            (active / "AGENTS.override.md").write_bytes(b"user override\n" + start + policy_agents + end)
             report = verify_active_root(active, copy)
             self.assertTrue(report["ok"], report)
             self.assertEqual(report["active_agents_path"], "AGENTS.override.md")
             (active / "AGENTS.override.md").write_bytes(
-                (active / "AGENTS.override.md").read_bytes() + start + (copy / "AGENTS.md").read_bytes() + end
+                (active / "AGENTS.override.md").read_bytes() + start + policy_agents + end
             )
             report = verify_active_root(active, copy)
             self.assertFalse(report["ok"])

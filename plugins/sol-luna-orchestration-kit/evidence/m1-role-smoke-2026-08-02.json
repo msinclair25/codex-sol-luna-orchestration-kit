@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "evidence_id": "m1-role-smoke-2026-08-02",
+  "milestone": "M1",
+  "observed_at_utc": "2026-08-02T08:15:50Z",
+  "codex_cli_version": "0.146.0-alpha.9.2",
+  "outcome": "accepted",
+  "launches": {
+    "expected": 5,
+    "completed": 5,
+    "failed": 0,
+    "waves": [
+      3,
+      2
+    ],
+    "observed_max_concurrency": 3
+  },
+  "root": {
+    "role": "sol",
+    "model": {
+      "value": "gpt-5.6-sol",
+      "provenance": "observed"
+    },
+    "reasoning_effort": {
+      "value": "max",
+      "provenance": "observed"
+    },
+    "service_tier": {
+      "value": "standard",
+      "provenance": "derived_from_absent_global_service_tier"
+    }
+  },
+  "roles": [
+    {
+      "role": "luna_scout_fast",
+      "model": "gpt-5.6-luna",
+      "reasoning_effort": "medium",
+      "service_tier_requested": "fast",
+      "service_tier_resolver": "accepted",
+      "service_tier_probe_ref": "gpt-5.6-luna/medium/fast",
+      "service_tier_session_field": "unknown",
+      "completed": true
+    },
+    {
+      "role": "luna_worker_fast",
+      "model": "gpt-5.6-luna",
+      "reasoning_effort": "high",
+      "service_tier_requested": "fast",
+      "service_tier_resolver": "accepted",
+      "service_tier_probe_ref": "gpt-5.6-luna/high/fast",
+      "service_tier_session_field": "unknown",
+      "completed": true
+    },
+    {
+      "role": "luna_critic_fast",
+      "model": "gpt-5.6-luna",
+      "reasoning_effort": "high",
+      "service_tier_requested": "fast",
+      "service_tier_resolver": "accepted",
+      "service_tier_probe_ref": "gpt-5.6-luna/high/fast",
+      "service_tier_session_field": "unknown",
+      "completed": true
+    },
+    {
+      "role": "luna_tester_fast",
+      "model": "gpt-5.6-luna",
+      "reasoning_effort": "medium",
+      "service_tier_requested": "fast",
+      "service_tier_resolver": "accepted",
+      "service_tier_probe_ref": "gpt-5.6-luna/medium/fast",
+      "service_tier_session_field": "unknown",
+      "completed": true
+    },
+    {
+      "role": "luna_max_fast",
+      "model": "gpt-5.6-luna",
+      "reasoning_effort": "max",
+      "service_tier_requested": "fast",
+      "service_tier_resolver": "accepted",
+      "service_tier_probe_ref": "gpt-5.6-luna/max/fast",
+      "service_tier_session_field": "unknown",
+      "max_upgrade_reason": "genuine_ambiguity",
+      "completed": true
+    }
+  ],
+  "service_tier_probe": {
+    "combinations": [
+      {
+        "ref": "gpt-5.6-luna/medium/fast",
+        "exit_status": 0,
+        "expected_reply_observed": true,
+        "unsupported_or_omitted_warning": false
+      },
+      {
+        "ref": "gpt-5.6-luna/high/fast",
+        "exit_status": 0,
+        "expected_reply_observed": true,
+        "unsupported_or_omitted_warning": false
+      },
+      {
+        "ref": "gpt-5.6-luna/max/fast",
+        "exit_status": 0,
+        "expected_reply_observed": true,
+        "unsupported_or_omitted_warning": false
+      }
+    ],
+    "invalid_tier_unsupported_warning": true,
+    "invalid_tier_behavior": "warned_and_omitted",
+    "conclusion": "fast_was_advertised_and_accepted_by_the_live_resolver"
+  },
+  "session_source": {
+    "recognized_runs": 6,
+    "completed_runs": 6,
+    "role_model_reasoning_coverage": "6_of_6",
+    "service_tier_field_coverage": "0_of_6",
+    "child_token_usage_coverage": "0_of_5",
+    "raw_session_identifiers_stored": false,
+    "prompts_or_tool_content_stored": false
+  },
+  "warnings": [
+    "The current rollout schema omitted service_tier, so the session-observed tier remains unknown even though the live resolver accepted fast.",
+    "Child token usage lacked safe baseline snapshots and remains unknown.",
+    "Unrelated configured MCP clients emitted authentication warnings; no MCP service was used by this smoke test."
+  ]
+}

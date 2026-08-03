@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pilot-start.v1",
+  "title": "Sol Luna M4 registered start v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "start_id",
+    "plan_id",
+    "project_id",
+    "plan_sha256",
+    "source_commit",
+    "slot_id",
+    "sequence",
+    "pair_id",
+    "arm",
+    "family",
+    "size_risk_band",
+    "milestone_id",
+    "codex_task_id",
+    "started_at",
+    "due_at",
+    "acceptance_check_ids",
+    "expected",
+    "origin"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "start_id": {"type": "string", "pattern": "^ps1-[0-9a-f]{64}$"},
+    "plan_id": {"$ref": "#/$defs/id"},
+    "project_id": {"$ref": "#/$defs/id"},
+    "plan_sha256": {"$ref": "#/$defs/hash"},
+    "source_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "slot_id": {"$ref": "#/$defs/id"},
+    "sequence": {"type": "integer", "minimum": 1, "maximum": 10},
+    "pair_id": {"$ref": "#/$defs/id"},
+    "arm": {"enum": ["all-max-control", "dynamic-v0.2.1"]},
+    "family": {"enum": ["foundation", "routing", "receipts", "feature", "bugfix", "integration", "release", "security", "other"]},
+    "size_risk_band": {"enum": ["small", "medium", "large", "high-risk", "critical"]},
+    "milestone_id": {"$ref": "#/$defs/id"},
+    "codex_task_id": {"$ref": "#/$defs/id"},
+    "started_at": {"$ref": "#/$defs/time"},
+    "due_at": {"$ref": "#/$defs/time"},
+    "acceptance_check_ids": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/id"}
+    },
+    "expected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bundle_version", "policy_sha256", "agents_sha256", "config_sha256", "rate_card_sha256", "roles"],
+      "properties": {
+        "bundle_version": {"$ref": "#/$defs/id"},
+        "policy_sha256": {"$ref": "#/$defs/hash"},
+        "agents_sha256": {"$ref": "#/$defs/hash"},
+        "config_sha256": {"$ref": "#/$defs/hash"},
+        "rate_card_sha256": {"$ref": "#/$defs/hash"},
+        "roles": {"$ref": "#/$defs/roles"}
+      }
+    },
+    "origin": {"const": "unsigned-local-audit"}
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$"},
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "time": {"type": "string", "pattern": "^20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "roles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["luna_scout_fast", "luna_worker_fast", "luna_critic_fast", "luna_tester_fast", "luna_max_fast"],
+      "properties": {
+        "luna_scout_fast": {"$ref": "#/$defs/hash"},
+        "luna_worker_fast": {"$ref": "#/$defs/hash"},
+        "luna_critic_fast": {"$ref": "#/$defs/hash"},
+        "luna_tester_fast": {"$ref": "#/$defs/hash"},
+        "luna_max_fast": {"$ref": "#/$defs/hash"}
+      }
+    }
+  }
+}

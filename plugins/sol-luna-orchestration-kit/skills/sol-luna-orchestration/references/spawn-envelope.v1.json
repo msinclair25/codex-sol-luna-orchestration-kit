@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "routing_request": {
+    "kind": "worker",
+    "profile": "fast",
+    "fork_turns": "none",
+    "separate": true,
+    "provable": true,
+    "large_enough": true,
+    "isolated": true,
+    "tier_appropriate": true,
+    "lane_count": 1,
+    "ownership": {
+      "m5_guard": [
+        "plugins/sol-luna-orchestration-kit/scripts/pre_tool_use_guard.py"
+      ]
+    }
+  },
+  "assignment": {
+    "lane_id": "m5_guard",
+    "outcome": "Implement the bounded guard change.",
+    "relevant_inputs": [
+      "docs/M5_PLUGIN_GUARDRAILS.md"
+    ],
+    "scope_or_owned_files": [
+      "plugins/sol-luna-orchestration-kit/scripts/pre_tool_use_guard.py"
+    ],
+    "constraints": [
+      "Do not edit files outside the declared scope.",
+      "Do not spawn nested agents."
+    ],
+    "acceptance_checks": [
+      "Run the named guard unit tests.",
+      "Return the exact evidence packet."
+    ],
+    "expected_evidence": [
+      "scope",
+      "files_or_surfaces",
+      "commands_or_checks",
+      "assumptions",
+      "failures",
+      "risks",
+      "confidence",
+      "recommendation"
+    ],
+    "risk_boundary": "No network, secrets, destructive commands, commits, or external writes.",
+    "deadline": "Complete within one bounded agent turn."
+  }
+}

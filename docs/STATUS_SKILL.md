@@ -13,21 +13,32 @@ Use `--root`, `--receipts-dir`, and `--session-root` for a synthetic or
 alternate local fixture. When running a globally installed copy, `--root` is
 required so the skill can resolve the orchestration-kit modules. Add
 `--active-root` and `--active-config` to compare the installed dynamic runtime.
+Pass `--luna-tier standard` when the full installer selected Standard Luna;
+Fast remains the default profile.
+M4 is terminal and non-retryable by default. Historical inspection requires
+`--allow-retired-m4-audit` together with `--plan`; add `--pilot-home`,
+`--starts-dir`, or `--as-of` only for the named audit fixture. Audit mode keeps
+the next-slot eligibility false and never authorizes registration or model work.
 An optional positive `--budget` reports 50/75/90% thresholds only when usage
 is attributable.
 
 The report always contains milestone and receipt state, latest terminal and
 accepted outcomes, session-probe capability, usage, timing, delegation
 quality, budget, drift, freshness, provenance, warnings, and exactly one next
-routing recommendation. Numeric usage, timing, and budget values remain null
-and explicitly unknown in receipt-only mode.
+routing recommendation. The default M4 section reports the immutable terminal
+retirement and no next slot. Explicit audit mode can report historical plan
+state and counts without making a slot eligible. A missing or invalid
+retirement marker fails closed with no next slot and no model-work
+recommendation. Numeric usage, timing, and budget values remain null and
+explicitly unknown in receipt-only mode.
 
 The scanner is bounded (under 30 seconds in normal operation), redacts paths,
 identifiers, prompts, source, tool payloads, and secrets, and requires explicit
 record schema v1 plus complete token snapshots, lifecycle boundaries, runtime
 labels, and receipt correlation. It falls back to receipt-only status whenever
 any of those local-session checks cannot be proved. It does not start a server
-or use a plugin, MCP service, dashboard, database, or network surface.
+or use an MCP service, dashboard, database, or network surface. M5 can
+distribute the same local workflow in the optional plugin.
 
 Globally installed example:
 

@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "m4-pilot-plan.v1",
+  "title": "Sol Luna M4 pilot plan v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "plan_id",
+    "project_id",
+    "status",
+    "created_at",
+    "source_commit",
+    "sample_size",
+    "deadline_hours",
+    "minimum_families",
+    "assignment_method",
+    "policies",
+    "checkpoints",
+    "kill_criteria",
+    "slots",
+    "origin"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "plan_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$"},
+    "project_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$"},
+    "status": {"const": "frozen-before-first-start"},
+    "created_at": {"type": "string", "pattern": "^20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "source_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "sample_size": {"const": 10},
+    "deadline_hours": {"type": "number", "minimum": 0.5, "maximum": 720, "multipleOf": 0.5},
+    "minimum_families": {"type": "integer", "minimum": 3, "maximum": 9},
+    "assignment_method": {"const": "predeclared-matched-alternating"},
+    "policies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["all-max-control", "dynamic-v0.2.1"],
+      "properties": {
+        "all-max-control": {"$ref": "#/$defs/policy"},
+        "dynamic-v0.2.1": {"$ref": "#/$defs/policy"}
+      }
+    },
+    "checkpoints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "terminal_coverage_required",
+        "critical_high_defect_regression_max",
+        "spawn_precision_min",
+        "weighted_usage_reduction_target",
+        "latency_noninferiority_margin",
+        "required_dispositions",
+        "promotion_requires_calibrated_or_replicated",
+        "automatic_promotion"
+      ],
+      "properties": {
+        "terminal_coverage_required": {"const": 1.0},
+        "critical_high_defect_regression_max": {"const": 0},
+        "spawn_precision_min": {"type": "number", "minimum": 0, "maximum": 1},
+        "weighted_usage_reduction_target": {"type": "number", "minimum": 0, "maximum": 1},
+        "latency_noninferiority_margin": {"type": "number", "minimum": 0, "maximum": 1},
+        "required_dispositions": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {"enum": ["accepted", "rejected", "abandoned"]}
+        },
+        "promotion_requires_calibrated_or_replicated": {"const": true},
+        "automatic_promotion": {"const": false}
+      }
+    },
+    "kill_criteria": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "critical-or-high-defect-regression",
+          "runtime-policy-drift",
+          "privacy-or-security-failure",
+          "receipt-or-attribution-integrity-failure"
+        ]
+      }
+    },
+    "slots": {
+      "type": "array",
+      "minItems": 10,
+      "maxItems": 10,
+      "items": {"$ref": "#/$defs/slot"}
+    },
+    "origin": {"const": "unsigned-local-audit"}
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "path": {"type": "string", "pattern": "^[A-Za-z0-9._/-]{1,200}$"},
+    "roleSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"$ref": "#/$defs/path"},
+        "sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "roles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["luna_scout_fast", "luna_worker_fast", "luna_critic_fast", "luna_tester_fast", "luna_max_fast"],
+      "properties": {
+        "luna_scout_fast": {"$ref": "#/$defs/roleSource"},
+        "luna_worker_fast": {"$ref": "#/$defs/roleSource"},
+        "luna_critic_fast": {"$ref": "#/$defs/roleSource"},
+        "luna_tester_fast": {"$ref": "#/$defs/roleSource"},
+        "luna_max_fast": {"$ref": "#/$defs/roleSource"}
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "environment_label",
+        "bundle_version",
+        "policy_hash_kind",
+        "policy_path",
+        "policy_sha256",
+        "agents_path",
+        "agents_sha256",
+        "config_path",
+        "config_sha256",
+        "rate_card_path",
+        "rate_card_sha256",
+        "roles"
+      ],
+      "properties": {
+        "environment_label": {"enum": ["control", "dynamic"]},
+        "bundle_version": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$"},
+        "policy_hash_kind": {"enum": ["bundle-manifest", "routing-policy"]},
+        "policy_path": {"$ref": "#/$defs/path"},
+        "policy_sha256": {"$ref": "#/$defs/hash"},
+        "agents_path": {"$ref": "#/$defs/path"},
+        "agents_sha256": {"$ref": "#/$defs/hash"},
+        "config_path": {"$ref": "#/$defs/path"},
+        "config_sha256": {"$ref": "#/$defs/hash"},
+        "rate_card_path": {"$ref": "#/$defs/path"},
+        "rate_card_sha256": {"$ref": "#/$defs/hash"},
+        "roles": {"$ref": "#/$defs/roles"}
+      }
+    },
+    "slot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slot_id", "sequence", "pair_id", "arm", "family", "size_risk_band", "acceptance_check_ids"],
+      "properties": {
+        "slot_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$"},
+        "sequence": {"type": "integer", "minimum": 1, "maximum": 10},
+        "pair_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$"},
+        "arm": {"enum": ["all-max-control", "dynamic-v0.2.1"]},
+        "family": {"enum": ["foundation", "routing", "receipts", "feature", "bugfix", "integration", "release", "security", "other"]},
+        "size_risk_band": {"enum": ["small", "medium", "large", "high-risk", "critical"]},
+        "acceptance_check_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$"}
+        }
+      }
+    }
+  }
+}

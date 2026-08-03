@@ -21,5 +21,7 @@ Local receipt files, Codex session records, configuration backups, caches, and
 machine-specific Git metadata were excluded from the new repository. Synthetic
 JSONL under `tests/fixtures/` is retained solely for privacy and parser tests.
 
-V0.2 M0–M3 are implemented. The M4 observational pilot has not been run, so
-the project makes no calibrated usage-savings claim.
+V0.2 M0–M3 are implemented. The first M4 single-pair benchmark started its
+all-Max control arm and was interrupted before a terminal result; its dynamic
+arm never started. That pair is retired and non-retryable, so the project makes
+no calibrated usage-savings claim.

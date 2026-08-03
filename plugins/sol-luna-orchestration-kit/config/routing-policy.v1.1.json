@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "version": "routing-policy.v1.1",
+  "root": {
+    "model": "gpt-5.6-sol",
+    "reasoning": "user-selected",
+    "service_tier": "standard",
+    "service_tier_configured": false
+  },
+  "runtime": {
+    "agents_path": "AGENTS.override.md",
+    "agents_sha256": "e11be812c4673c7cda75448595168bd13b33229dd5caefb7f6af9c4fe5f7a758",
+    "config_snippet_path": "config-snippet.toml",
+    "config_snippet_sha256": "021b9ed7b0ee52eb6c7930497816314694ceff1b1dd0e4d58a1fc86eb61f410c"
+  },
+  "roles": {
+    "luna_critic_fast": {
+      "path": "agents/luna_critic_fast.toml",
+      "model": "gpt-5.6-luna",
+      "reasoning": "high",
+      "service_tier": "fast",
+      "sandbox_mode": "read-only",
+      "sha256": "cbc67737e881c40f4f7407fe4d710a01eb25842759a6f05f379f20e6f6f045bd"
+    },
+    "luna_max_fast": {
+      "path": "agents/luna_max_fast.toml",
+      "model": "gpt-5.6-luna",
+      "reasoning": "max",
+      "service_tier": "fast",
+      "sandbox_mode": "read-only",
+      "sha256": "61679eb82757f7b8a5d4c4726eb1d68d7dc2f704f59e2358aa63b81bb9eb4725"
+    },
+    "luna_scout_fast": {
+      "path": "agents/luna_scout_fast.toml",
+      "model": "gpt-5.6-luna",
+      "reasoning": "medium",
+      "service_tier": "fast",
+      "sandbox_mode": "read-only",
+      "sha256": "a99fbd1db9636a79b746b1658ef78401f75bb5ed1199577de30092b18de428f2"
+    },
+    "luna_tester_fast": {
+      "path": "agents/luna_tester_fast.toml",
+      "model": "gpt-5.6-luna",
+      "reasoning": "medium",
+      "service_tier": "fast",
+      "sandbox_mode": "workspace-write",
+      "sha256": "a99cb7d1ce9cdb93e9bc1c1f372bb2689f611a5f29e0e5d9171f4b0bafff745f"
+    },
+    "luna_worker_fast": {
+      "path": "agents/luna_worker_fast.toml",
+      "model": "gpt-5.6-luna",
+      "reasoning": "high",
+      "service_tier": "fast",
+      "sandbox_mode": "workspace-write",
+      "sha256": "6fb99368c14031d3af7d3eef73d433bf2cc584eedcdaeb43de648669db765b20"
+    }
+  },
+  "transport": {
+    "fork_turns": "none",
+    "history_inherited": false,
+    "assignment": "self-contained",
+    "nested_delegation": false,
+    "on_spawn_error": "sol",
+    "retry_spawn": false
+  },
+  "split": {
+    "checks": [
+      {
+        "name": "Separate",
+        "field": "separate",
+        "required": true
+      },
+      {
+        "name": "Provable",
+        "field": "provable",
+        "required": true
+      },
+      {
+        "name": "Large enough",
+        "field": "large_enough",
+        "required": true
+      },
+      {
+        "name": "Isolated",
+        "field": "isolated",
+        "required": true
+      },
+      {
+        "name": "Tier-appropriate",
+        "field": "tier_appropriate",
+        "required": true
+      }
+    ],
+    "all_required": true,
+    "on_failure": "sol"
+  },
+  "concurrency": {
+    "max_concurrent_threads_per_session": 3,
+    "max_concurrent_delegated_lanes": 3,
+    "processing": "waves",
+    "dependent_work": "serialized"
+  },
+  "max_upgrade_reason_codes": [
+    "genuine_ambiguity",
+    "cross_cutting_risk",
+    "failed_high_attempt",
+    "high_impact_adversarial_review"
+  ],
+  "evidence": {
+    "required_fields": [
+      "scope",
+      "files_or_surfaces",
+      "commands_or_checks",
+      "assumptions",
+      "failures",
+      "risks",
+      "confidence",
+      "recommendation"
+    ],
+    "on_missing": "sol"
+  },
+  "sol_fallback": {
+    "route": "sol",
+    "role": "sol",
+    "model": "gpt-5.6-sol",
+    "reasoning": "user-selected",
+    "service_tier": "standard",
+    "service_tier_configured": false,
+    "on_error": "direct"
+  }
+}
