@@ -1,132 +1,81 @@
-# Usage metrics
+# Usage and delegation metrics
 
-This kit supports two complementary ways to measure the Sol + Luna workflow:
+V0.6.0 uses bounded local observations. It does not create a hosted dashboard,
+telemetry server, database, MCP service, daemon, or cross-project index.
 
-1. `scripts/usage_report.py` produces a private, local snapshot from Codex
-   session records.
-2. Codex OpenTelemetry exports documented runtime metrics to an observability
-   backend for ongoing dashboards and alerts.
+## Project-local routine trends
 
-Neither path reports provider billing or proves that delegation saved money.
-Use the measurements to compare runs with similar scope, not as an invoice.
+The active orchestration workflow may close a privacy-safe
+`routine-delegation-record.v2` under the current trusted project's
+`.sol-luna/routine-records`. This automatic close is a best-effort workflow
+step, not a guaranteed runtime hook. Missing records remain unknown.
 
-## Quick local report
+Status reads v2 dates into:
 
-The reporter uses only the Python 3.9+ standard library. It makes no network
-requests and never emits prompts, messages, tool arguments, command output,
-file paths, session IDs, or agent IDs.
+- current: 30 UTC calendar days including `as_of`;
+- previous: the immediately preceding 30 days; and
+- cohort: one exact routing-policy version.
 
-From the repository root:
+Different policy versions are never combined. V1 history has no date and
+contributes only to a legacy lifetime count. A safe empty project may report
+zero current records; an unsafe or absent project reports unavailable/null.
 
-```sh
-python3 scripts/usage_report.py --since 2026-08-01
-```
+## Conservative advisor
 
-On Windows:
+`optimization-advisor.v1` documents operational heuristics:
 
-```powershell
-py scripts/usage_report.py --since 2026-08-01
-```
+| Rule | Value |
+| --- | ---: |
+| Minimum current records | 10 |
+| Minimum previous records for trend | 10 |
+| Minimum role/task/benefit group | 5 |
+| Review usefulness | below 70% |
+| Review failed outcomes | above 15% |
+| Review failed decided checks | above 10% |
 
-With no path argument, the script reads `~/.codex/sessions`. You can limit it
-to one or more session directories or rollout files:
+Recommendation codes are `insufficient_evidence`, `no_issue_detected`,
+`review_spawn_precision`, `review_failure_rate`, and
+`review_check_failures`. Findings may identify a role kind, task class, or
+benefit code for human review. They do not prove cause or controlled comparison.
 
-```sh
-python3 scripts/usage_report.py ~/.codex/sessions/2026/08/01
-```
+The advisor never rewrites routing policy, changes thresholds, switches tiers,
+promotes a policy, or claims token, cost, quality, latency, or tier savings.
+`automatic_policy_change` is always false. Low sample size is a successful
+normal state: “Not enough comparable evidence yet.”
 
-For machine-readable output:
+## Attributable session diagnostics
+
+`scripts/usage_report.py` remains an optional best-effort local parser for
+recognized Codex session JSONL. It requires complete lifecycle boundaries,
+runtime labels, token snapshots, and receipt attribution. It subtracts safe
+pre-child baselines so forked counters are not counted as Luna usage. Any
+uncertain coverage remains null/unknown.
+
+Maintainer example:
 
 ```sh
 python3 scripts/usage_report.py --since 2026-08-01 --format json
 ```
 
-The report groups runs by role, model, reasoning effort, and runtime tier. It
-includes:
+The report groups only bounded aggregates by role, model, reasoning, and tier.
+It never emits prompts, messages, tool payloads, paths, IDs, source, or command
+output. Raw session files may contain all of those and must not be shared.
 
-- root and subagent run counts;
-- input, cached-input, output, reasoning-output, and total token fields;
-- active duration, tool-call count, and completed/incomplete run counts;
-- observed wall-clock overlap, maximum concurrency, and a wall-span overlap
-  ratio when timestamps are available.
+Token counts are usage signals, not provider billing or plan-credit accounting.
+Weighted usage uses the checked-in uncalibrated rate card and cannot support a
+savings claim. Parallelism may increase tokens while changing elapsed time or
+verification; compare like-for-like accepted outcomes and keep the conclusion
+observational.
 
-`total` is the value recorded by Codex. Cached input may already be included in
-input accounting, so do not add every displayed token column together.
-`completed` only means Codex recorded a task-completion event; it is not a
-correctness judgment.
+## Privacy and validation
 
-Task timestamps describe wall spans and may include waiting or idle time. The
-overlap ratio shows that task spans overlapped; it is not CPU utilization,
-speedup, token savings, or cost savings. Recorded `duration_ms` can differ from
-the timestamp span, so the report keeps active duration and wall-span fields
-separate.
+- routine records are under 2 KB, files `0600`, directory `0700`;
+- exact timestamps, paths, project/task IDs, prompts, evidence prose, secrets,
+  customer data, and production logs are forbidden;
+- workspace roots are canonical, project-marked, and reject broad/temp/home or
+  symlink paths;
+- strict JSON rejects duplicate keys and nonfinite/oversized input; and
+- status never treats missing attribution as zero.
 
-The `token runs` coverage value shows how many runs had both a safe pre-child
-baseline and task boundary. An interrupted or older child record may contain
-forked parent counters without a usable baseline; the reporter leaves that
-child’s tokens unattributed instead of presenting inherited usage as new Luna
-usage. Root runs also require at least one usable token snapshot.
-
-### Local-report limitations
-
-The local report is intentionally marked **best effort**. Codex session JSONL
-is an internal persistence format, not a public metrics API, and it may change
-between versions. Forked subagent files can contain inherited parent events;
-the parser subtracts the last pre-child token snapshot to avoid counting that
-history as new child usage.
-
-Treat the report as a diagnostic view. Validate surprising numbers against
-your current Codex version, and use OpenTelemetry for a long-lived production
-dashboard.
-
-## Official OpenTelemetry metrics
-
-Codex can export OpenTelemetry logs, traces, and metrics. Telemetry routing is
-a user-level setting, so merge it into `~/.codex/config.toml`; a project's
-`.codex/config.toml` cannot override `otel`.
-
-The following example keeps prompt logs disabled and sends metrics to an OTLP
-HTTP collector already running on the local machine:
-
-```toml
-[otel]
-environment = "local"
-exporter = "none"
-log_user_prompt = false
-metrics_exporter = { otlp-http = { endpoint = "http://127.0.0.1:4318/v1/metrics", protocol = "binary" } }
-```
-
-Do not add `metrics_exporter` until an OTLP collector is listening at the
-configured endpoint. Merge these keys into an existing `[otel]` table instead
-of creating a duplicate TOML table. Restart Codex after changing the file.
-
-Useful metrics for this orchestration kit include:
-
-| Metric | Suggested grouping | What it shows |
-| --- | --- | --- |
-| `codex.turn.token_usage` | `model`, `token_type` | Sol versus Luna token volume |
-| `codex.turn.e2e_duration_ms` | `model` | End-to-end turn latency |
-| `codex.turn.tool.call` | `model` | Tool calls per turn |
-| `codex.tool.call` | `model`, `tool`, `success` | Tool volume and failures |
-| `codex.multi_agent.spawn` | `role` | How often each custom role is used |
-
-Fast may appear as `priority` in runtime records because the Fast preference
-maps to the priority service tier.
-
-See OpenAI's official
-[Codex observability and telemetry documentation](https://learn.chatgpt.com/docs/config-file/config-advanced#observability-and-telemetry)
-for the current event catalog, exporter formats, and privacy guidance.
-
-## Privacy and interpretation
-
-- Session records can contain prompts, paths, code, tool arguments, and tool
-  output. Do not upload or share raw JSONL files.
-- The local reporter emits aggregates only, but review any report before
-  publishing it.
-- Keep `log_user_prompt = false` unless exporting raw prompts is intentional
-  and approved for the destination.
-- Token counts are usage signals, not dollar cost or ChatGPT plan-credit
-  accounting. Provider-side billing, caching rules, and plan allowances may
-  use different accounting.
-- Parallel agents often increase total tokens while reducing elapsed time or
-  improving independent verification. Compare like-for-like tasks.
+Tests use isolated temporary homes and marked workspaces, never live
+`~/.codex`.

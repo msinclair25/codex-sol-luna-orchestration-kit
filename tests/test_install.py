@@ -514,7 +514,7 @@ class InstallerTests(unittest.TestCase):
         self.assertTrue(verify_active_root(self.codex, ROOT, self.codex / "config.toml", "standard")["ok"])
         self.assertEqual(
             json.loads((self.codex / install.INSTALL_STATE_NAME).read_text())["kit_version"],
-            "0.5.0",
+            "0.6.0",
         )
 
         switched = install.install(
@@ -569,16 +569,31 @@ class InstallerTests(unittest.TestCase):
 
         outdated = install.doctor(ROOT, self.codex)
         self.assertEqual(outdated["health"], "roles-update-required")
-        self.assertEqual(outdated["next_action"], "finish-update")
+        self.assertEqual(outdated["next_action"], "update-roles")
+        role_path = self.codex / "agents" / "luna_scout_fast.toml"
+        recorded_role = role_path.read_bytes()
+        role_path.write_text("managed runtime drift\n")
+        drifted_outdated = install.doctor(ROOT, self.codex)
+        self.assertEqual(drifted_outdated["health"], "needs-attention")
+        self.assertEqual(drifted_outdated["next_action"], "review-drift")
+        role_path.write_bytes(recorded_role)
         pending = install.mark_update_pending(self.codex)
         self.assertEqual(pending["health"], "update-pending")
         stored = json.loads(state_path.read_text())
         self.assertEqual(stored["schema_version"], 2)
         self.assertEqual(stored["update_phase"], "package-refresh-requested")
         self.assertEqual(install.doctor(ROOT, self.codex)["next_action"], "retry-package-refresh")
+        self.assertEqual(
+            install.doctor(ROOT, self.codex)["next_message"],
+            "The package refresh did not finish. Ask Sol/Luna setup to retry the update; no restart is needed yet.",
+        )
         refreshed = install.mark_package_refreshed(self.codex)
         self.assertEqual(refreshed["next_action"], "restart-and-finish-update")
         self.assertEqual(install.doctor(ROOT, self.codex)["next_action"], "finish-update")
+        self.assertEqual(
+            install.doctor(ROOT, self.codex)["next_message"],
+            "Restart Codex, begin a new task, and ask Sol/Luna setup to continue.",
+        )
 
         updated = install.install(
             ROOT,
@@ -590,7 +605,7 @@ class InstallerTests(unittest.TestCase):
         )
         self.assertTrue(updated["verification"]["ok"])
         ready = json.loads(state_path.read_text())
-        self.assertEqual(ready["kit_version"], "0.5.0")
+        self.assertEqual(ready["kit_version"], "0.6.0")
         self.assertEqual(ready["update_phase"], "ready")
         self.assertEqual(install.doctor(ROOT, self.codex)["health"], "healthy")
 
@@ -604,6 +619,41 @@ class InstallerTests(unittest.TestCase):
             ])
         self.assertEqual(result, 0)
         self.assertEqual(json.loads(output.getvalue())["next_action"], "none")
+
+    def test_doctor_distinguishes_repository_workflow_only_and_invalid_state(self):
+        repository = install.doctor(ROOT, self.codex)
+        self.assertEqual(repository["health"], "not-installed")
+        self.assertEqual(repository["mode"], "not-installed")
+        self.assertIsNone(repository["luna_tier"])
+        self.assertEqual(repository["next_action"], "install-if-desired")
+
+        plugin = ROOT / "plugins" / "sol-luna-orchestration-kit"
+        workflow = install.doctor(plugin, self.codex)
+        self.assertEqual(workflow["health"], "workflow-only")
+        self.assertEqual(workflow["mode"], "workflow-only")
+        self.assertIsNone(workflow["luna_tier"])
+        self.assertEqual(workflow["workflow_default_tier"], "fast")
+        self.assertEqual(workflow["kit_version"], "0.6.0")
+
+        malformed_plugin = self.base / "malformed-plugin"
+        shutil.copytree(
+            plugin,
+            malformed_plugin,
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        )
+        (malformed_plugin / ".codex-plugin" / "plugin.json").write_text(
+            '{"name":"wrong-plugin","version":"0.6.0"}\n'
+        )
+        malformed = install.doctor(malformed_plugin, self.codex)
+        self.assertEqual(malformed["health"], "needs-attention")
+        self.assertEqual(malformed["next_action"], "review-drift")
+        self.assertFalse(malformed["ok"])
+
+        self.codex.mkdir()
+        (self.codex / install.INSTALL_STATE_NAME).write_text('{"schema_version":2}')
+        invalid = install.doctor(ROOT, self.codex)
+        self.assertEqual(invalid["health"], "needs-attention")
+        self.assertFalse(invalid["ok"])
 
     def test_state_tracked_update_replaces_only_unchanged_managed_assets(self):
         install.install(ROOT, self.codex, self.home, apply=True, with_usage=False)

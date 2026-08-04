@@ -193,26 +193,32 @@ material claim.
 
 Routine direct Sol work has no persisted formal receipt; its final handoff is
 normally no more than about 100 words. Routine delegated work may create only
-the deterministic privacy-safe `routine-delegation-record.v1` needed for
-spawn precision, lane outcome, checks, and attributable usage. If automatic
-collection is unavailable, keep measurement unknown; do not ask Sol to author
-bookkeeping JSON and never infer zero usage.
+the deterministic privacy-safe `routine-delegation-record.v2` needed for
+project-local trends, spawn precision, lane outcome, checks, and attributable
+usage. Historical v1 records remain valid lifetime observations but never gain
+dates or enter trends. If automatic collection is unavailable, keep
+measurement unknown; do not ask Sol to author bookkeeping JSON and never infer
+zero usage.
 
 When the active Sol/Luna plugin exposes its bounded routine recorder, Sol
 closes the record automatically after it independently accepts delegated
-routine work. Supply only usefulness, terminal outcome, generic acceptance
-check results, and deterministically attributable total tokens when available.
-Do not include task names, prompts, identifiers, paths, or free-form evidence.
-Recorder absence or failure leaves measurement unknown and must never block an
-otherwise accepted user outcome.
+routine work. Here, automatic means the active orchestration workflow performs
+that bounded local close; it is not a guaranteed runtime lifecycle hook.
+Supply the already validated routing-policy version, active profile, role kind,
+task class, and benefit code, plus only usefulness, terminal outcome, generic
+acceptance check results, and deterministically attributable total tokens when
+available. The writer derives the UTC date. Do not include task names, prompts,
+identifiers, paths, timestamps, or free-form evidence. Recorder absence or
+failure leaves measurement unknown and must never block an otherwise accepted
+user outcome.
 
 A full historical-compatible `milestone-receipt.v1` is required for
 high-risk or critical work; security; releases; deployments, migrations,
 destructive actions, or external side effects; Codex app-task fallback
 attempts; failures, blocks, abandonment, or material rework; pilots,
 benchmarks, or evaluation windows; and explicit audit requests. Receipt tier
-selection follows `receipt-policy.v1`; missing optional routine records are
-not errors and historical receipts are never reinterpreted.
+selection follows `receipt-policy.v2`; missing optional routine records are
+not errors and historical v1 records and receipts are never reinterpreted.
 
 Unsupported combinations, malformed requests, unsafe paths, ownership
 conflicts, runtime hash drift, or pre-admission role failures are fail-closed

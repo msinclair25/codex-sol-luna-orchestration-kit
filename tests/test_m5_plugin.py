@@ -102,7 +102,7 @@ class M5PluginTests(unittest.TestCase):
     def test_manifest_and_default_hook_discovery_are_valid(self):
         manifest = json.loads((PLUGIN / ".codex-plugin" / "plugin.json").read_text())
         self.assertEqual(manifest["name"], PLUGIN.name)
-        self.assertEqual(manifest["version"], "0.5.0")
+        self.assertEqual(manifest["version"], "0.6.0")
         self.assertEqual(manifest["skills"], "./skills/")
         self.assertNotIn("hooks", manifest)
         self.assertIsInstance(manifest["interface"]["defaultPrompt"], list)
@@ -137,7 +137,12 @@ class M5PluginTests(unittest.TestCase):
         self.assertIn("`project_context` object", orchestration)
         self.assertIn("`project_root_verified: true`", orchestration)
         self.assertIn("automatically reuses the profile", status)
-        self.assertIn("close-routine", orchestration)
+        self.assertIn("routine-delegation-record.v2", orchestration)
+        self.assertIn("guaranteed runtime lifecycle hook", orchestration)
+        self.assertIn("canonical active project root", orchestration)
+        self.assertIn("Read-only settings overview", setup)
+        self.assertIn("install-state-v3", setup)
+        self.assertIn("--workspace-root", status)
 
         marketplace = json.loads((ROOT / ".agents" / "plugins" / "marketplace.json").read_text())
         self.assertEqual(marketplace["name"], "sol-luna")
@@ -156,7 +161,7 @@ class M5PluginTests(unittest.TestCase):
             for source in sorted((ROOT / directory).rglob("*")):
                 if source.is_file() and "__pycache__" not in source.parts:
                     direct_pairs.append((source, PLUGIN / source.relative_to(ROOT)))
-        for name in ("install.py", "pilot_tool.py", "receipt_tool.py", "routing_policy.py", "usage_report.py", "verify_control_bundle.py"):
+        for name in ("install.py", "lifecycle.py", "pilot_tool.py", "receipt_tool.py", "routing_policy.py", "usage_report.py", "verify_control_bundle.py"):
             direct_pairs.append((ROOT / "scripts" / name, PLUGIN / "scripts" / name))
         for skill_name in ("sol-luna-setup", "sol-luna-status"):
             canonical_skill = ROOT / ".agents" / "skills" / skill_name
@@ -187,7 +192,7 @@ class M5PluginTests(unittest.TestCase):
         report = json.loads(result.stdout)
         self.assertTrue(report["ok"])
         self.assertEqual(report["mismatches"], [])
-        self.assertEqual(report["version"], "0.5.0")
+        self.assertEqual(report["version"], "0.6.0")
 
     def test_bundled_setup_installer_applies_standard_profile(self):
         previous_dont_write_bytecode = sys.dont_write_bytecode
@@ -469,6 +474,55 @@ class M5PluginTests(unittest.TestCase):
             self.assertIn("no intermediate restart", compact)
         self.assertIn("$sol-luna-setup Continue.", installing)
         self.assertIn("resumable", installing)
+
+        lines = readme.splitlines()
+        self.assertLessEqual(len(lines), 400)
+        quick_start = next(index for index, line in enumerate(lines, 1) if line == "## Quick Start")
+        self.assertLessEqual(quick_start, 40)
+        self.assertLess(readme.index("| **Fast**"), readme.index("Install and fully configure"))
+        prompt = readme.split("```text", 1)[1].split("```", 1)[0].strip().splitlines()
+        self.assertLessEqual(len(prompt), 6)
+        for label in ("Setup", "Status", "Update", "Continue", "Switch", "Verify", "Settings"):
+            self.assertIn(f"| {label} |", readme)
+        self.assertIn("Healthy full install", readme)
+        self.assertIn("Not enough comparable evidence yet.", readme)
+        self.assertIn("Workflow-only alternative", readme)
+        self.assertIn("Technical history", readme)
+        visual = (ROOT / "assets" / "sol-luna-orchestration-system-v0.6.svg").read_text()
+        self.assertIn("LUNA · FAST", visual)
+        self.assertIn("LUNA · STANDARD", visual)
+        self.assertIn("#f6c85f", visual)
+        self.assertIn("#41d8ee", visual)
+        self.assertIn("#63e6a6", visual)
+
+    def test_settings_guidance_is_read_only_and_maintainer_help_is_explicit(self):
+        setup = (ROOT / ".agents" / "skills" / "sol-luna-setup" / "SKILL.md").read_text()
+        settings = setup.split("## Read-only settings overview", 1)[1].split("## Update the plugin package", 1)[0]
+        for phrase in (
+            "workflow-only or full-role mode",
+            "plugin/bundle version",
+            "managed surface categories",
+            "current project metric collection",
+            "available conversational actions",
+        ):
+            self.assertIn(phrase, settings)
+        self.assertIn("never writes files", settings)
+        self.assertNotIn("--apply", settings)
+        self.assertNotIn("SHA-256", settings)
+
+        install_help = subprocess.run(
+            [sys.executable, "scripts/install.py", "--help"],
+            cwd=ROOT, text=True, capture_output=True,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
+        status_help = subprocess.run(
+            [sys.executable, str(ROOT / ".agents/skills/sol-luna-status/scripts/sol_luna_status.py"), "--help"],
+            cwd=ROOT, text=True, capture_output=True,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
+        self.assertIn("Normal users ask the Sol/Luna setup skill", install_help.stdout)
+        self.assertIn("maintainer", status_help.stdout)
+        self.assertIn("project-local", status_help.stdout)
 
 
 if __name__ == "__main__":

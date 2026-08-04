@@ -34,6 +34,50 @@ STATUS = _load_status_module()
 
 
 class SolLunaStatusTests(unittest.TestCase):
+    def _routine_record(
+        self,
+        *,
+        recorded_on="2026-08-04",
+        useful=True,
+        outcome="completed",
+        check_statuses=("pass",),
+        routing_policy="routing-policy.v1.5",
+        role_kind="tester",
+        task_class="substantial_validation",
+        benefit_code="parallel_latency",
+    ):
+        record = build_routine_record(
+            routing_policy=routing_policy,
+            profile="fast",
+            role_kind=role_kind,
+            task_class=task_class,
+            benefit_code=benefit_code,
+            useful=useful,
+            outcome=outcome,
+            checks=[
+                {"name": f"acceptance-{index}", "status": status}
+                for index, status in enumerate(check_statuses, 1)
+            ],
+        )
+        record["recorded_on"] = recorded_on
+        return record
+
+    def _write_routine_records(self, workspace, records, *, legacy=None):
+        metadata = workspace / ".sol-luna"
+        if not metadata.exists():
+            metadata.mkdir(mode=0o700)
+        records_dir = metadata / "routine-records"
+        records_dir.mkdir(mode=0o700)
+        for index, record in enumerate(records, 1):
+            path = records_dir / f"record-{index}.json"
+            path.write_text(json.dumps(record, separators=(",", ":")))
+            os.chmod(path, 0o600)
+        if legacy is not None:
+            path = records_dir / "legacy.json"
+            path.write_text(json.dumps(legacy, separators=(",", ":")))
+            os.chmod(path, 0o600)
+        return records_dir
+
     def _payload(self, task_id="root-id-secret", profile="fast"):
         value = json.loads((FIXTURES / "receipt_accepted.json").read_text())
         value["codex_task_id"] = task_id
@@ -71,6 +115,7 @@ class SolLunaStatusTests(unittest.TestCase):
     def _workspace(self, *, task_id="root-id-secret", child_records=None, root_records=None, unrelated=False, profile="fast", payload=None, include_child=True):
         temporary = tempfile.TemporaryDirectory()
         base = Path(temporary.name)
+        (base / ".git").mkdir()
         receipts = base / "receipts"
         sessions = base / "sessions"
         sessions.mkdir()
@@ -110,7 +155,7 @@ class SolLunaStatusTests(unittest.TestCase):
         environment["HOME"] = str(base / "home")
         environment["PYTHONDONTWRITEBYTECODE"] = "1"
         return subprocess.run(
-            [sys.executable, str(script), "--root", str(ROOT), "--receipts-dir", str(receipts), "--session-root", str(sessions), *extra],
+            [sys.executable, str(script), "--root", str(ROOT), "--workspace-root", str(base), "--receipts-dir", str(receipts), "--session-root", str(sessions), *extra],
             cwd=ROOT,
             env=environment,
             text=True,
@@ -170,7 +215,8 @@ class SolLunaStatusTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         report, _ = self._json(base, receipts, sessions)
         self.assertEqual(report["mode"], "session+receipts")
-        self.assertEqual(report["luna_profile"], {"tier": "standard", "provenance": "latest-receipt"})
+        self.assertEqual(report["luna_profile"]["tier"], None)
+        self.assertEqual(report["luna_profile"]["provenance"], "not-inferred")
         self.assertEqual(report["session_probe"]["status"], "pass")
         self.assertEqual(report["usage"]["observed_total_tokens"], 315)
         self.assertEqual(report["usage"]["estimated_weighted_usage"], 315.0)
@@ -240,6 +286,7 @@ class SolLunaStatusTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         base = Path(temporary.name)
+        (base / ".git").mkdir()
         receipts = base / "missing-receipts"
         sessions = base / "sessions"
         sessions.mkdir()
@@ -253,7 +300,9 @@ class SolLunaStatusTests(unittest.TestCase):
         self.assertNotIn("create a validated milestone receipt", report["routing_recommendation"])
         self.assertNotIn("0 (unknown)", rendered)
 
-        unsafe_records = base / "unsafe-routine-records"
+        metadata = base / ".sol-luna"
+        metadata.mkdir(mode=0o700)
+        unsafe_records = metadata / "routine-records"
         unsafe_records.mkdir()
         os.chmod(unsafe_records, 0o755)
         report, _ = self._json(
@@ -268,12 +317,18 @@ class SolLunaStatusTests(unittest.TestCase):
         self.assertEqual(report["routine_records"]["collection"], "partial")
         self.assertIn("invalid_routine_records_observed", report["warnings"])
 
-        records = base / "routine-records"
+        records = metadata / "routine-records"
+        unsafe_records.rmdir()
         records.mkdir(mode=0o700)
         record = build_routine_record(
+            routing_policy="routing-policy.v1.5",
+            profile="fast",
+            role_kind="tester",
+            task_class="substantial_validation",
+            benefit_code="parallel_latency",
             useful=True,
             outcome="completed",
-            checks=[{"name": "focused tests", "status": "pass"}],
+            checks=[{"name": "acceptance-1", "status": "pass"}],
         )
         path = records / "record.json"
         path.write_text(json.dumps(record))
@@ -300,8 +355,8 @@ class SolLunaStatusTests(unittest.TestCase):
             str(records),
         )
         self.assertEqual(summary.returncode, 0)
-        self.assertIn("Metrics: active; 1 delegated task observed", summary.stdout)
-        self.assertIn("Delegation: 100% useful", summary.stdout)
+        self.assertIn("Metrics: 1 delegated outcome in the last 30 days", summary.stdout)
+        self.assertIn("Delegation: 1/1 accepted as useful", summary.stdout)
 
     def test_incomplete_token_snapshots_and_unversioned_records_fail_closed(self):
         missing_dimension = [json.loads(line) for line in (FIXTURES / "root.jsonl").read_text().splitlines()]
@@ -417,15 +472,17 @@ class SolLunaStatusTests(unittest.TestCase):
         second = self._run(base, receipts, sessions)
         self.assertEqual(first.returncode, 0)
         self.assertEqual(first.stdout, second.stdout)
-        for label in ("Health:", "Version:", "Metrics:", "Delegation:", "Next:"):
+        for label in ("Health:", "Version:", "Metrics:", "Delegation:", "Trend:", "Next:"):
             self.assertIn(label, first.stdout)
         self.assertNotIn("## M4 pilot", first.stdout)
         detail = self._run(base, receipts, sessions, "--detail")
         self.assertEqual(detail.returncode, 0)
-        for section in ("Milestone", "Receipts", "M4 pilot", "Session capability probe", "Usage", "Timing", "Delegation and quality", "Budget", "Drift and freshness", "Provenance and unknowns", "Routing recommendation"):
+        for section in ("Installation", "Current project metrics", "Current receipts and usage", "Current drift and provenance"):
             self.assertIn(f"## {section}", detail.stdout)
-        report, _ = self._json(base, receipts, sessions)
-        self.assertEqual(detail.stdout.count(report["routing_recommendation"]), 1)
+        self.assertNotIn("M4", detail.stdout)
+        historical = self._run(base, receipts, sessions, "--historical")
+        self.assertIn("## Retired M4 pilot", historical.stdout)
+        self.assertIn("retired and non-retryable", historical.stdout)
         for secret in ("root-id-secret", "root-session-secret", "child-id-secret", "child-session-secret", str(base), str(ROOT)):
             self.assertNotIn(secret, first.stdout)
             self.assertNotIn(secret, detail.stdout)
@@ -433,6 +490,7 @@ class SolLunaStatusTests(unittest.TestCase):
     def test_summary_reports_healthy_and_pending_installation_plainly(self):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
+            (base / ".git").mkdir()
             home = base / "home"
             home.mkdir()
             codex = home / ".codex"
@@ -444,15 +502,20 @@ class SolLunaStatusTests(unittest.TestCase):
             healthy = self._run(base, receipts, sessions)
             self.assertEqual(healthy.returncode, 0, healthy.stderr)
             self.assertIn("Health: Healthy", healthy.stdout)
-            self.assertIn("Version: 0.5.0 · Fast", healthy.stdout)
-            self.assertIn("Metrics: Ready; no delegated work observed yet", healthy.stdout)
-            self.assertIn("Next: No action needed.", healthy.stdout)
+            self.assertIn("Version: 0.6.0 · Fast", healthy.stdout)
+            self.assertIn("Metrics: Ready; no dated delegated outcomes", healthy.stdout)
+            self.assertIn("Next: No lifecycle action needed; no policy change suggested.", healthy.stdout)
 
             installer.mark_update_pending(codex)
             pending = self._run(base, receipts, sessions)
             self.assertEqual(pending.returncode, 0, pending.stderr)
             self.assertIn("Health: Update pending", pending.stdout)
-            self.assertIn("Next: Restart Codex", pending.stdout)
+            self.assertIn("The package refresh did not finish", pending.stdout)
+            self.assertIn("no restart is needed yet", pending.stdout)
+
+            installer.mark_package_refreshed(codex)
+            refreshed = self._run(base, receipts, sessions)
+            self.assertIn("Restart Codex, begin a new task", refreshed.stdout)
 
             malformed = json.loads((codex / installer.INSTALL_STATE_NAME).read_text())
             malformed["schema_version"] = True
@@ -460,6 +523,200 @@ class SolLunaStatusTests(unittest.TestCase):
             invalid = self._run(base, receipts, sessions)
             self.assertEqual(invalid.returncode, 0, invalid.stderr)
             self.assertIn("Health: Needs attention", invalid.stdout)
+
+    def test_plugin_workflow_status_observes_separate_active_workspace(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            (base / ".git").mkdir()
+            records = self._write_routine_records(base, [self._routine_record()])
+            sessions = base / "sessions"
+            sessions.mkdir()
+            receipts = base / "missing-receipts"
+            plugin = ROOT / "plugins" / "sol-luna-orchestration-kit"
+            script = plugin / "skills" / "sol-luna-status" / "scripts" / "sol_luna_status.py"
+            completed = subprocess.run(
+                [
+                    sys.executable, str(script), "--root", str(plugin),
+                    "--workspace-root", str(base),
+                    "--receipts-dir", str(receipts), "--session-root", str(sessions),
+                    "--as-of", "2026-08-04",
+                ],
+                cwd=base,
+                env={**os.environ, "HOME": str(base / "home"), "PYTHONDONTWRITEBYTECODE": "1"},
+                text=True,
+                capture_output=True,
+                timeout=30,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("Health: Workflow-only", completed.stdout)
+            self.assertIn("Version: 0.6.0 · Workflow-only · Fast workflow routing default", completed.stdout)
+            self.assertIn("1 delegated outcome in the last 30 days", completed.stdout)
+            self.assertIn("Full roles are not installed", completed.stdout)
+
+    def test_unsafe_or_missing_workspace_reports_metrics_unavailable_not_zero(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            sessions = base / "sessions"
+            sessions.mkdir()
+            receipts = base / "receipts"
+            for unsafe in ("/", str(Path.home()), tempfile.gettempdir(), str(base)):
+                completed = subprocess.run(
+                    [
+                        sys.executable, str(SCRIPT), "--root", str(ROOT),
+                        "--workspace-root", unsafe, "--receipts-dir", str(receipts),
+                        "--session-root", str(sessions), "--format", "json",
+                    ],
+                    cwd=ROOT,
+                    env={**os.environ, "HOME": str(base / "home"), "PYTHONDONTWRITEBYTECODE": "1"},
+                    text=True,
+                    capture_output=True,
+                    timeout=30,
+                )
+                report = json.loads(completed.stdout)
+                self.assertEqual(report["workspace"]["status"], "unavailable", unsafe)
+                self.assertEqual(report["routine_records"]["collection"], "unavailable", unsafe)
+                self.assertIsNone(report["routine_records"]["observed"], unsafe)
+
+            project = base / "project"
+            project.mkdir()
+            (project / ".git").mkdir()
+            linked = base / "linked-project"
+            linked.symlink_to(project, target_is_directory=True)
+            self.assertIsNone(STATUS._safe_workspace_candidate(linked))
+
+    def test_windows_legacy_and_policy_cohorts_are_deterministic(self):
+        current = [self._routine_record(recorded_on="2026-08-04") for _ in range(10)]
+        previous = [self._routine_record(recorded_on="2026-07-05") for _ in range(10)]
+        other_policy = [
+            self._routine_record(
+                recorded_on="2026-08-04", useful=False, outcome="failed",
+                check_statuses=("fail",), routing_policy="routing-policy.v1.6",
+            )
+            for _ in range(10)
+        ]
+        legacy = {
+            "schema_version": 1,
+            "version": "routine-delegation-record.v1",
+            "spawn": {"decision": "delegate", "useful": False},
+            "outcome": "failed",
+            "checks": [{"name": "legacy", "status": "fail"}],
+            "usage": {"attribution": "unknown", "total_tokens": None},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            (base / ".git").mkdir()
+            records = self._write_routine_records(base, current + previous + other_policy, legacy=legacy)
+            sessions = base / "sessions"
+            sessions.mkdir()
+            report, _ = self._json(
+                base, base / "receipts", sessions,
+                "--routine-records-dir", str(records), "--as-of", "2026-08-04",
+            )
+            routine = report["routine_records"]
+            self.assertEqual(routine["current_window"]["start"], "2026-07-06")
+            self.assertEqual(routine["previous_window"]["end"], "2026-07-05")
+            self.assertEqual(routine["current_window"]["observed"], 10)
+            self.assertEqual(routine["previous_window"]["observed"], 10)
+            self.assertEqual(routine["legacy_lifetime_count"], 1)
+            self.assertEqual(routine["v2_lifetime_count"], 30)
+            self.assertEqual(len(routine["cohorts"]), 2)
+            self.assertEqual(report["optimization_advisor"]["primary_code"], "no_issue_detected")
+            self.assertEqual(report["optimization_advisor"]["trend"], "comparable-observational-windows")
+
+    def test_advisor_sample_and_review_threshold_boundaries(self):
+        rules = STATUS._advisor_rules(ROOT)
+        self.assertIsNotNone(rules)
+        good = lambda: self._routine_record()
+
+        self.assertEqual(
+            STATUS._evaluate_advisor([good() for _ in range(9)], [], rules)["primary_code"],
+            "insufficient_evidence",
+        )
+        at_usefulness = [self._routine_record(useful=index < 7) for index in range(10)]
+        self.assertEqual(STATUS._evaluate_advisor(at_usefulness, [], rules)["primary_code"], "no_issue_detected")
+        below_usefulness = [self._routine_record(useful=index < 6) for index in range(10)]
+        self.assertIn("review_spawn_precision", STATUS._evaluate_advisor(below_usefulness, [], rules)["recommendation_codes"])
+
+        at_failure = [self._routine_record(outcome="failed" if index == 0 else "completed") for index in range(10)]
+        self.assertNotIn("review_failure_rate", STATUS._evaluate_advisor(at_failure, [], rules)["recommendation_codes"])
+        above_failure = [self._routine_record(outcome="failed" if index < 2 else "completed") for index in range(10)]
+        self.assertIn("review_failure_rate", STATUS._evaluate_advisor(above_failure, [], rules)["recommendation_codes"])
+
+        at_check = [self._routine_record(check_statuses=("fail" if index == 0 else "pass",)) for index in range(10)]
+        self.assertNotIn("review_check_failures", STATUS._evaluate_advisor(at_check, [], rules)["recommendation_codes"])
+        above_check = [self._routine_record(check_statuses=("fail" if index < 2 else "pass",)) for index in range(10)]
+        self.assertIn("review_check_failures", STATUS._evaluate_advisor(above_check, [], rules)["recommendation_codes"])
+
+        previous_nine = [good() for _ in range(9)]
+        previous_ten = [good() for _ in range(10)]
+        self.assertEqual(STATUS._evaluate_advisor([good() for _ in range(10)], previous_nine, rules)["trend"], "insufficient-comparable-prior-evidence")
+        self.assertEqual(STATUS._evaluate_advisor([good() for _ in range(10)], previous_ten, rules)["trend"], "comparable-observational-windows")
+
+        group = [
+            self._routine_record(
+                role_kind="critic", task_class="independent_risk_review",
+                benefit_code="independent_risk_review", outcome="failed" if index == 0 else "completed",
+            )
+            for index in range(5)
+        ] + [good() for _ in range(5)]
+        result = STATUS._evaluate_advisor(group, [], rules)
+        self.assertTrue(any(
+            finding.get("scope") == "role_kind" and finding.get("value") == "critic"
+            for finding in result["findings"]
+        ))
+        self.assertFalse(result["automatic_policy_change"])
+        self.assertTrue(result["human_approval_required"])
+
+    def test_lifecycle_precedes_advisor_and_status_makes_no_prohibited_claim(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            (base / ".git").mkdir()
+            records = self._write_routine_records(
+                base,
+                [
+                    self._routine_record(
+                        useful=False, outcome="failed", check_statuses=("fail",)
+                    )
+                    for _ in range(10)
+                ],
+            )
+            home = base / "home"
+            home.mkdir()
+            codex = home / ".codex"
+            installer.install(ROOT, codex, home, apply=True, with_usage=False)
+            installer.mark_update_pending(codex)
+            sessions = base / "sessions"
+            sessions.mkdir()
+            result = self._run(
+                base, base / "receipts", sessions,
+                "--routine-records-dir", str(records), "--as-of", "2026-08-04",
+            )
+            self.assertIn("The package refresh did not finish", result.stdout)
+            self.assertNotIn("review observations before", result.stdout)
+            lowered = result.stdout.lower()
+            for prohibited in ("savings", "caused by", "automatic promotion", "automatically mutate"):
+                self.assertNotIn(prohibited, lowered)
+
+    def test_duplicate_routine_json_and_file_permissions_fail_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            (base / ".git").mkdir()
+            records = self._write_routine_records(base, [])
+            duplicate = records / "duplicate.json"
+            duplicate.write_text('{"schema_version":2,"schema_version":2}')
+            os.chmod(duplicate, 0o600)
+            loose = records / "loose.json"
+            loose.write_text(json.dumps(self._routine_record()))
+            os.chmod(loose, 0o644)
+            sessions = base / "sessions"
+            sessions.mkdir()
+            report, rendered = self._json(
+                base, base / "receipts", sessions,
+                "--routine-records-dir", str(records), "--as-of", "2026-08-04",
+            )
+            self.assertEqual(report["routine_records"]["invalid"], 2)
+            self.assertEqual(report["routine_records"]["collection"], "partial")
+            self.assertNotIn(str(base), rendered)
 
     def test_global_layout_works_with_explicit_root(self):
         temporary, base, receipts, sessions = self._workspace()
@@ -492,7 +749,9 @@ class SolLunaStatusTests(unittest.TestCase):
         )
         self.assertTrue(report["drift"]["routing_contract"])
         self.assertTrue(report["drift"]["active_runtime"])
-        self.assertEqual(report["luna_profile"], {"tier": "standard", "provenance": "install-state"})
+        self.assertEqual(report["luna_profile"]["tier"], "standard")
+        self.assertEqual(report["luna_profile"]["provenance"], "install-state")
+        self.assertTrue(report["luna_profile"]["installed"])
 
         state_path = codex / installer.INSTALL_STATE_NAME
         malformed = json.loads(state_path.read_text())
@@ -509,7 +768,8 @@ class SolLunaStatusTests(unittest.TestCase):
             "--active-root", str(codex),
             "--active-config", str(codex / "config.toml"),
         )
-        self.assertEqual(fallback["luna_profile"], {"tier": "fast", "provenance": "latest-receipt"})
+        self.assertIsNone(fallback["luna_profile"]["tier"])
+        self.assertEqual(fallback["luna_profile"]["provenance"], "not-inferred")
         self.assertNotIn("status_report_failed", fallback["warnings"])
 
     def test_pilot_registry_drives_coverage_deadline_and_recommendation(self):
@@ -619,6 +879,19 @@ class SolLunaStatusTests(unittest.TestCase):
         report, _ = self._json(base, receipts, sessions, "--active-root", str(missing_active), "--active-config", str(missing_active / "config.toml"))
         self.assertFalse(report["drift"]["active_runtime"])
         self.assertTrue(report["routing_recommendation"].startswith("direct Sol"))
+
+        home = base / "home"
+        home.mkdir()
+        codex = home / ".codex"
+        installer.install(ROOT, codex, home, apply=True, with_usage=False)
+        state_path = codex / installer.INSTALL_STATE_NAME
+        state = json.loads(state_path.read_text())
+        state["kit_version"] = "0.5.0"
+        state_path.write_text(json.dumps(state))
+        (codex / "agents" / "luna_scout_fast.toml").write_text("managed runtime drift\n")
+        stale_and_drifted, _ = self._json(base, receipts, sessions)
+        self.assertEqual(stale_and_drifted["lifecycle"]["state"], "needs-attention")
+        self.assertEqual(stale_and_drifted["lifecycle"]["next_action"], "review-drift")
 
         invalid = self._run(base, receipts, sessions, "--budget", "0", "--format", "json")
         self.assertEqual(invalid.returncode, 2)

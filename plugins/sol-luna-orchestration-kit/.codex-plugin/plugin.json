@@ -1,7 +1,7 @@
 {
   "name": "sol-luna-orchestration-kit",
-  "version": "0.5.0",
-  "description": "Easy Sol/Luna setup, lean routing, local metrics, status, and spawn guardrails for Codex",
+  "version": "0.6.0",
+  "description": "Guided Sol/Luna setup, bounded routing, trustworthy project-local metrics, and spawn guardrails for Codex",
   "author": {
     "name": "msinclair25",
     "url": "https://github.com/msinclair25"
@@ -19,8 +19,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Sol Luna Orchestration Kit",
-    "shortDescription": "Set up once, route bounded work, and see concise local metrics.",
-    "longDescription": "Adds one-restart setup, resumable updates, deny-by-default Fast and Standard Sol/Luna routing, compact evidence packets, privacy-safe local metrics, one authorized Codex task fallback, concise status, and a PreToolUse spawn guard.",
+    "shortDescription": "Set up, recover, inspect, and review bounded local delegation.",
+    "longDescription": "Adds one-restart setup, read-only settings, phase-accurate recovery, deny-by-default Fast and Standard Sol/Luna routing, privacy-safe project-local trend records, conservative human-review advice, one authorized Codex task fallback, concise status, and a PreToolUse spawn guard.",
     "developerName": "msinclair25",
     "category": "Productivity",
     "capabilities": [
@@ -32,7 +32,7 @@
     "defaultPrompt": [
       "Set up Sol/Luna in this task and tell me when to restart once.",
       "Continue or update my Sol/Luna installation.",
-      "Show my concise Sol/Luna status; include details only if I ask."
+      "Show my settings or concise project-local status; include details only if I ask."
     ]
   }
 }

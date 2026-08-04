@@ -24,8 +24,9 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 SCHEMA_VERSION = 1
 ORIGIN = "unsigned-local-audit"
-RECEIPT_POLICY_VERSION = "receipt-policy.v1"
-ROUTINE_RECORD_VERSION = "routine-delegation-record.v1"
+RECEIPT_POLICY_VERSION = "receipt-policy.v2"
+ROUTINE_RECORD_VERSION = "routine-delegation-record.v2"
+LEGACY_ROUTINE_RECORD_VERSION = "routine-delegation-record.v1"
 DEFAULT_ROOT = Path(__file__).resolve().parents[1]
 MAX_INPUT_BYTES = 64 * 1024
 MAX_ARRAY_ITEMS = 64
@@ -98,9 +99,27 @@ RECEIPT_TIER_CONTEXT_FIELDS = {
     "explicit_audit",
     "automatic_collection_available",
 }
-ROUTINE_RECORD_FIELDS = {"schema_version", "version", "spawn", "outcome", "checks", "usage"}
+LEGACY_ROUTINE_RECORD_FIELDS = {"schema_version", "version", "spawn", "outcome", "checks", "usage"}
+ROUTINE_RECORD_FIELDS = {
+    "schema_version", "version", "recorded_on", "context", "spawn", "outcome", "checks", "usage",
+}
 ROUTINE_RECORD_OUTCOMES = {"completed", "blocked", "failed"}
 ROUTINE_CHECK_RESULTS = {"pass", "fail", "skipped"}
+ROUTINE_PROFILES = {"fast", "standard"}
+ROUTINE_ROLE_KINDS = {"scout", "worker", "critic", "tester", "max"}
+ROUTINE_TASK_CLASSES = {
+    "explanation_question", "status_reporting", "git_operation", "one_command_diagnostic",
+    "targeted_lookup", "localized_single_file_edit", "formatting_documentation",
+    "straightforward_test_rerun", "overhead_comparable", "broad_mapping",
+    "substantial_implementation", "substantial_validation", "independent_risk_review",
+    "complex_analysis",
+}
+ROUTINE_BENEFIT_CODES = {
+    "parallel_latency", "isolated_large_implementation", "broad_read_only_mapping",
+    "independent_risk_review",
+}
+ROUTING_POLICY_RE = re.compile(r"^routing-policy\.v[1-9][0-9]*\.[0-9]+$")
+RECORDED_DATE_RE = re.compile(r"^20[0-9]{2}-[0-9]{2}-[0-9]{2}$")
 TOP_KEYS = {
     "schema_version", "receipt_id", "project_id", "codex_task_id", "milestone_id", "family", "size_risk_band",
     "started_at", "closed_at", "disposition", "decision_owner", "accepted_by", "user_confirmation", "root_runtime",
@@ -115,10 +134,11 @@ CREDENTIAL_RE = re.compile(
     re.IGNORECASE,
 )
 RECEIPT_POLICY_CONTRACT = {
-    "schema_version": 1,
+    "schema_version": 2,
     "version": RECEIPT_POLICY_VERSION,
     "historical_full_schema": "milestone-receipt.v1",
     "minimal_schema": ROUTINE_RECORD_VERSION,
+    "historical_minimal_schemas": [LEGACY_ROUTINE_RECORD_VERSION],
     "routine_direct": "handoff_only",
     "routine_delegated": "minimal_if_automatic_else_unknown",
     "full_triggers": sorted(FULL_RECEIPT_CATEGORIES),
@@ -460,9 +480,9 @@ def validate_receipt(receipt: Any) -> Dict[str, Any]:
 
 
 def verify_receipt_policy(root: Path | str = DEFAULT_ROOT) -> Dict[str, Any]:
-    """Verify the exact receipt-policy.v1 contract without changing v1 receipts."""
+    """Verify receipt-policy.v2 while preserving historical v1 artifacts."""
 
-    path = Path(root) / "config" / "receipt-policy.v1.json"
+    path = Path(root) / "config" / "receipt-policy.v2.json"
     try:
         if _path_has_symlink_component(path) or not path.is_file():
             raise ReceiptError("receipt_policy_unavailable")
@@ -521,16 +541,7 @@ def select_receipt_tier(context: Any, root: Path | str = DEFAULT_ROOT) -> Dict[s
     return {"ok": True, "tier": "none", "measurement": "not_applicable", "reason": "direct_handoff_only"}
 
 
-def _validate_routine_record_shape(record: Any) -> None:
-    if not isinstance(record, dict) or set(record) != ROUTINE_RECORD_FIELDS:
-        raise ReceiptError("routine_record_shape")
-    try:
-        if len(json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")) > 2048:
-            raise ReceiptError("routine_record_oversize")
-    except (TypeError, UnicodeError, MemoryError, OverflowError, RecursionError) as exc:
-        raise ReceiptError("routine_record_invalid") from exc
-    if record.get("schema_version") != 1 or isinstance(record.get("schema_version"), bool) or record.get("version") != ROUTINE_RECORD_VERSION:
-        raise ReceiptError("routine_record_version")
+def _validate_routine_record_common(record: Any) -> None:
     spawn = record.get("spawn")
     if (
         not isinstance(spawn, dict)
@@ -539,11 +550,38 @@ def _validate_routine_record_shape(record: Any) -> None:
         or not isinstance(spawn.get("useful"), bool)
     ):
         raise ReceiptError("routine_record_spawn")
-    if record.get("outcome") not in ROUTINE_RECORD_OUTCOMES:
+    if not _enum(record.get("outcome"), ROUTINE_RECORD_OUTCOMES):
         raise ReceiptError("routine_record_outcome")
     checks = record.get("checks")
     if not isinstance(checks, list) or len(checks) > 8:
         raise ReceiptError("routine_record_checks")
+    usage = record.get("usage")
+    if not isinstance(usage, dict) or set(usage) != {"attribution", "total_tokens"}:
+        raise ReceiptError("routine_record_usage")
+    total = usage.get("total_tokens")
+    if usage.get("attribution") == "attributable":
+        if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+            raise ReceiptError("routine_record_usage")
+    elif usage.get("attribution") == "unknown":
+        if total is not None:
+            raise ReceiptError("routine_record_usage")
+    else:
+        raise ReceiptError("routine_record_usage")
+
+
+def _validate_legacy_routine_record_shape(record: Any) -> None:
+    if not isinstance(record, dict) or set(record) != LEGACY_ROUTINE_RECORD_FIELDS:
+        raise ReceiptError("routine_record_shape")
+    try:
+        if len(json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")) > 2048:
+            raise ReceiptError("routine_record_oversize")
+    except (TypeError, UnicodeError, MemoryError, OverflowError, RecursionError) as exc:
+        raise ReceiptError("routine_record_invalid") from exc
+    if record.get("schema_version") != 1 or isinstance(record.get("schema_version"), bool) or record.get("version") != LEGACY_ROUTINE_RECORD_VERSION:
+        raise ReceiptError("routine_record_version")
+    _validate_routine_record_common(record)
+    checks = record.get("checks")
+    assert isinstance(checks, list)
     for check in checks:
         if (
             not isinstance(check, dict)
@@ -558,18 +596,58 @@ def _validate_routine_record_shape(record: Any) -> None:
             or check.get("status") not in ROUTINE_CHECK_RESULTS
         ):
             raise ReceiptError("routine_record_checks")
-    usage = record.get("usage")
-    if not isinstance(usage, dict) or set(usage) != {"attribution", "total_tokens"}:
-        raise ReceiptError("routine_record_usage")
-    total = usage.get("total_tokens")
-    if usage.get("attribution") == "attributable":
-        if isinstance(total, bool) or not isinstance(total, int) or total < 0:
-            raise ReceiptError("routine_record_usage")
-    elif usage.get("attribution") == "unknown":
-        if total is not None:
-            raise ReceiptError("routine_record_usage")
-    else:
-        raise ReceiptError("routine_record_usage")
+    _walk_privacy(record)
+
+
+def _validate_routine_record_shape(record: Any) -> None:
+    if not isinstance(record, dict) or set(record) != ROUTINE_RECORD_FIELDS:
+        if isinstance(record, dict) and record.get("version") == LEGACY_ROUTINE_RECORD_VERSION:
+            _validate_legacy_routine_record_shape(record)
+            return
+        raise ReceiptError("routine_record_shape")
+    try:
+        encoded = json.dumps(
+            record, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
+        ).encode("utf-8")
+    except (TypeError, ValueError, UnicodeError, MemoryError, OverflowError, RecursionError) as exc:
+        raise ReceiptError("routine_record_invalid") from exc
+    if len(encoded) > 2048:
+        raise ReceiptError("routine_record_oversize")
+    if record.get("schema_version") != 2 or isinstance(record.get("schema_version"), bool) or record.get("version") != ROUTINE_RECORD_VERSION:
+        raise ReceiptError("routine_record_version")
+    recorded_on = record.get("recorded_on")
+    if not isinstance(recorded_on, str) or RECORDED_DATE_RE.fullmatch(recorded_on) is None:
+        raise ReceiptError("routine_record_date")
+    try:
+        datetime.strptime(recorded_on, "%Y-%m-%d")
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ReceiptError("routine_record_date") from exc
+    context = record.get("context")
+    if not isinstance(context, dict) or set(context) != {
+        "routing_policy", "profile", "role_kind", "task_class", "benefit_code"
+    }:
+        raise ReceiptError("routine_record_context")
+    if (
+        not isinstance(context.get("routing_policy"), str)
+        or len(context["routing_policy"]) > 32
+        or ROUTING_POLICY_RE.fullmatch(context["routing_policy"]) is None
+        or not _enum(context.get("profile"), ROUTINE_PROFILES)
+        or not _enum(context.get("role_kind"), ROUTINE_ROLE_KINDS)
+        or not _enum(context.get("task_class"), ROUTINE_TASK_CLASSES)
+        or not _enum(context.get("benefit_code"), ROUTINE_BENEFIT_CODES)
+    ):
+        raise ReceiptError("routine_record_context")
+    _validate_routine_record_common(record)
+    checks = record.get("checks")
+    assert isinstance(checks, list)
+    for index, check in enumerate(checks, 1):
+        if (
+            not isinstance(check, dict)
+            or set(check) != {"name", "status"}
+            or check.get("name") != f"acceptance-{index}"
+            or not _enum(check.get("status"), ROUTINE_CHECK_RESULTS)
+        ):
+            raise ReceiptError("routine_record_checks")
     _walk_privacy(record)
 
 
@@ -584,16 +662,29 @@ def validate_routine_record(record: Any) -> Dict[str, Any]:
 
 def build_routine_record(
     *,
+    routing_policy: str,
+    profile: str,
+    role_kind: str,
+    task_class: str,
+    benefit_code: str,
     useful: bool,
     outcome: str,
     checks: Sequence[Mapping[str, str]],
     total_tokens: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """Deterministically build the minimal record; callers supply no IDs or prose payload."""
+    """Build a v2 record; the writer derives its UTC day and accepts no prose."""
 
     record = {
-        "schema_version": 1,
+        "schema_version": 2,
         "version": ROUTINE_RECORD_VERSION,
+        "recorded_on": datetime.now(timezone.utc).date().isoformat(),
+        "context": {
+            "routing_policy": routing_policy,
+            "profile": profile,
+            "role_kind": role_kind,
+            "task_class": task_class,
+            "benefit_code": benefit_code,
+        },
         "spawn": {"decision": "delegate", "useful": useful},
         "outcome": outcome,
         "checks": [dict(item) for item in checks],
@@ -610,7 +701,9 @@ def close_routine_record(record: Any, records_dir: Path) -> Dict[str, Any]:
     """Atomically persist one privacy-safe routine outcome without task identifiers."""
 
     _validate_routine_record_shape(record)
-    target_dir = _safe_dir(records_dir, create=True)
+    if record.get("version") != ROUTINE_RECORD_VERSION:
+        raise ReceiptError("historical_routine_record_write_forbidden")
+    target_dir = _safe_routine_dir(records_dir)
     data = _canonical(record)
     target: Optional[Path] = None
     for _ in range(8):
@@ -646,6 +739,43 @@ def close_routine_record(record: Any, records_dir: Path) -> Dict[str, Any]:
             raise
         raise ReceiptError("routine_record_write_failed") from exc
     return {"ok": True, "recorded": True, "version": ROUTINE_RECORD_VERSION}
+
+
+def _safe_routine_dir(path: Path) -> Path:
+    """Resolve one project-local ``.sol-luna/routine-records`` directory."""
+
+    try:
+        absolute = path.absolute()
+        if absolute.name != "routine-records" or absolute.parent.name != ".sol-luna":
+            raise ReceiptError("unsafe_routine_records_dir")
+        project = absolute.parent.parent
+        broad = {
+            Path("/").resolve(),
+            Path.home().resolve(),
+            Path(tempfile.gettempdir()).resolve(),
+            Path("/tmp").resolve(),
+            Path("/private/tmp").resolve(),
+            Path("/var/tmp").resolve(),
+        }
+        if project.resolve() in broad or _path_has_symlink_component(project):
+            raise ReceiptError("unsafe_routine_records_dir")
+        if not project.is_dir() or project.is_symlink():
+            raise ReceiptError("unsafe_routine_records_dir")
+        project_marker = project / ".git"
+        metadata = project / ".sol-luna"
+        if not metadata.exists():
+            if not project_marker.exists() or project_marker.is_symlink():
+                raise ReceiptError("ambiguous_workspace_root")
+            metadata.mkdir(mode=0o700, exist_ok=False)
+        if metadata.is_symlink() or not metadata.is_dir():
+            raise ReceiptError("unsafe_routine_records_dir")
+        if stat.S_IMODE(metadata.stat().st_mode) != 0o700:
+            raise ReceiptError("routine_metadata_permissions")
+    except ReceiptError:
+        raise
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise ReceiptError("unsafe_routine_records_dir") from exc
+    return _safe_dir(absolute, create=True)
 
 
 def _safe_dir(path: Path, *, create: bool = False) -> Path:
@@ -865,14 +995,23 @@ def _parser() -> argparse.ArgumentParser:
     close = sub.add_parser("close")
     close.add_argument("--input", required=True)
     close.add_argument("--receipts-dir", default=".sol-luna/receipts")
-    routine = sub.add_parser("close-routine")
+    routine = sub.add_parser(
+        "close-routine",
+        help="internal orchestration writer (not an end-user command)",
+    )
     useful = routine.add_mutually_exclusive_group(required=True)
     useful.add_argument("--useful", action="store_true")
     useful.add_argument("--not-useful", action="store_true")
     routine.add_argument("--outcome", required=True, choices=sorted(ROUTINE_RECORD_OUTCOMES))
     routine.add_argument("--check", action="append", choices=sorted(ROUTINE_CHECK_RESULTS), default=[])
     routine.add_argument("--total-tokens", type=int)
-    routine.add_argument("--records-dir", default=".sol-luna/routine-records")
+    routine.add_argument("--workspace-root", default=".", help=argparse.SUPPRESS)
+    routine.add_argument("--records-dir", help=argparse.SUPPRESS)
+    routine.add_argument("--routing-policy", required=True, help=argparse.SUPPRESS)
+    routine.add_argument("--profile", required=True, choices=sorted(ROUTINE_PROFILES), help=argparse.SUPPRESS)
+    routine.add_argument("--role-kind", required=True, choices=sorted(ROUTINE_ROLE_KINDS), help=argparse.SUPPRESS)
+    routine.add_argument("--task-class", required=True, choices=sorted(ROUTINE_TASK_CLASSES), help=argparse.SUPPRESS)
+    routine.add_argument("--benefit-code", required=True, choices=sorted(ROUTINE_BENEFIT_CODES), help=argparse.SUPPRESS)
     validate = sub.add_parser("validate")
     validate.add_argument("paths", nargs="*")
     validate.add_argument("--receipts-dir")
@@ -894,6 +1033,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             ):
                 raise ReceiptError("routine_record_cli")
             record = build_routine_record(
+                routing_policy=args.routing_policy,
+                profile=args.profile,
+                role_kind=args.role_kind,
+                task_class=args.task_class,
+                benefit_code=args.benefit_code,
                 useful=bool(args.useful and not args.not_useful),
                 outcome=args.outcome,
                 checks=[
@@ -902,7 +1046,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 ],
                 total_tokens=args.total_tokens,
             )
-            result = close_routine_record(record, Path(args.records_dir))
+            records_dir = (
+                Path(args.records_dir)
+                if args.records_dir
+                else Path(args.workspace_root) / ".sol-luna" / "routine-records"
+            )
+            result = close_routine_record(record, records_dir)
         elif args.command == "validate":
             paths = [Path(path) for path in args.paths]
             result = validate_paths(paths, Path(args.receipts_dir) if args.receipts_dir else None)

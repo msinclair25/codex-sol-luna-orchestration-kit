@@ -1,4 +1,4 @@
 interface:
   display_name: "Sol Luna Status"
-  short_description: "Read-only Sol/Luna milestone status"
-  default_prompt: "Use $sol-luna-status to report the current milestone status, provenance, budget, drift, and next routing recommendation."
+  short_description: "Read-only lifecycle and project-local delegation status"
+  default_prompt: "Use $sol-luna-status to show concise current health, project-local metrics, trend evidence, and the next human-approved action."

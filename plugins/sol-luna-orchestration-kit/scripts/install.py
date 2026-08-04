@@ -50,9 +50,10 @@ MAX_ASSET_MANIFEST_BYTES = 16 * 1024
 INSTALL_STATE_NAME = ".sol-luna-install-state.json"
 INSTALL_STATE_SCHEMA = 2
 LEGACY_INSTALL_STATE_SCHEMA = 1
-KIT_VERSION = "0.5.0"
+KIT_VERSION = "0.6.0"
 UPDATE_PHASES = {"ready", "package-refresh-requested", "package-refreshed"}
 MAX_INSTALL_STATE_BYTES = 32 * 1024
+MAX_PLUGIN_MANIFEST_BYTES = 32 * 1024
 OWNED = {
     "model": '"gpt-5.6-sol"',
     "model_reasoning_effort": '"xhigh"',
@@ -217,6 +218,75 @@ def _read(path: Path, limit: int) -> bytes:
     if len(data) > limit:
         raise InstallError("file_size_limit")
     return data
+
+
+def _bundle_info(repo: Path) -> Dict[str, Any]:
+    """Return bounded plugin-manifest state without trusting malformed bundles."""
+
+    manifest = repo / ".codex-plugin" / "plugin.json"
+    if not manifest.exists() and not manifest.is_symlink():
+        return {"active": False, "valid": True, "version": None}
+    try:
+        value = _strict_json_object(
+            _read(manifest, MAX_PLUGIN_MANIFEST_BYTES),
+            error="plugin_manifest_invalid",
+        )
+    except InstallError:
+        return {"active": False, "valid": False, "version": None}
+    valid = (
+        value.get("name") == "sol-luna-orchestration-kit"
+        and isinstance(value.get("version"), str)
+        and re.fullmatch(
+            r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?",
+            value["version"],
+        )
+        is not None
+    )
+    return {
+        "active": valid,
+        "valid": valid,
+        "version": value.get("version") if valid else None,
+    }
+
+
+def _verify_recorded_active_root(codex_home: Path, state: Dict[str, Any]) -> bool:
+    """Verify a ready stale install against its own recorded managed hashes."""
+
+    try:
+        tier = state["active_luna_tier"]
+        expected_roles = {
+            f"luna_{kind}_{tier}.toml"
+            for kind in ("scout", "worker", "critic", "tester", "max")
+        }
+        recorded_roles = state["roles"]
+        if not expected_roles.issubset(recorded_roles):
+            return False
+        for name in expected_roles:
+            path = codex_home / "agents" / name
+            if _sha256(_read(path, MAX_CONFIG_BYTES)) != recorded_roles[name]:
+                return False
+        if _installed_agents_source_hash(_active_agents_target(codex_home)) != state["agents_source_sha256"]:
+            return False
+        if tomllib is None:
+            return False
+        parsed = tomllib.loads(_read(codex_home / "config.toml", MAX_CONFIG_BYTES).decode("utf-8"))
+        if not isinstance(parsed, dict):
+            return False
+        for section, key in (
+            ("", "model"),
+            ("", "model_reasoning_effort"),
+            ("features", "fast_mode"),
+            ("features", "multi_agent"),
+            ("agents", "max_concurrent_threads_per_session"),
+        ):
+            if not _owned_value_matches(parsed, section, key):
+                return False
+        if "service_tier" in parsed:
+            return False
+        agents = parsed.get("agents", {})
+        return isinstance(agents, dict) and "default_subagent_model" not in agents
+    except (InstallError, OSError, UnicodeError, ValueError, TypeError, KeyError):
+        return False
 
 
 def _ensure_safe_directory(path: Path) -> None:
@@ -596,6 +666,27 @@ def _load_routing_policy(repo: Path) -> Any:
     return module
 
 
+def _load_lifecycle(repo: Path) -> Any:
+    path = repo / "scripts" / "lifecycle.py"
+    if path.is_symlink() or not path.is_file():
+        raise InstallError("lifecycle_helper_unavailable")
+    name = "_sol_luna_installer_lifecycle"
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise InstallError("lifecycle_helper_unavailable")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    previous_dont_write_bytecode = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        spec.loader.exec_module(module)
+    except Exception as exc:
+        raise InstallError("lifecycle_helper_unavailable") from exc
+    finally:
+        sys.dont_write_bytecode = previous_dont_write_bytecode
+    return module
+
+
 def _backup_destination(backup_root: Path, target: Path, codex_home: Path, home: Path) -> Path:
     for label, root in (("codex-home", codex_home), ("home", home)):
         try:
@@ -850,58 +941,56 @@ def _ask(prompt: str) -> bool:
 def doctor(repo: Path, codex_home: Path) -> Dict[str, Any]:
     """Return one bounded setup state and next action without changing files."""
 
-    state = _load_install_state(codex_home / INSTALL_STATE_NAME, required=False)
+    state_path = codex_home / INSTALL_STATE_NAME
+    state_status = "absent"
+    state = None
+    try:
+        state = _load_install_state(state_path, required=False)
+        if state is not None:
+            state_status = "valid"
+    except InstallError:
+        state_status = "invalid"
     tier = state["active_luna_tier"] if state is not None else "fast"
     routing_policy = _load_routing_policy(repo)
-    if not routing_policy.verify_contract(repo, tier).get("ok"):
-        raise InstallError("routing_contract_invalid")
-    if state is None:
-        return {
-            "ok": True,
-            "health": "setup-required",
-            "kit_version": KIT_VERSION,
-            "installed_version": None,
-            "luna_tier": None,
-            "verification": "not-installed",
-            "next_action": "install",
-        }
-    installed_version = state["kit_version"]
-    if state["update_phase"] != "ready":
-        next_action = "finish-update" if state["update_phase"] == "package-refreshed" else "retry-package-refresh"
-        return {
-            "ok": True,
-            "health": "update-pending",
-            "kit_version": KIT_VERSION,
-            "installed_version": installed_version,
-            "luna_tier": state["active_luna_tier"],
-            "verification": "deferred-until-update",
-            "next_action": next_action,
-        }
-    if installed_version != KIT_VERSION:
-        return {
-            "ok": True,
-            "health": "roles-update-required",
-            "kit_version": KIT_VERSION,
-            "installed_version": installed_version,
-            "luna_tier": state["active_luna_tier"],
-            "verification": "deferred-until-update",
-            "next_action": "finish-update",
-        }
-    verification = routing_policy.verify_active_root(
-        codex_home,
-        repo,
-        codex_home / "config.toml",
-        state["active_luna_tier"],
+    contract_ok = bool(routing_policy.verify_contract(repo, tier).get("ok"))
+    bundle = _bundle_info(repo)
+    available_version = bundle["version"] or KIT_VERSION
+    verification_state = "not-checked"
+    if state is not None and state["update_phase"] == "ready":
+        if state["kit_version"] == KIT_VERSION and contract_ok:
+            verification = routing_policy.verify_active_root(
+                codex_home,
+                repo,
+                codex_home / "config.toml",
+                state["active_luna_tier"],
+            )
+            verification_state = "passed" if verification.get("ok") else "failed"
+        elif state["kit_version"] != KIT_VERSION:
+            verification_state = "passed" if _verify_recorded_active_root(codex_home, state) else "failed"
+    elif state is not None:
+        verification_state = "deferred"
+    decision = _load_lifecycle(repo).decide(
+        bundle_active=bundle["active"],
+        bundle_version=available_version,
+        install_state=state_status,
+        installed_version=state["kit_version"] if state is not None else None,
+        installed_tier=state["active_luna_tier"] if state is not None else None,
+        update_phase=state["update_phase"] if state is not None else None,
+        verification=verification_state,
+        contract_ok=contract_ok and bundle["valid"],
     )
-    verified = bool(verification.get("ok"))
     return {
-        "ok": verified,
-        "health": "healthy" if verified else "attention-required",
-        "kit_version": KIT_VERSION,
-        "installed_version": installed_version,
-        "luna_tier": state["active_luna_tier"],
-        "verification": "passed" if verified else "failed",
-        "next_action": "none" if verified else "review-drift",
+        "ok": decision["state"] != "needs-attention",
+        "health": decision["state"],
+        "mode": decision["mode"],
+        "kit_version": available_version,
+        "installed_version": state["kit_version"] if state is not None else None,
+        "luna_tier": decision["installed_tier"],
+        "workflow_default_tier": decision["workflow_default_tier"],
+        "update_phase": decision["update_phase"],
+        "verification": decision["verification"],
+        "next_action": decision["next_action"],
+        "next_message": decision["next_message"],
     }
 
 
@@ -952,27 +1041,30 @@ def mark_package_refreshed(codex_home: Path) -> Dict[str, Any]:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo-root", default=str(REPO_ROOT))
-    parser.add_argument("--codex-home", default=os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
-    parser.add_argument("--home", default=os.environ.get("HOME", str(Path.home())))
+    parser = argparse.ArgumentParser(
+        description="Maintainer backend for transactional Sol/Luna setup.",
+        epilog="Normal users ask the Sol/Luna setup skill to install, update, continue, switch, or verify.",
+    )
+    parser.add_argument("--repo-root", default=str(REPO_ROOT), help="verified kit/plugin root supplying managed assets")
+    parser.add_argument("--codex-home", default=os.environ.get("CODEX_HOME", str(Path.home() / ".codex")), help="isolated Codex configuration root to inspect or update")
+    parser.add_argument("--home", default=os.environ.get("HOME", str(Path.home())), help="bounded home containing the Codex root and recoverable backups")
     mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--apply", action="store_true")
-    mode.add_argument("--dry-run", action="store_true")
-    mode.add_argument("--doctor", action="store_true")
-    mode.add_argument("--mark-update-pending", action="store_true")
-    mode.add_argument("--mark-package-refreshed", action="store_true")
+    mode.add_argument("--apply", action="store_true", help="apply a new full-role install after a clean preview")
+    mode.add_argument("--dry-run", action="store_true", help="preview managed changes without writing")
+    mode.add_argument("--doctor", action="store_true", help="read-only normalized lifecycle diagnosis")
+    mode.add_argument("--mark-update-pending", action="store_true", help="internal: persist package-refresh-requested before plugin replacement")
+    mode.add_argument("--mark-package-refreshed", action="store_true", help="internal: persist package-refreshed after verified replacement")
     parser.add_argument(
         "--update",
         action="store_true",
         help="safely refresh a prior state-tracked install; combine with --dry-run to preview",
     )
     usage = parser.add_mutually_exclusive_group()
-    usage.add_argument("--with-usage", action="store_true")
-    usage.add_argument("--without-usage", action="store_true")
-    parser.add_argument("--approve-agents-refresh", action="store_true")
-    parser.add_argument("--approve-conflicts", action="store_true")
-    parser.add_argument("--refresh-usage-pointer", action="store_true")
+    usage.add_argument("--with-usage", action="store_true", help="install the optional global status copy")
+    usage.add_argument("--without-usage", action="store_true", help="keep status plugin-local")
+    parser.add_argument("--approve-agents-refresh", action="store_true", help="requires separate user approval for a recognized prior instruction revision")
+    parser.add_argument("--approve-conflicts", action="store_true", help="requires separate user approval for named unmanaged conflicts")
+    parser.add_argument("--refresh-usage-pointer", action="store_true", help="requires separate user approval to replace the status root pointer")
     parser.add_argument("--luna-tier", choices=LUNA_TIERS, help="Luna tier profile (defaults to Fast, or the recorded tier during update)")
     args = parser.parse_args(argv)
     try:

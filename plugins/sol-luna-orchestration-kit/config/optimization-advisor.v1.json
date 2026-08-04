@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "version": "optimization-advisor.v1",
+  "status": "observational-human-review-only",
+  "windows": {
+    "current_days": 30,
+    "previous_days": 30
+  },
+  "minimum_samples": {
+    "current": 10,
+    "previous": 10,
+    "group": 5
+  },
+  "review_thresholds": {
+    "usefulness_below": 0.7,
+    "failure_rate_above": 0.15,
+    "check_failure_rate_above": 0.1
+  },
+  "recommendation_codes": [
+    "insufficient_evidence",
+    "no_issue_detected",
+    "review_spawn_precision",
+    "review_failure_rate",
+    "review_check_failures"
+  ],
+  "automatic_policy_change": false,
+  "prohibited_claims": [
+    "causal",
+    "cost_savings",
+    "latency_savings",
+    "quality_savings",
+    "tier_superiority",
+    "token_savings"
+  ]
+}

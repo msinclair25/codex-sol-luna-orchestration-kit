@@ -1,6 +1,6 @@
 ---
 name: sol-luna-setup
-description: Install, update, verify, or switch the full Sol/Luna Codex role configuration from the bundled orchestration plugin. Use when a user asks to set up Sol/Luna, update an existing Sol/Luna installation, repair or verify it, or change Luna subagents between Fast and Standard without manually operating the installer.
+description: Install, update, continue, verify, inspect settings, or switch the full Sol/Luna Codex role configuration from the bundled orchestration plugin. Use when a user asks to set up Sol/Luna, see what it manages, update an installation, recover an interrupted update, repair or verify it, or change Luna subagents between Fast and Standard without manually operating the installer.
 ---
 
 # Sol/Luna setup
@@ -27,7 +27,7 @@ restart only after the verified full-role install changes files.
 1. Resolve this `SKILL.md` to an absolute path.
 2. Walk upward through at most four parent directories and select the nearest
    directory containing `scripts/install.py`, `scripts/routing_policy.py`,
-   `agents/`, and `config/routing-policy.v1.4.json`.
+   `agents/`, and `config/routing-policy.v1.5.json`.
 3. Treat that directory as `KIT_ROOT`. Stop if no such directory exists. Do
    not download a replacement or use a different checkout silently.
 4. When the root contains `.codex-plugin/plugin.json`, treat the bundled
@@ -40,11 +40,12 @@ restart only after the verified full-role install changes files.
 
 ## Select the operation
 
-- First run the installer's read-only `--doctor` operation. A plain request
-  such as "set me up", "continue", or "finish setup" selects the doctor's
-  single safe next action: install, finish a pending roles update, retry a
-  package refresh, review drift, or report healthy. Do not make the user know
-  which phase they are in.
+- First run the installer's read-only Doctor operation. A plain request such as
+  "set me up", "continue", or "finish setup" selects the doctor's single safe
+  next action: offer optional full roles from workflow-only mode, install from
+  repository-only diagnostics, finish a pending roles update, retry a package
+  refresh, review drift, or report healthy. Do not make the user know which
+  phase they are in.
 - For a new installation, use the tier the user named. Default to Fast when no
   tier was requested. Standard means the `*_standard` roles.
 - When running from a plugin bundle and the user asks to update Sol/Luna, first
@@ -70,6 +71,32 @@ PYTHON KIT_ROOT/scripts/install.py --repo-root KIT_ROOT --doctor
 
 Summarize only its health, active tier, verification, and next action. The user
 does not need to see the internal state schema or installer command.
+
+Keep interrupted phases distinct. When the package refresh was requested but
+did not finish, say: "The package refresh did not finish. Ask Sol/Luna setup to
+retry the update; no restart is needed yet." When the package was refreshed,
+say: "Restart Codex, begin a new task, and ask Sol/Luna setup to continue."
+
+## Read-only settings overview
+
+Treat "Show my settings", "What does Sol/Luna manage?", and "What can I
+change?" as read-only requests. Run Doctor and the bundled status provider,
+then report only:
+
+- workflow-only or full-role mode;
+- plugin/bundle version and installed role version when present;
+- Fast or Standard only when actually installed; identify Fast separately as
+  the workflow routing default in workflow-only mode;
+- update phase and verification health;
+- managed surface categories: instructions, owned configuration keys, and five
+  role definitions;
+- current project metric collection as active, ready, partial, or unavailable;
+- available conversational actions: install full roles, use Fast, use
+  Standard, update, continue, verify, or show status.
+
+Do not print internal hashes, state schemas, raw paths, installer commands, or
+maintainer flags. A settings request never writes files, refreshes a package,
+switches a tier, or repairs drift.
 
 ## Update the plugin package
 
@@ -195,3 +222,13 @@ Installing or updating never grants standing permission to create Codex app
 tasks. The orchestration skill requests lane-scoped authorization only after
 an eligible native Luna transport failure, unless the user explicitly included
 that authorization in the current task.
+
+## Uninstall and legacy recovery boundary
+
+Do not automatically uninstall, convert a full install to workflow-only, or
+restore legacy files in V0.6.0. Install-state v2 does not retain the durable
+pre-install baseline needed for lossless restoration. If asked to uninstall,
+inspect the installation read-only, explain this boundary for that installation,
+and point to its existing backup/install receipt and manual recovery procedure.
+Do not delete or rewrite anything. A reversible automatic uninstall belongs to
+a separate future install-state-v3 milestone.
