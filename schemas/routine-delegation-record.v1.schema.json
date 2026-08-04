@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "routine-delegation-record.v1.schema.json",
+  "title": "Routine delegation record v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "version", "spawn", "outcome", "checks", "usage"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "version": {"type": "string", "const": "routine-delegation-record.v1"},
+    "spawn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "useful"],
+      "properties": {
+        "decision": {"type": "string", "const": "delegate"},
+        "useful": {"type": "boolean"}
+      }
+    },
+    "outcome": {"type": "string", "enum": ["completed", "blocked", "failed"]},
+    "checks": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "status"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1, "maxLength": 160},
+          "status": {"type": "string", "enum": ["pass", "fail", "skipped"]}
+        }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attribution", "total_tokens"],
+      "properties": {
+        "attribution": {"type": "string", "enum": ["attributable", "unknown"]},
+        "total_tokens": {"type": ["integer", "null"], "minimum": 0}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"attribution": {"const": "unknown"}}},
+          "then": {"properties": {"total_tokens": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"attribution": {"const": "attributable"}}},
+          "then": {"properties": {"total_tokens": {"type": "integer", "minimum": 0}}}
+        }
+      ]
+    }
+  }
+}

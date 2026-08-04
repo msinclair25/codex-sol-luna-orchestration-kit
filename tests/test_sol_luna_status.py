@@ -11,7 +11,7 @@ from pathlib import Path
 
 from scripts import install as installer
 from scripts import pilot_tool
-from scripts.receipt_tool import close_receipt
+from scripts.receipt_tool import build_routine_record, close_receipt
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -236,6 +236,73 @@ class SolLunaStatusTests(unittest.TestCase):
                 finally:
                     temporary.cleanup()
 
+    def test_missing_optional_routine_receipts_are_valid_and_usage_stays_unknown(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        base = Path(temporary.name)
+        receipts = base / "missing-receipts"
+        sessions = base / "sessions"
+        sessions.mkdir()
+        report, rendered = self._json(base, receipts, sessions)
+        self.assertEqual(report["routine_records"]["optional_missing"], True)
+        self.assertEqual(report["routine_records"]["collection"], "ready-no-records")
+        self.assertEqual(report["routine_records"]["invalid"], 0)
+        self.assertEqual(report["routine_records"]["usage_attribution"], "unknown")
+        self.assertIsNone(report["routine_records"]["total_tokens"])
+        self.assertNotIn("invalid_routine_records_observed", report["warnings"])
+        self.assertNotIn("create a validated milestone receipt", report["routing_recommendation"])
+        self.assertNotIn("0 (unknown)", rendered)
+
+        unsafe_records = base / "unsafe-routine-records"
+        unsafe_records.mkdir()
+        os.chmod(unsafe_records, 0o755)
+        report, _ = self._json(
+            base,
+            receipts,
+            sessions,
+            "--routine-records-dir",
+            str(unsafe_records),
+        )
+        self.assertEqual(report["routine_records"]["optional_missing"], False)
+        self.assertEqual(report["routine_records"]["invalid"], 1)
+        self.assertEqual(report["routine_records"]["collection"], "partial")
+        self.assertIn("invalid_routine_records_observed", report["warnings"])
+
+        records = base / "routine-records"
+        records.mkdir(mode=0o700)
+        record = build_routine_record(
+            useful=True,
+            outcome="completed",
+            checks=[{"name": "focused tests", "status": "pass"}],
+        )
+        path = records / "record.json"
+        path.write_text(json.dumps(record))
+        os.chmod(path, 0o600)
+        report, _ = self._json(
+            base,
+            receipts,
+            sessions,
+            "--routine-records-dir",
+            str(records),
+        )
+        self.assertEqual(report["mode"], "minimal-records")
+        self.assertEqual(report["routine_records"]["observed"], 1)
+        self.assertEqual(report["routine_records"]["collection"], "active")
+        self.assertEqual(report["routine_records"]["completed"], 1)
+        self.assertEqual(report["routine_records"]["check_pass"], 1)
+        self.assertEqual(report["delegation_quality"]["spawn_precision"], 1.0)
+        self.assertIsNone(report["routine_records"]["total_tokens"])
+        summary = self._run(
+            base,
+            receipts,
+            sessions,
+            "--routine-records-dir",
+            str(records),
+        )
+        self.assertEqual(summary.returncode, 0)
+        self.assertIn("Metrics: active; 1 delegated task observed", summary.stdout)
+        self.assertIn("Delegation: 100% useful", summary.stdout)
+
     def test_incomplete_token_snapshots_and_unversioned_records_fail_closed(self):
         missing_dimension = [json.loads(line) for line in (FIXTURES / "root.jsonl").read_text().splitlines()]
         for item in missing_dimension:
@@ -350,12 +417,49 @@ class SolLunaStatusTests(unittest.TestCase):
         second = self._run(base, receipts, sessions)
         self.assertEqual(first.returncode, 0)
         self.assertEqual(first.stdout, second.stdout)
+        for label in ("Health:", "Version:", "Metrics:", "Delegation:", "Next:"):
+            self.assertIn(label, first.stdout)
+        self.assertNotIn("## M4 pilot", first.stdout)
+        detail = self._run(base, receipts, sessions, "--detail")
+        self.assertEqual(detail.returncode, 0)
         for section in ("Milestone", "Receipts", "M4 pilot", "Session capability probe", "Usage", "Timing", "Delegation and quality", "Budget", "Drift and freshness", "Provenance and unknowns", "Routing recommendation"):
-            self.assertIn(f"## {section}", first.stdout)
+            self.assertIn(f"## {section}", detail.stdout)
         report, _ = self._json(base, receipts, sessions)
-        self.assertEqual(first.stdout.count(report["routing_recommendation"]), 1)
+        self.assertEqual(detail.stdout.count(report["routing_recommendation"]), 1)
         for secret in ("root-id-secret", "root-session-secret", "child-id-secret", "child-session-secret", str(base), str(ROOT)):
             self.assertNotIn(secret, first.stdout)
+            self.assertNotIn(secret, detail.stdout)
+
+    def test_summary_reports_healthy_and_pending_installation_plainly(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            home = base / "home"
+            home.mkdir()
+            codex = home / ".codex"
+            installer.install(ROOT, codex, home, apply=True, with_usage=False)
+            receipts = base / "missing-receipts"
+            sessions = base / "sessions"
+            sessions.mkdir()
+
+            healthy = self._run(base, receipts, sessions)
+            self.assertEqual(healthy.returncode, 0, healthy.stderr)
+            self.assertIn("Health: Healthy", healthy.stdout)
+            self.assertIn("Version: 0.5.0 · Fast", healthy.stdout)
+            self.assertIn("Metrics: Ready; no delegated work observed yet", healthy.stdout)
+            self.assertIn("Next: No action needed.", healthy.stdout)
+
+            installer.mark_update_pending(codex)
+            pending = self._run(base, receipts, sessions)
+            self.assertEqual(pending.returncode, 0, pending.stderr)
+            self.assertIn("Health: Update pending", pending.stdout)
+            self.assertIn("Next: Restart Codex", pending.stdout)
+
+            malformed = json.loads((codex / installer.INSTALL_STATE_NAME).read_text())
+            malformed["schema_version"] = True
+            (codex / installer.INSTALL_STATE_NAME).write_text(json.dumps(malformed))
+            invalid = self._run(base, receipts, sessions)
+            self.assertEqual(invalid.returncode, 0, invalid.stderr)
+            self.assertIn("Health: Needs attention", invalid.stdout)
 
     def test_global_layout_works_with_explicit_root(self):
         temporary, base, receipts, sessions = self._workspace()

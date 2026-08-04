@@ -2,6 +2,7 @@ import importlib.util
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -13,11 +14,10 @@ ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / "plugins" / "sol-luna-orchestration-kit"
 GUARD = PLUGIN / "scripts" / "pre_tool_use_guard.py"
 EVIDENCE_FIELDS = [
-    "scope",
+    "status",
     "files_or_surfaces",
-    "commands_or_checks",
-    "assumptions",
-    "failures",
+    "checks",
+    "findings",
     "risks",
     "confidence",
     "recommendation",
@@ -31,9 +31,13 @@ def _envelope() -> dict:
             "kind": "worker",
             "profile": "fast",
             "fork_turns": "none",
+            "task_class": "substantial_implementation",
+            "benefit_code": "isolated_large_implementation",
+            "substantive_work": {"estimated_minutes": 30, "affected_files": 3, "distinct_surfaces": 2, "independent_checks": 1},
+            "work_band": "substantial",
+            "risk_domains": [],
             "separate": True,
             "provable": True,
-            "large_enough": True,
             "isolated": True,
             "tier_appropriate": True,
             "lane_count": 1,
@@ -98,7 +102,7 @@ class M5PluginTests(unittest.TestCase):
     def test_manifest_and_default_hook_discovery_are_valid(self):
         manifest = json.loads((PLUGIN / ".codex-plugin" / "plugin.json").read_text())
         self.assertEqual(manifest["name"], PLUGIN.name)
-        self.assertEqual(manifest["version"], "0.3.0")
+        self.assertEqual(manifest["version"], "0.5.0")
         self.assertEqual(manifest["skills"], "./skills/")
         self.assertNotIn("hooks", manifest)
         self.assertIsInstance(manifest["interface"]["defaultPrompt"], list)
@@ -118,7 +122,9 @@ class M5PluginTests(unittest.TestCase):
         self.assertIn("Never pass `--approve-conflicts`", setup)
         self.assertIn("codex plugin marketplace upgrade sol-luna", setup)
         self.assertIn("codex plugin marketplace list --json", setup)
-        self.assertIn("Finish updating my Sol/Luna roles", setup)
+        self.assertIn("$sol-luna-setup Continue.", setup)
+        self.assertIn("--mark-update-pending", setup)
+        self.assertIn("Do not require an intermediate restart", setup)
         orchestration = (PLUGIN / "skills" / "sol-luna-orchestration" / "SKILL.md").read_text()
         status = (PLUGIN / "skills" / "sol-luna-status" / "SKILL.md").read_text()
         self.assertIn(".sol-luna-install-state.json", orchestration)
@@ -131,6 +137,7 @@ class M5PluginTests(unittest.TestCase):
         self.assertIn("`project_context` object", orchestration)
         self.assertIn("`project_root_verified: true`", orchestration)
         self.assertIn("automatically reuses the profile", status)
+        self.assertIn("close-routine", orchestration)
 
         marketplace = json.loads((ROOT / ".agents" / "plugins" / "marketplace.json").read_text())
         self.assertEqual(marketplace["name"], "sol-luna")
@@ -160,6 +167,27 @@ class M5PluginTests(unittest.TestCase):
         for source, destination in direct_pairs:
             self.assertTrue(destination.is_file(), destination)
             self.assertEqual(source.read_bytes(), destination.read_bytes(), destination)
+            self.assertEqual(
+                stat.S_IMODE(source.stat().st_mode),
+                stat.S_IMODE(destination.stat().st_mode),
+                destination,
+            )
+
+    def test_release_sync_check_is_clean_and_version_coherent(self):
+        result = subprocess.run(
+            [sys.executable, "scripts/sync_plugin.py"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(result.stderr, "")
+        report = json.loads(result.stdout)
+        self.assertTrue(report["ok"])
+        self.assertEqual(report["mismatches"], [])
+        self.assertEqual(report["version"], "0.5.0")
 
     def test_bundled_setup_installer_applies_standard_profile(self):
         previous_dont_write_bytecode = sys.dont_write_bytecode
@@ -287,25 +315,24 @@ class M5PluginTests(unittest.TestCase):
             "sol-luna-guard:assignment_ownership_mismatch",
         )
 
-    def test_failed_split_and_incomplete_wave_are_denied(self):
+    def test_failed_split_and_incomplete_total_lane_map_are_denied(self):
         split = _envelope()
         split["routing_request"]["provable"] = False
         self.assertEqual(_deny_code(_run_guard(_event(split))), "sol-luna-guard:route_split_provable")
 
         wave = _envelope()
         wave["routing_request"]["lane_count"] = 2
-        self.assertEqual(_deny_code(_run_guard(_event(wave))), "sol-luna-guard:ownership_wave_incomplete")
+        wave["routing_request"]["total_lane_count"] = 2
+        self.assertEqual(_deny_code(_run_guard(_event(wave))), "sol-luna-guard:route_unsupported_concurrency")
 
-    def test_multi_wave_ownership_map_is_allowed(self):
+    def test_complete_total_lane_ownership_map_is_allowed(self):
         envelope = _envelope()
         envelope["routing_request"].update({
             "lane_count": 2,
-            "wave_count": 2,
+            "total_lane_count": 2,
             "ownership": {
                 "m5_guard": ["src/m5_guard.py"],
-                "wave1_review": ["docs/wave1.md"],
-                "wave2_build": ["src/wave2.py"],
-                "wave2_test": ["tests/test_wave2.py"],
+                "m5_review": ["docs/m5-review.md"],
             },
         })
         result = _run_guard(_event(envelope))
@@ -401,7 +428,7 @@ class M5PluginTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             copy_root = Path(temporary) / PLUGIN.name
             shutil.copytree(PLUGIN, copy_root)
-            role = copy_root / "agents" / "luna_worker_fast.toml"
+            role = copy_root / "agents" / "v0.4" / "luna_worker_fast.toml"
             role.write_text(role.read_text() + "\n# drift\n")
             result = _run_guard(_event(), copy_root / "scripts" / "pre_tool_use_guard.py")
             self.assertEqual(_deny_code(result), "sol-luna-guard:route_runtime_drift")
@@ -429,6 +456,19 @@ class M5PluginTests(unittest.TestCase):
             "Directory ownership",
         ):
             self.assertIn(phrase, text)
+
+    def test_primary_onboarding_is_one_prompt_and_one_final_restart(self):
+        readme = (ROOT / "README.md").read_text()
+        installing = (ROOT / "docs" / "INSTALLING_AND_UPDATING.md").read_text()
+        for text in (readme, installing):
+            compact = " ".join(text.split())
+            self.assertIn("Install and fully configure the Sol/Luna Orchestration Kit", text)
+            self.assertIn("codex plugin list --json", text)
+            self.assertIn("source.path", text)
+            self.assertIn("one final restart", compact)
+            self.assertIn("no intermediate restart", compact)
+        self.assertIn("$sol-luna-setup Continue.", installing)
+        self.assertIn("resumable", installing)
 
 
 if __name__ == "__main__":

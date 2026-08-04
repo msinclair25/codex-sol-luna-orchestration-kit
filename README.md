@@ -1,11 +1,11 @@
 # Codex Sol/Luna Orchestration Kit
 
-**Sol leads. Luna specializes. Every milestone ends in evidence.**
+**Sol leads. Luna specializes only when the work justifies it.**
 
-The advanced V0.3.0 orchestration and measurement edition for Codex. GPT-5.6
-Sol owns planning, routing, integration, and final acceptance; dynamically
-routed GPT-5.6 Luna Fast roles scout, build, challenge, and test within explicit
-boundaries.
+The lean V0.5.0 orchestration edition for Codex. GPT-5.6 Sol owns planning,
+routing, integration, and final acceptance. Routine work stays direct; bounded
+GPT-5.6 Luna Fast or Standard roles scout, build, challenge, and test only when
+a closed classification, substantive threshold, benefit, and lane budget pass.
 
 <p align="center">
   <img src="assets/sol-luna-orchestration-system.png" alt="Sol routes bounded work through the SPLIT gate to dynamically configured Luna Scout, Worker, Critic, Tester, and Max exception roles, then accepts a verified outcome backed by status and receipts." width="960">
@@ -31,6 +31,20 @@ transport reasons, the user may explicitly authorize one visible, bounded
 Codex app task in the current checkout. It receives the same capsule and
 ownership, runs once without recursive fallback, and remains subject to Sol's
 diff, evidence, and acceptance checks.
+
+V0.4.0 makes delegation strictly deny-by-default, caps total lanes, replaces
+qualitative `large_enough` admission with versioned task classes and numeric
+thresholds, introduces delta-only `evidence-packet.v2`, and applies tiered
+receipts. Ordinary direct work has no persisted audit ceremony; high-risk,
+release, fallback, failed, reworked, and explicitly audited work keeps the full
+historical-compatible receipt.
+
+V0.5.0 makes operation easier without weakening those controls: first-time
+setup completes from one conversational bootstrap with one final restart,
+installation state is resumable, status is concise by default, and accepted
+routine delegation writes privacy-safe local metrics automatically. Detailed
+evidence remains available on request, and no recommendation changes routing
+policy without explicit human approval.
 
 The incident audit attributed at least 178,564 root tokens to the incomplete
 control workflow; child usage and total arm usage remain unknown. Automatic
@@ -66,40 +80,57 @@ boundary and excluded local artifacts.
 
 ## Quick start
 
-Add the plugin once:
+Paste this once into a Codex task:
+
+```text
+Install and fully configure the Sol/Luna Orchestration Kit with Fast Luna
+subagents. Add the Git marketplace
+msinclair25/codex-sol-luna-orchestration-kit and install
+sol-luna-orchestration-kit@sol-luna. Then inspect `codex plugin list --json`,
+use only that installed entry's verified `source.path`, read its
+skills/sol-luna-setup/SKILL.md, and complete the preview, full-role install,
+backup, and verification in this task. Preserve my existing Codex settings,
+stop on conflicts, and tell me when one final restart is required.
+```
+
+Use `Standard` instead of `Fast` in the first sentence when preferred. Codex
+installs the plugin and full role configuration in the same task. Approve the
+scoped configuration writes, then restart Codex once; there is no intermediate
+restart or second setup prompt.
+
+The direct plugin commands remain the workflow-only and troubleshooting path:
 
 ```sh
 codex plugin marketplace add msinclair25/codex-sol-luna-orchestration-kit
 codex plugin add sol-luna-orchestration-kit@sol-luna
 ```
 
-Start a new Codex task and say:
-
-```text
-$sol-luna-setup Install Sol/Luna with Standard Luna subagents.
-```
-
-Use `Fast` instead of `Standard` when you want priority service. The setup
-skill previews and applies the bundled transactional installer, preserves
-unrelated configuration, refuses unapproved conflicts, and verifies the
-result. The user never needs to operate its Python implementation.
+Those commands alone install workflow-only mode. After restarting,
+`$sol-luna-setup Set me up.` upgrades it to the full role configuration when
+desired.
 
 Later, update or switch tiers conversationally:
 
 ```text
-$sol-luna-setup Update Sol/Luna.
-$sol-luna-setup Switch Luna subagents to Fast.
+$sol-luna-setup Update.
+$sol-luna-setup Use Fast.
 ```
+
+Update state is saved before the plugin is replaced. After the required
+restart, `$sol-luna-setup Continue.` detects whether to finish the roles or
+retry the package refresh; the active tier is retained automatically.
 
 Check the current profile, receipts, drift, and attributable usage without
 remembering which tier was installed:
 
 ```text
-$sol-luna-status Report my Sol/Luna status.
+$sol-luna-status
 ```
 
-The setup state and validated receipts carry the profile automatically; users
-do not pass tier flags or edit receipt JSON.
+The default is a five-line health, version/tier, metrics, delegation, and next
+action summary. Ask for details only when needed. Accepted routine delegation
+records bounded local metrics automatically; users never pass tier flags or
+edit receipt JSON.
 
 For the clean task fallback when native Luna is unavailable, say once in the
 current task:
@@ -113,9 +144,9 @@ Without that explicit request, the skill asks one concise question only after
 an eligible native rejection. Installation never grants a standing permission
 to create user-visible tasks.
 
-For a package update, the skill refreshes the Git marketplace and plugin, then
-hands back one restart prompt to finish updating the global roles from the new
-bundle. It never continues from a plugin snapshot that was just replaced.
+For a package update, the skill saves a resumable marker, refreshes the Git
+marketplace and plugin, and asks for one restart. It never continues from a
+plugin snapshot that was just replaced.
 
 To inspect the repository without installing anything, run its local checks:
 
@@ -190,9 +221,10 @@ instructions improve consistency, but they are not a security boundary or a
 guarantee that every task will use every role.
 
 The versioned [routing policy](docs/ROUTING_POLICY.md) documents the static
-contract and advisory evaluator. It applies the five SPLIT checks—Separate,
-Provable, Large enough, Isolated, and Tier-appropriate—and sends any failed,
-malformed, unsupported, or stale request directly to Sol.
+contract and advisory evaluator. It denies routine task classes, requires an
+allowed benefit and concrete class-specific threshold, then applies four SPLIT
+checks—Separate, Provable, Isolated, and Tier-appropriate. Any failed,
+malformed, contradictory, unsupported, or stale request stays with Sol.
 
 ### Stability before optimization
 
@@ -236,6 +268,9 @@ codex-sol-luna-orchestration-kit/
 ├── assets/
 │   ├── sol-luna-orchestration-system.png
 │   └── social-preview.jpg
+├── agents/
+│   ├── luna_*_{fast,standard}.toml        # historical policy sources
+│   └── v0.4/luna_*_{fast,standard}.toml  # active V0.4 prompts
 ├── benchmark/m4_single_pair/
 │   ├── PROMPT.txt
 │   ├── oracle.py
@@ -246,11 +281,16 @@ codex-sol-luna-orchestration-kit/
 │   ├── m4-benchmark.v1.json
 │   ├── m4-pilot.v1.json
 │   ├── rate-card.v1.json
+│   ├── receipt-policy.v1.json
 │   ├── routing-policy.v1.json
 │   ├── routing-policy.v1.1.json
 │   ├── routing-policy.standard.v1.1.json
 │   ├── routing-policy.v1.2.json
-│   └── routing-policy.standard.v1.2.json
+│   ├── routing-policy.standard.v1.2.json
+│   ├── routing-policy.v1.3.json
+│   ├── routing-policy.standard.v1.3.json
+│   ├── routing-policy.v1.4.json
+│   └── routing-policy.standard.v1.4.json
 ├── control-bundles/
 │   └── all-max-v1/
 ├── schemas/
@@ -258,6 +298,7 @@ codex-sol-luna-orchestration-kit/
 │   ├── m4-benchmark-terminal.v1.schema.json
 │   ├── m4-pilot-plan.v1.schema.json
 │   ├── milestone-receipt.v1.schema.json
+│   ├── routine-delegation-record.v1.schema.json
 │   └── pilot-start.v1.schema.json
 ├── docs/
 │   ├── CONTROL_BUNDLES.md
@@ -283,6 +324,7 @@ codex-sol-luna-orchestration-kit/
 │   ├── run_m4_benchmark.py
 │   ├── receipt_tool.py
 │   ├── routing_policy.py
+│   ├── sync_plugin.py
 │   ├── usage_report.py
 │   └── verify_control_bundle.py
 ├── plugins/
@@ -332,11 +374,12 @@ across both arms. Missing or changed capabilities fail before measured work.
 Seeing a model in an
 API account does not necessarily mean the same model is enabled in every Codex
 surface. Verify your own model picker or model catalog before installing.
-The active V0.3.0 contract requires context-free Luna launches; a task that
+The active V0.5.0 contract requires context-free Luna launches; a task that
 cannot be expressed as a self-contained packet stays with Sol. The original
 V0.2.1 `AGENTS.md` and routing-policy file remain as frozen M4 inputs; v1.1
-preserves V0.2.2 behavior, while `AGENTS.override.md` and
-`routing-policy.v1.2.json` define new installations.
+preserves V0.2.2 behavior and v1.2 preserves V0.3.0, while
+`AGENTS.override.md`, `agents/v0.4/`, and `routing-policy.v1.4.json` define
+new installations.
 The advisory evaluator requires callers to provide `fork_turns` explicitly;
 omission and history-fork values fail closed. It does not parse free-form task
 prose, so Sol still owns the judgment that a child packet is self-contained.
@@ -370,7 +413,7 @@ with Sol.
 
 | Evidence | Result | What it establishes |
 | --- | --- | --- |
-| Static policy and installer tests | Passing on the V0.3.0 branch | The checked-in configuration is internally consistent; this is not proof of runtime availability. |
+| Static policy and installer tests | Passing on the V0.5.0 branch | The checked-in configuration is internally consistent; this is not proof of runtime availability or measured savings. |
 | [M1 role smoke](evidence/m1-role-smoke-2026-08-02.json) | All five Luna roles launched and completed on the tested account and Codex build | The configured roles worked in one observed environment. |
 | Maintainer operational sample (August 3, 2026 snapshot) | 63 of 64 privacy-safe named Luna role runs completed | Practical reliability evidence from mixed work; completion does not prove correctness or savings. |
 | M4 matched comparison | Interrupted control; dynamic arm not started; pair retired | No verified whole-workflow savings percentage exists yet. |
@@ -469,11 +512,12 @@ permanently non-retryable.
 
 Run the repository-local, read-only status report with
 `python3 .agents/skills/sol-luna-status/scripts/sol_luna_status.py`; add
-`--format json` for automation. The bounded scanner uses validated local
+`--detail` for the complete evidence view or `--format json` for automation.
+The default is the concise end-user health and next-action summary. The bounded scanner uses validated local
 receipts and attributable record-schema-v1 rollout JSONL with complete token
 snapshots, redacts sensitive content, and falls back to receipt-only status
-when local session capability or correlation is not provable. M4 now reports
-terminal and non-retryable by default with no next slot. Historical registry
+when local session capability or correlation is not provable. Detailed and
+JSON reports retain M4's terminal, non-retryable state with no next slot. Historical registry
 inspection requires the explicit audit-only flag plus a plan and never
 authorizes registration or model work. The report itself remains local and
 uses no server, MCP service, dashboard, database, or network surface; M5 can
@@ -499,36 +543,38 @@ decision guide and exact update commands.
 
 ### Setup skill (recommended)
 
-After installing the plugin and starting a new task, ask Codex:
+The [Quick start](#quick-start) completes plugin and full-role setup in one
+task. If the plugin was intentionally installed in workflow-only mode, restart
+once and ask Codex:
 
 ```text
-$sol-luna-setup Install Sol/Luna with Fast Luna subagents.
-$sol-luna-setup Install Sol/Luna with Standard Luna subagents.
+$sol-luna-setup Set me up.
 ```
 
-The skill finds the trusted plugin bundle, previews the exact managed changes,
-applies the requested profile, and verifies the active installation. A direct
-request authorizes ordinary managed writes, but conflicting user edits still
-stop for a separate explanation and approval.
+Fast is the default; include `Use Standard` when preferred. The setup doctor
+finds the trusted plugin bundle and selects the one safe next action, previews
+the exact managed changes, applies the requested profile, and verifies the
+active installation. A direct request authorizes ordinary managed writes, but
+conflicting user edits still stop for a separate explanation and approval.
 
 For a package update, start with this prompt:
 
 ```text
-$sol-luna-setup Update Sol/Luna.
+$sol-luna-setup Update.
 ```
 
-The skill stops after refreshing the plugin. Restart Codex, begin a new task,
-and use its handoff prompt:
+The skill saves a resumable marker and stops after refreshing the plugin.
+Restart Codex, begin a new task, and say:
 
 ```text
-$sol-luna-setup Finish updating my Sol/Luna roles.
+$sol-luna-setup Continue.
 ```
 
 Tier switches and verification do not need the package-update handoff:
 
 ```text
-$sol-luna-setup Switch Luna subagents to Standard.
-$sol-luna-setup Verify my Sol/Luna installation.
+$sol-luna-setup Use Standard.
+$sol-luna-setup Verify.
 ```
 
 The internal installer performs the following bounded flow:
@@ -616,17 +662,17 @@ python3 scripts/install.py --apply --with-usage --refresh-usage-pointer
 The guided global installer rejects filesystem roots and broad destinations;
 the selected Codex home must be a proper child of the supplied home directory.
 
-### Paste into Codex
+### Workflow-only paste request
 
-You can paste this request into a Codex task instead of entering shell steps
-yourself:
+Use this alternate prompt only when you intentionally want the plugin without
+global roles or instructions:
 
 ```text
 Install the Sol/Luna Orchestration Kit plugin from
 https://github.com/msinclair25/codex-sol-luna-orchestration-kit using its
 Git-backed Codex marketplace. Do not clone the repository or modify my global
-roles and instructions yet. After the plugin is installed, tell me to restart
-Codex and give me the exact `$sol-luna-setup` prompt for a Standard install.
+roles and instructions. After the plugin is installed, tell me to restart
+Codex once so the workflow-only skills and optional hook load.
 ```
 
 ### Manual installation
@@ -790,8 +836,8 @@ Important details:
 - To keep Sol on Standard/default service, leave the top-level `service_tier`
   unset. If you already set a top-level tier, changing or removing it changes
   your existing preference; do that only intentionally.
-- Keep `max_concurrent_threads_per_session = 3`; the policy caps concurrently
-  active delegated lanes at three and processes dependent work in waves.
+- Keep `max_concurrent_threads_per_session = 3`; the policy caps both total
+  and concurrently active delegated lanes at three and serializes dependencies.
 - The selected policy chooses either the `*_fast` roles, which explicitly pin
   Fast, or the `*_standard` roles, which omit a service-tier override.
 - Do not initially add `agents.default_subagent_model`. Each role already pins
@@ -887,11 +933,12 @@ limits depend on the account and workspace.
 
 The active `AGENTS.override.md` gives the Sol root these operating rules:
 
-1. Delegate only independent, bounded work that materially improves speed or
-   accuracy.
-2. Pass every candidate through SPLIT: Separate, Provable, Large enough,
-   Isolated, and Tier-appropriate. Any failed or unknown check routes directly
-   to Sol.
+1. Keep explanations, status, Git-only work, one-command diagnostics,
+   one-cycle lookups, localized edits, formatting/docs fixes, test reruns, and
+   overhead-comparable work with Sol.
+2. Require a recognized task class, allowed benefit, numeric substantive-work
+   threshold, valid work band, complete ownership, and the four SPLIT checks:
+   Separate, Provable, Isolated, and Tier-appropriate.
 3. Give every child an outcome, relevant inputs, ownership or read-only scope,
    constraints, acceptance checks, evidence requirements, and a deadline.
 4. Explicitly use `fork_turns = "none"` for Luna and pass a self-contained
@@ -900,19 +947,18 @@ The active `AGENTS.override.md` gives the Sol root these operating rules:
    never a native retry or silent role substitution.
 5. Never run overlapping writers concurrently; exact and directory-prefix
    ownership conflicts are rejected.
-6. Serialize dependent work in waves; parallelize independent review and
-   validation, with no more than three concurrently active lanes. Total lanes
-   and waves are not capped by this policy.
+6. Routine milestones use at most one justified total lane, substantial
+   milestones two, and high-risk/critical milestones three. A third lane may
+   also follow explicit user direction. Never exceed three total or concurrent.
 7. Keep commits, pushes, deployments, migrations, destructive cleanup, and
    other external effects with Sol unless the user explicitly authorizes them.
-8. Require compact evidence from every role—`scope`, `files_or_surfaces`,
-   `commands_or_checks`, `assumptions`, `failures`, `risks`, `confidence`, and
-   `recommendation`—and independently verify material
-   claims before the final answer.
+8. Require delta-only `evidence-packet.v2`—`status`,
+   `files_or_surfaces`, `checks`, `findings`, `risks`, `confidence`, and
+   `recommendation`—and independently verify material claims.
 
-The practical default is one Worker at a time, followed by Critic and Tester in
-parallel. Trivial tasks should remain with Sol because orchestration overhead
-can be slower and noisier than doing the work directly. Max is only selected
+The practical default is direct Sol. Substantial work may justify one bounded
+role, and risky work may justify independent review/validation within the total
+lane budget. Max is only selected
 for the enumerated exception codes in `AGENTS.override.md`, including for general
 analysis.
 

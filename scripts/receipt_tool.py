@@ -13,6 +13,7 @@ import json
 import math
 import os
 import re
+import secrets
 import stat
 import sys
 import tempfile
@@ -23,6 +24,9 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 SCHEMA_VERSION = 1
 ORIGIN = "unsigned-local-audit"
+RECEIPT_POLICY_VERSION = "receipt-policy.v1"
+ROUTINE_RECORD_VERSION = "routine-delegation-record.v1"
+DEFAULT_ROOT = Path(__file__).resolve().parents[1]
 MAX_INPUT_BYTES = 64 * 1024
 MAX_ARRAY_ITEMS = 64
 MAX_REF_ITEMS = 16
@@ -71,6 +75,32 @@ APP_TASK_OUTCOMES = {"completed", "failed", "blocked", "unavailable"}
 CHECK_RESULTS = {"pass", "fail", "unknown"}
 RISK_CODES = {"none", "runtime_drift", "scope", "security", "privacy", "validation", "availability", "cost", "data_loss", "unknown"}
 COVERAGE = {"complete-full-workflow", "incomplete", "unknown"}
+RECEIPT_WORK_BANDS = {"routine", "substantial", "high_risk", "critical"}
+RECEIPT_OUTCOMES = {"accepted", "failed", "blocked", "abandoned"}
+FULL_RECEIPT_CATEGORIES = {
+    "security",
+    "release",
+    "deployment",
+    "migration",
+    "destructive",
+    "external_side_effect",
+    "app_task_fallback",
+    "pilot",
+    "benchmark",
+    "evaluation",
+}
+RECEIPT_TIER_CONTEXT_FIELDS = {
+    "work_band",
+    "delegated",
+    "outcome",
+    "categories",
+    "material_rework",
+    "explicit_audit",
+    "automatic_collection_available",
+}
+ROUTINE_RECORD_FIELDS = {"schema_version", "version", "spawn", "outcome", "checks", "usage"}
+ROUTINE_RECORD_OUTCOMES = {"completed", "blocked", "failed"}
+ROUTINE_CHECK_RESULTS = {"pass", "fail", "skipped"}
 TOP_KEYS = {
     "schema_version", "receipt_id", "project_id", "codex_task_id", "milestone_id", "family", "size_risk_band",
     "started_at", "closed_at", "disposition", "decision_owner", "accepted_by", "user_confirmation", "root_runtime",
@@ -84,6 +114,21 @@ CREDENTIAL_RE = re.compile(
     r"(?:sk-[A-Za-z0-9]{16,}|AKIA[0-9A-Z]{16}|bearer\s+[A-Za-z0-9._~+/=-]{12,}|-----BEGIN(?: [A-Z]+)* PRIVATE KEY-----)",
     re.IGNORECASE,
 )
+RECEIPT_POLICY_CONTRACT = {
+    "schema_version": 1,
+    "version": RECEIPT_POLICY_VERSION,
+    "historical_full_schema": "milestone-receipt.v1",
+    "minimal_schema": ROUTINE_RECORD_VERSION,
+    "routine_direct": "handoff_only",
+    "routine_delegated": "minimal_if_automatic_else_unknown",
+    "full_triggers": sorted(FULL_RECEIPT_CATEGORIES),
+    "full_outcomes": ["failed", "blocked", "abandoned"],
+    "full_work_bands": ["high_risk", "critical"],
+    "material_rework_requires_full": True,
+    "explicit_audit_requires_full": True,
+    "missing_optional_routine_record": "not_error",
+    "absent_usage_attribution": "unknown",
+}
 
 
 class ReceiptError(ValueError):
@@ -414,6 +459,195 @@ def validate_receipt(receipt: Any) -> Dict[str, Any]:
         return {"ok": False, "error": code}
 
 
+def verify_receipt_policy(root: Path | str = DEFAULT_ROOT) -> Dict[str, Any]:
+    """Verify the exact receipt-policy.v1 contract without changing v1 receipts."""
+
+    path = Path(root) / "config" / "receipt-policy.v1.json"
+    try:
+        if _path_has_symlink_component(path) or not path.is_file():
+            raise ReceiptError("receipt_policy_unavailable")
+        data = path.read_bytes()
+        if len(data) > MAX_INPUT_BYTES:
+            raise ReceiptError("receipt_policy_oversize")
+        value = _strict_loads(data.decode("utf-8"))
+        if value != RECEIPT_POLICY_CONTRACT:
+            raise ReceiptError("receipt_policy_drift")
+        return {"ok": True, "version": RECEIPT_POLICY_VERSION, "errors": []}
+    except (ReceiptError, OSError, UnicodeError, ValueError, MemoryError, RecursionError) as exc:
+        code = exc.code if isinstance(exc, ReceiptError) else "receipt_policy_invalid"
+        return {"ok": False, "version": RECEIPT_POLICY_VERSION, "errors": [code]}
+
+
+def select_receipt_tier(context: Any, root: Path | str = DEFAULT_ROOT) -> Dict[str, Any]:
+    """Select none, minimal, or full from a closed trigger matrix."""
+
+    policy = verify_receipt_policy(root)
+    if not policy["ok"]:
+        return {"ok": False, "tier": "full", "measurement": "unknown", "reason": "policy_invalid"}
+    if not isinstance(context, dict) or set(context) != RECEIPT_TIER_CONTEXT_FIELDS:
+        return {"ok": False, "tier": "full", "measurement": "unknown", "reason": "malformed_context"}
+    band = context.get("work_band")
+    delegated = context.get("delegated")
+    outcome = context.get("outcome")
+    categories = context.get("categories")
+    rework = context.get("material_rework")
+    audit = context.get("explicit_audit")
+    automatic = context.get("automatic_collection_available")
+    if (
+        band not in RECEIPT_WORK_BANDS
+        or outcome not in RECEIPT_OUTCOMES
+        or not isinstance(delegated, bool)
+        or not isinstance(rework, bool)
+        or not isinstance(audit, bool)
+        or not isinstance(automatic, bool)
+        or not isinstance(categories, list)
+        or len(categories) > len(FULL_RECEIPT_CATEGORIES)
+        or any(not isinstance(item, str) or item not in FULL_RECEIPT_CATEGORIES for item in categories)
+        or len(categories) != len(set(categories))
+    ):
+        return {"ok": False, "tier": "full", "measurement": "unknown", "reason": "malformed_context"}
+    if (
+        band in {"high_risk", "critical"}
+        or outcome in {"failed", "blocked", "abandoned"}
+        or rework
+        or audit
+        or bool(categories)
+    ):
+        return {"ok": True, "tier": "full", "measurement": "formal", "reason": "full_trigger"}
+    if delegated and automatic:
+        return {"ok": True, "tier": "minimal", "measurement": "automatic", "reason": "routine_delegated"}
+    if delegated:
+        return {"ok": True, "tier": "none", "measurement": "unknown", "reason": "automatic_collection_unavailable"}
+    return {"ok": True, "tier": "none", "measurement": "not_applicable", "reason": "direct_handoff_only"}
+
+
+def _validate_routine_record_shape(record: Any) -> None:
+    if not isinstance(record, dict) or set(record) != ROUTINE_RECORD_FIELDS:
+        raise ReceiptError("routine_record_shape")
+    try:
+        if len(json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")) > 2048:
+            raise ReceiptError("routine_record_oversize")
+    except (TypeError, UnicodeError, MemoryError, OverflowError, RecursionError) as exc:
+        raise ReceiptError("routine_record_invalid") from exc
+    if record.get("schema_version") != 1 or isinstance(record.get("schema_version"), bool) or record.get("version") != ROUTINE_RECORD_VERSION:
+        raise ReceiptError("routine_record_version")
+    spawn = record.get("spawn")
+    if (
+        not isinstance(spawn, dict)
+        or set(spawn) != {"decision", "useful"}
+        or spawn.get("decision") != "delegate"
+        or not isinstance(spawn.get("useful"), bool)
+    ):
+        raise ReceiptError("routine_record_spawn")
+    if record.get("outcome") not in ROUTINE_RECORD_OUTCOMES:
+        raise ReceiptError("routine_record_outcome")
+    checks = record.get("checks")
+    if not isinstance(checks, list) or len(checks) > 8:
+        raise ReceiptError("routine_record_checks")
+    for check in checks:
+        if (
+            not isinstance(check, dict)
+            or set(check) != {"name", "status"}
+            or not isinstance(check.get("name"), str)
+            or not check["name"].strip()
+            or check["name"] != check["name"].strip()
+            or len(check["name"]) > 160
+            or any(character in check["name"] for character in ("\x00", "\n", "\r", "\t"))
+            or any(marker in check["name"].lower() for marker in ("password=", "api_key=", "authorization: bearer"))
+            or CREDENTIAL_RE.search(check["name"]) is not None
+            or check.get("status") not in ROUTINE_CHECK_RESULTS
+        ):
+            raise ReceiptError("routine_record_checks")
+    usage = record.get("usage")
+    if not isinstance(usage, dict) or set(usage) != {"attribution", "total_tokens"}:
+        raise ReceiptError("routine_record_usage")
+    total = usage.get("total_tokens")
+    if usage.get("attribution") == "attributable":
+        if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+            raise ReceiptError("routine_record_usage")
+    elif usage.get("attribution") == "unknown":
+        if total is not None:
+            raise ReceiptError("routine_record_usage")
+    else:
+        raise ReceiptError("routine_record_usage")
+    _walk_privacy(record)
+
+
+def validate_routine_record(record: Any) -> Dict[str, Any]:
+    try:
+        _validate_routine_record_shape(record)
+        return {"ok": True, "error": None}
+    except (ReceiptError, TypeError, ValueError, OverflowError, MemoryError, RecursionError) as exc:
+        code = exc.code if isinstance(exc, ReceiptError) else "invalid_routine_record"
+        return {"ok": False, "error": code}
+
+
+def build_routine_record(
+    *,
+    useful: bool,
+    outcome: str,
+    checks: Sequence[Mapping[str, str]],
+    total_tokens: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Deterministically build the minimal record; callers supply no IDs or prose payload."""
+
+    record = {
+        "schema_version": 1,
+        "version": ROUTINE_RECORD_VERSION,
+        "spawn": {"decision": "delegate", "useful": useful},
+        "outcome": outcome,
+        "checks": [dict(item) for item in checks],
+        "usage": {
+            "attribution": "attributable" if total_tokens is not None else "unknown",
+            "total_tokens": total_tokens,
+        },
+    }
+    _validate_routine_record_shape(record)
+    return record
+
+
+def close_routine_record(record: Any, records_dir: Path) -> Dict[str, Any]:
+    """Atomically persist one privacy-safe routine outcome without task identifiers."""
+
+    _validate_routine_record_shape(record)
+    target_dir = _safe_dir(records_dir, create=True)
+    data = _canonical(record)
+    target: Optional[Path] = None
+    for _ in range(8):
+        candidate = target_dir / ("routine-" + secrets.token_hex(16) + ".json")
+        if not candidate.exists() and not candidate.is_symlink():
+            target = candidate
+            break
+    if target is None:
+        raise ReceiptError("routine_record_name_unavailable")
+    fd, temporary = tempfile.mkstemp(prefix=".routine-", suffix=".tmp", dir=str(target_dir))
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            os.link(temporary, target, follow_symlinks=False)
+        except FileExistsError as exc:
+            raise ReceiptError("routine_record_collision") from exc
+        os.unlink(temporary)
+        directory_fd = os.open(str(target_dir), os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    except (OSError, ReceiptError) as exc:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        if isinstance(exc, ReceiptError):
+            raise
+        raise ReceiptError("routine_record_write_failed") from exc
+    return {"ok": True, "recorded": True, "version": ROUTINE_RECORD_VERSION}
+
+
 def _safe_dir(path: Path, *, create: bool = False) -> Path:
     if _path_has_symlink_component(path):
         raise ReceiptError("unsafe_receipts_dir")
@@ -631,6 +865,14 @@ def _parser() -> argparse.ArgumentParser:
     close = sub.add_parser("close")
     close.add_argument("--input", required=True)
     close.add_argument("--receipts-dir", default=".sol-luna/receipts")
+    routine = sub.add_parser("close-routine")
+    useful = routine.add_mutually_exclusive_group(required=True)
+    useful.add_argument("--useful", action="store_true")
+    useful.add_argument("--not-useful", action="store_true")
+    routine.add_argument("--outcome", required=True, choices=sorted(ROUTINE_RECORD_OUTCOMES))
+    routine.add_argument("--check", action="append", choices=sorted(ROUTINE_CHECK_RESULTS), default=[])
+    routine.add_argument("--total-tokens", type=int)
+    routine.add_argument("--records-dir", default=".sol-luna/routine-records")
     validate = sub.add_parser("validate")
     validate.add_argument("paths", nargs="*")
     validate.add_argument("--receipts-dir")
@@ -646,6 +888,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if args.command == "close":
             payload = _read_input(Path(args.input))
             result = close_receipt(payload, Path(args.receipts_dir))
+        elif args.command == "close-routine":
+            if len(args.check) > 8 or isinstance(args.total_tokens, bool) or (
+                args.total_tokens is not None and args.total_tokens < 0
+            ):
+                raise ReceiptError("routine_record_cli")
+            record = build_routine_record(
+                useful=bool(args.useful and not args.not_useful),
+                outcome=args.outcome,
+                checks=[
+                    {"name": f"acceptance-{index}", "status": status}
+                    for index, status in enumerate(args.check, 1)
+                ],
+                total_tokens=args.total_tokens,
+            )
+            result = close_routine_record(record, Path(args.records_dir))
         elif args.command == "validate":
             paths = [Path(path) for path in args.paths]
             result = validate_paths(paths, Path(args.receipts_dir) if args.receipts_dir else None)

@@ -14,6 +14,7 @@ from scripts.routing_policy import (
     ELIGIBLE_NATIVE_FAILURE_CODES,
     LUNA_TRANSPORT,
     MAX_UPGRADE_REASON_CODES,
+    ROUTINE_TASK_CLASSES,
     POLICY_AGENTS_RELATIVE,
     POLICY_RELATIVE,
     ROLE_DEFINITIONS,
@@ -65,7 +66,7 @@ class RoutingPolicyTests(unittest.TestCase):
         self.assertTrue(all(role["service_tier"] == "standard" for role in STANDARD_ROLE_DEFINITIONS.values()))
         self.assertTrue(all(role["service_tier_configured"] is False for role in STANDARD_ROLE_DEFINITIONS.values()))
 
-    def test_valid_delegation_routes_to_routine_role(self):
+    def test_valid_substantial_delegation_routes_to_bounded_role(self):
         result = evaluate(self.cases["valid_delegation"], ROOT)
         self.assertTrue(result["ok"])
         self.assertEqual(result["decision"], "delegate")
@@ -73,6 +74,8 @@ class RoutingPolicyTests(unittest.TestCase):
         self.assertEqual(result["reasoning"], "medium")
         self.assertFalse(result["fallback"])
         self.assertEqual(result["transport"], LUNA_TRANSPORT)
+        self.assertEqual(result["task_class"], "broad_mapping")
+        self.assertEqual(result["lane_budget"], 2)
 
         request = dict(self.cases["valid_delegation"])
         request["profile"] = "standard"
@@ -239,13 +242,58 @@ class RoutingPolicyTests(unittest.TestCase):
             {"custom_role_rejected", "custom_role_unavailable", "native_spawn_tool_unavailable", "native_spawn_transport_error"},
         )
 
-    def test_failed_gate_routes_directly_to_sol(self):
+    def test_routine_classes_and_failed_gate_route_directly_to_sol(self):
+        for task_class in ROUTINE_TASK_CLASSES:
+            request = dict(self.cases["direct_work"])
+            request["task_class"] = task_class
+            result = evaluate(request, ROOT)
+            self.assertFalse(result["ok"], task_class)
+            self.assertIn("routine_task_class", result["reason_codes"])
         for case_name in ("direct_work", "rejected_gate"):
             result = evaluate(self.cases[case_name], ROOT)
             self.assertFalse(result["ok"])
             self.assertEqual(result["route"], "sol")
             self.assertTrue(result["fallback"])
-            self.assertTrue(any(code.startswith("split_") for code in result["reason_codes"]))
+            self.assertTrue(
+                "routine_task_class" in result["reason_codes"]
+                or any(code.startswith("split_") for code in result["reason_codes"])
+            )
+
+    def test_classification_benefit_threshold_and_risk_review_fail_closed(self):
+        base = dict(self.cases["valid_delegation"])
+        mutations = (
+            ("unsupported_task_class", lambda value: value.update(task_class="unknown")),
+            ("unsupported_benefit_code", lambda value: value.update(benefit_code="cheap_model")),
+            ("substantive_threshold_not_met", lambda value: value.update(substantive_work={"estimated_minutes": 19, "affected_files": 0, "distinct_surfaces": 4, "independent_checks": 0})),
+            ("malformed_work_classification", lambda value: value.update(substantive_work={"estimated_minutes": 20})),
+            ("unsupported_route_classification", lambda value: value.update(kind="worker")),
+            ("contradictory_risk_classification", lambda value: value.update(work_band="high_risk")),
+        )
+        for code, mutate in mutations:
+            request = json.loads(json.dumps(base))
+            mutate(request)
+            result = evaluate(request, ROOT)
+            self.assertFalse(result["ok"], code)
+            self.assertIn(code, result["reason_codes"])
+
+        risk = dict(self.cases["rejected_gate"])
+        risk["provable"] = True
+        self.assertTrue(evaluate(risk, ROOT)["ok"])
+        risk["risk_domains"] = []
+        result = evaluate(risk, ROOT)
+        self.assertFalse(result["ok"])
+        self.assertIn("risk_domain_required", result["reason_codes"])
+
+        legacy_boolean = dict(base)
+        legacy_boolean["large_enough"] = True
+        result = evaluate(legacy_boolean, ROOT)
+        self.assertIn("unsupported_request_field", result["reason_codes"])
+
+        unhashable_risk = dict(base)
+        unhashable_risk["risk_domains"] = [{}]
+        result = evaluate(unhashable_risk, ROOT)
+        self.assertFalse(result["ok"])
+        self.assertIn("malformed_work_classification", result["reason_codes"])
 
     def test_max_upgrade_requires_enumerated_reason_and_uses_max(self):
         result = evaluate(self.cases["reasoning_upgrade"], ROOT)
@@ -263,6 +311,8 @@ class RoutingPolicyTests(unittest.TestCase):
 
         analysis = dict(self.cases["valid_delegation"])
         analysis["kind"] = "analysis"
+        analysis["task_class"] = "complex_analysis"
+        analysis["substantive_work"] = {"estimated_minutes": 30, "affected_files": 0, "distinct_surfaces": 3, "independent_checks": 1}
         result = evaluate(analysis, ROOT)
         self.assertFalse(result["ok"])
         self.assertEqual(result["route"], "sol")
@@ -273,40 +323,110 @@ class RoutingPolicyTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(result["route"], "luna_max_fast")
 
-    def test_only_simultaneously_active_lanes_are_capped(self):
+    def test_routine_substantial_and_high_risk_total_lane_budgets(self):
         result = evaluate(self.cases["multiple_waves"], ROOT)
         self.assertTrue(result["ok"])
         self.assertEqual(result["lane_count"], 2)
-        self.assertEqual(result["wave_count"], 12)
+        self.assertEqual(result["total_lane_count"], 2)
         self.assertEqual(result["max_concurrent_delegated_lanes"], 3)
-        self.assertEqual(result["processing"], "waves")
+        self.assertEqual(result["max_total_delegated_lanes"], 3)
         self.assertEqual(result["dependent_work"], "serialized")
 
         too_many = dict(self.cases["multiple_waves"])
-        too_many["lane_count"] = 4
+        too_many["work_band"] = "routine"
         result = evaluate(too_many, ROOT)
         self.assertFalse(result["ok"])
         self.assertEqual(result["route"], "sol")
-        self.assertIn("unsupported_concurrency", result["reason_codes"])
+        self.assertIn("lane_budget_exceeded", result["reason_codes"])
+
+        routine_third = dict(too_many)
+        routine_third["lane_count"] = 3
+        routine_third["total_lane_count"] = 3
+        routine_third["third_lane_justification"] = "explicit_user_direction"
+        routine_third["ownership"] = {
+            "routine_a": ["tests/a.py"],
+            "routine_b": ["tests/b.py"],
+            "routine_c": ["tests/c.py"],
+        }
+        result = evaluate(routine_third, ROOT)
+        self.assertIn("lane_budget_exceeded", result["reason_codes"])
+
+        high = dict(self.cases["rejected_gate"])
+        high["provable"] = True
+        high["lane_count"] = 3
+        high["total_lane_count"] = 3
+        high["third_lane_justification"] = "high_risk"
+        high["ownership"] = {
+            "critic_a": ["src/a.py"],
+            "critic_b": ["src/b.py"],
+            "critic_c": ["src/c.py"],
+        }
+        result = evaluate(high, ROOT)
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["lane_budget"], 3)
+
+        missing_reason = dict(high)
+        del missing_reason["third_lane_justification"]
+        result = evaluate(missing_reason, ROOT)
+        self.assertIn("third_lane_justification_required", result["reason_codes"])
+
+        ordinary_third = dict(high)
+        ordinary_third["work_band"] = "substantial"
+        ordinary_third["risk_domains"] = []
+        ordinary_third["task_class"] = "substantial_validation"
+        ordinary_third["benefit_code"] = "parallel_latency"
+        ordinary_third["kind"] = "tester"
+        ordinary_third["substantive_work"] = {"estimated_minutes": 20, "affected_files": 0, "distinct_surfaces": 3, "independent_checks": 3}
+        ordinary_third["third_lane_justification"] = "explicit_user_direction"
+        result = evaluate(ordinary_third, ROOT)
+        self.assertTrue(result["ok"], result)
 
     def test_evidence_packet_contract_is_exact_and_bounded(self):
         evidence = {
-            "scope": "routing policy review",
+            "status": "completed",
             "files_or_surfaces": ["scripts/routing_policy.py"],
-            "commands_or_checks": ["python3 -m unittest discover"],
-            "assumptions": ["runtime hashes are current"],
-            "failures": [],
-            "risks": ["Codex availability varies by account"],
+            "checks": [{"name": "routing unit tests", "status": "pass"}],
+            "findings": [{"severity": "low", "code": "route_ok", "reference": "scripts/routing_policy.py"}],
+            "risks": ["Runtime availability varies"],
             "confidence": "high",
-            "recommendation": "run the static verifier",
+            "recommendation": "accept",
         }
         self.assertTrue(validate_evidence(evidence))
         missing = dict(evidence)
-        del missing["failures"]
+        del missing["findings"]
         self.assertFalse(validate_evidence(missing))
         extra = dict(evidence)
-        extra["next_action"] = "not part of v1"
+        extra["next_action"] = "not part of v2"
         self.assertFalse(validate_evidence(extra))
+        oversized = dict(evidence)
+        oversized["risks"] = ["x" * 161]
+        self.assertFalse(validate_evidence(oversized))
+        too_many = dict(evidence)
+        too_many["checks"] = [{"name": f"check {index}", "status": "pass"} for index in range(9)]
+        self.assertFalse(validate_evidence(too_many))
+        sensitive = dict(evidence)
+        sensitive["risks"] = ["password=do-not-store"]
+        self.assertFalse(validate_evidence(sensitive))
+        identifier = dict(evidence)
+        identifier["risks"] = ["task_id abc"]
+        self.assertFalse(validate_evidence(identifier))
+        invalid_enum = dict(evidence)
+        invalid_enum["confidence"] = "certain"
+        self.assertFalse(validate_evidence(invalid_enum))
+        raw_log = dict(evidence)
+        raw_log["risks"] = ["Traceback (most recent call last):"]
+        self.assertFalse(validate_evidence(raw_log))
+        sensitive_key = dict(evidence)
+        sensitive_key["checks"] = [{"name": "tests", "status": "pass", "credentials": "none"}]
+        self.assertFalse(validate_evidence(sensitive_key))
+        unhashable_file = dict(evidence)
+        unhashable_file["files_or_surfaces"] = [{}]
+        self.assertFalse(validate_evidence(unhashable_file))
+        over_two_kb = dict(evidence)
+        over_two_kb["files_or_surfaces"] = [
+            f"surfaces/{index}-" + "a" * 145 for index in range(12)
+        ]
+        self.assertFalse(validate_evidence(over_two_kb))
 
     def test_exact_and_prefix_ownership_conflicts_are_rejected(self):
         exact = detect_ownership_conflicts({"a": ["src/app.py"], "b": ["src/app.py"]})
@@ -319,7 +439,7 @@ class RoutingPolicyTests(unittest.TestCase):
         self.assertIn("split_isolated", result["reason_codes"])
 
     def test_malformed_and_unsupported_requests_fail_closed(self):
-        for request in (None, {}, {"kind": "unknown"}, {"kind": "scout", "separate": True}):
+        for request in (None, {}, {"profile": []}, {"kind": "unknown"}, {"kind": "scout", "separate": True}):
             result = evaluate(request, ROOT)
             self.assertFalse(result["ok"])
             self.assertEqual(result["route"], "sol")
@@ -371,8 +491,8 @@ class RoutingPolicyTests(unittest.TestCase):
     def test_coordinated_semantic_role_edit_is_detected(self):
         temporary, copy = self._copy_runtime()
         try:
-            role = copy / "agents" / "luna_scout_fast.toml"
-            role.write_text(role.read_text().replace("`scope`", "`scope_removed`", 1))
+            role = copy / ROLE_DEFINITIONS["scout"]["path"]
+            role.write_text(role.read_text().replace("`status`", "`status_removed`", 1))
             policy_path = copy / POLICY_RELATIVE
             policy = json.loads(policy_path.read_text())
             digest = hashlib.sha256(role.read_bytes()).hexdigest()
@@ -446,7 +566,7 @@ class RoutingPolicyTests(unittest.TestCase):
         active = Path(temporary.name) / "active"
         for relative in (POLICY_AGENTS_RELATIVE, *(d["path"] for d in ROLE_DEFINITIONS.values())):
             source = copy / relative
-            destination = active / ("AGENTS.md" if relative == POLICY_AGENTS_RELATIVE else relative)
+            destination = active / ("AGENTS.md" if relative == POLICY_AGENTS_RELATIVE else f"agents/{Path(relative).name}")
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, destination)
         try:
@@ -469,7 +589,7 @@ class RoutingPolicyTests(unittest.TestCase):
         active = Path(temporary.name) / "active"
         for relative in (POLICY_AGENTS_RELATIVE, *(d["path"] for d in ROLE_DEFINITIONS.values())):
             source = copy / relative
-            destination = active / ("AGENTS.md" if relative == POLICY_AGENTS_RELATIVE else relative)
+            destination = active / ("AGENTS.md" if relative == POLICY_AGENTS_RELATIVE else f"agents/{Path(relative).name}")
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, destination)
         active_config = Path(temporary.name) / "config.toml"
@@ -500,11 +620,7 @@ class RoutingPolicyTests(unittest.TestCase):
             POLICY_AGENTS_RELATIVE,
             "config-snippet.toml",
             POLICY_RELATIVE,
-            "agents/luna_critic_fast.toml",
-            "agents/luna_max_fast.toml",
-            "agents/luna_scout_fast.toml",
-            "agents/luna_tester_fast.toml",
-            "agents/luna_worker_fast.toml",
+            *(definition["path"] for definition in ROLE_DEFINITIONS.values()),
         ):
             source = ROOT / relative
             destination = copy / relative
@@ -605,7 +721,7 @@ class RoutingPolicyTests(unittest.TestCase):
         active = Path(temporary.name) / "active"
         for relative in (POLICY_AGENTS_RELATIVE, *(d["path"] for d in ROLE_DEFINITIONS.values())):
             source = copy / relative
-            destination = active / ("AGENTS.md" if relative == POLICY_AGENTS_RELATIVE else relative)
+            destination = active / ("AGENTS.md" if relative == POLICY_AGENTS_RELATIVE else f"agents/{Path(relative).name}")
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, destination)
         environment = dict(os.environ)
@@ -627,7 +743,7 @@ class RoutingPolicyTests(unittest.TestCase):
         active = Path(temporary.name) / "active"
         for relative in (POLICY_AGENTS_RELATIVE, *(d["path"] for d in ROLE_DEFINITIONS.values())):
             source = copy / relative
-            destination = active / ("AGENTS.md" if relative == POLICY_AGENTS_RELATIVE else relative)
+            destination = active / ("AGENTS.md" if relative == POLICY_AGENTS_RELATIVE else f"agents/{Path(relative).name}")
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, destination)
         start = b"# >>> sol-luna-orchestration-kit managed block >>>\n"

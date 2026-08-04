@@ -1,13 +1,50 @@
-# Milestone receipts
+# Tiered receipts
 
-M2 receipts are local, unsigned audit artifacts. The tool is not an
+`config/receipt-policy.v1.json` selects one of three persistence tiers:
+
+- routine direct Sol work: no persisted formal receipt, only a concise
+  user-facing handoff with outcome, validation, unresolved risk, and delivery;
+- delegated routine or accepted substantial work: a deterministic
+  `routine-delegation-record.v1` only when automatic collection is available;
+  otherwise measurement stays unknown; and
+- full `milestone-receipt.v1` for high-risk/critical work, security, releases,
+  deployments, migrations, destructive/external side effects, Codex app-task
+  fallback, failure/block/abandonment, material rework, pilots, benchmarks,
+  evaluations, or an explicit audit request.
+
+Missing optional routine records are valid absence, not receipt errors. Absent
+attribution never means zero usage. `milestone-receipt.v1` remains unchanged:
+historical files validate under their original semantics and are never
+reinterpreted as minimal records.
+
+The minimal record has exact keys `schema_version`, `version`, `spawn`,
+`outcome`, `checks`, and `usage`. It contains no project, milestone, task,
+thread, prompt, scope, command, or log fields; it is bounded to about 2 KB.
+The tool builds it deterministically from lane outcome/check/attribution data
+instead of making Sol author a large JSON payload.
+
+When the plugin orchestration skill accepts delegated routine work, it invokes
+the bundled `close-routine` recorder internally. The recorder accepts only a
+useful/not-useful flag, a closed outcome, up to eight generic check results,
+and optional deterministically attributable total tokens. It atomically writes
+mode `0600` records in a mode `0700` directory. Random local filenames prevent
+collisions but are never printed or included in status; record content contains
+no task identifier or free-form text. Recorder failure leaves measurement
+unknown and never blocks the accepted user outcome.
+
+Full M2 receipts are local, unsigned audit artifacts. The tool is not an
 orchestrator, does not launch roles, and does not send or restore data. Python
 3.11+ is required.
 
-## Commands
+## Maintainer diagnostics
+
+End users install/update and request status conversationally through the setup
+and status skills. They do not run Python or construct routing/receipt JSON.
+The following commands are maintainer diagnostics:
 
 ```sh
 python3 scripts/receipt_tool.py close --input receipt-input.json
+python3 scripts/receipt_tool.py close-routine --useful --outcome completed --check pass
 python3 scripts/receipt_tool.py validate --receipts-dir .sol-luna/receipts
 python3 scripts/receipt_tool.py summarize --receipts-dir .sol-luna/receipts --format json
 ```

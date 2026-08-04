@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "version": "receipt-policy.v1",
+  "historical_full_schema": "milestone-receipt.v1",
+  "minimal_schema": "routine-delegation-record.v1",
+  "routine_direct": "handoff_only",
+  "routine_delegated": "minimal_if_automatic_else_unknown",
+  "full_triggers": [
+    "app_task_fallback",
+    "benchmark",
+    "deployment",
+    "destructive",
+    "evaluation",
+    "external_side_effect",
+    "migration",
+    "pilot",
+    "release",
+    "security"
+  ],
+  "full_outcomes": [
+    "failed",
+    "blocked",
+    "abandoned"
+  ],
+  "full_work_bands": [
+    "high_risk",
+    "critical"
+  ],
+  "material_rework_requires_full": true,
+  "explicit_audit_requires_full": true,
+  "missing_optional_routine_record": "not_error",
+  "absent_usage_attribution": "unknown"
+}

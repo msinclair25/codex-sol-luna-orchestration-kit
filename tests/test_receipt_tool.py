@@ -14,11 +14,16 @@ from scripts.receipt_tool import (
     PROFILE_ROLES,
     TOP_KEYS,
     _canonical,
+    build_routine_record,
     close_receipt,
+    close_routine_record,
     receipt_profile,
+    select_receipt_tier,
     summarize,
     validate_paths,
     validate_receipt,
+    validate_routine_record,
+    verify_receipt_policy,
 )
 
 
@@ -59,6 +64,124 @@ class ReceiptToolTests(unittest.TestCase):
         invalid["receipt_id"] = "mr1-" + hashlib.sha256(_canonical(invalid)).hexdigest()
         invalid["accepted_by"] = "sol"
         self.assertFalse(validate_receipt(invalid)["ok"])
+
+    def test_receipt_policy_trigger_matrix_is_exhaustive_and_legacy_v1_stays_valid(self):
+        self.assertTrue(verify_receipt_policy(ROOT)["ok"])
+        base = {
+            "work_band": "routine",
+            "delegated": False,
+            "outcome": "accepted",
+            "categories": [],
+            "material_rework": False,
+            "explicit_audit": False,
+            "automatic_collection_available": False,
+        }
+        self.assertEqual(select_receipt_tier(base, ROOT)["tier"], "none")
+        delegated = dict(base, delegated=True, automatic_collection_available=True)
+        self.assertEqual(select_receipt_tier(delegated, ROOT)["tier"], "minimal")
+        unavailable = dict(delegated, automatic_collection_available=False)
+        result = select_receipt_tier(unavailable, ROOT)
+        self.assertEqual(result["tier"], "none")
+        self.assertEqual(result["measurement"], "unknown")
+
+        for band in ("high_risk", "critical"):
+            self.assertEqual(select_receipt_tier(dict(base, work_band=band), ROOT)["tier"], "full")
+        for outcome in ("failed", "blocked", "abandoned"):
+            self.assertEqual(select_receipt_tier(dict(base, outcome=outcome), ROOT)["tier"], "full")
+        for category in (
+            "security", "release", "deployment", "migration", "destructive",
+            "external_side_effect", "app_task_fallback", "pilot", "benchmark", "evaluation",
+        ):
+            self.assertEqual(select_receipt_tier(dict(base, categories=[category]), ROOT)["tier"], "full")
+        self.assertEqual(select_receipt_tier(dict(base, material_rework=True), ROOT)["tier"], "full")
+        self.assertEqual(select_receipt_tier(dict(base, explicit_audit=True), ROOT)["tier"], "full")
+        malformed = dict(base, categories=[{}])
+        result = select_receipt_tier(malformed, ROOT)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["reason"], "malformed_context")
+
+        for payload in self.payloads.values():
+            body = dict(payload)
+            body["receipt_id"] = "mr1-" + hashlib.sha256(_canonical(payload)).hexdigest()
+            self.assertTrue(validate_receipt(body)["ok"])
+
+    def test_routine_record_is_minimal_strict_private_and_usage_unknown_is_not_zero(self):
+        schema = json.loads((ROOT / "schemas" / "routine-delegation-record.v1.schema.json").read_text())
+        self.assertEqual(set(schema["required"]), {"schema_version", "version", "spawn", "outcome", "checks", "usage"})
+        self.assertEqual(schema["properties"]["version"]["const"], "routine-delegation-record.v1")
+        record = build_routine_record(
+            useful=True,
+            outcome="completed",
+            checks=[{"name": "focused tests", "status": "pass"}],
+        )
+        self.assertEqual(record["usage"], {"attribution": "unknown", "total_tokens": None})
+        self.assertTrue(validate_routine_record(record)["ok"])
+        attributed = build_routine_record(
+            useful=False,
+            outcome="failed",
+            checks=[{"name": "focused tests", "status": "fail"}],
+            total_tokens=0,
+        )
+        self.assertEqual(attributed["usage"]["total_tokens"], 0)
+        self.assertTrue(validate_routine_record(attributed)["ok"])
+
+        for mutate in (
+            lambda value: value.update(extra=True),
+            lambda value: value["usage"].update(total_tokens=0),
+            lambda value: value["checks"].append({"name": "x", "status": "unknown"}),
+            lambda value: value["checks"].append({"name": "password=do-not-store", "status": "pass"}),
+        ):
+            invalid = json.loads(json.dumps(record))
+            mutate(invalid)
+            self.assertFalse(validate_routine_record(invalid)["ok"])
+
+    def test_routine_record_close_is_private_atomic_and_cli_driven(self):
+        with tempfile.TemporaryDirectory() as directory:
+            records = Path(directory) / "routine-records"
+            record = build_routine_record(
+                useful=True,
+                outcome="completed",
+                checks=[{"name": "acceptance-1", "status": "pass"}],
+            )
+            first = close_routine_record(record, records)
+            second = close_routine_record(record, records)
+            self.assertTrue(first["ok"])
+            self.assertTrue(second["ok"])
+            outputs = sorted(records.glob("*.json"))
+            self.assertEqual(len(outputs), 2)
+            self.assertEqual(stat.S_IMODE(records.stat().st_mode), 0o700)
+            self.assertTrue(all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in outputs))
+            self.assertTrue(all(validate_routine_record(json.loads(path.read_text()))["ok"] for path in outputs))
+            self.assertTrue(all("secret" not in path.read_text() for path in outputs))
+
+            cli_records = Path(directory) / "cli-records"
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/receipt_tool.py",
+                    "close-routine",
+                    "--useful",
+                    "--outcome",
+                    "completed",
+                    "--check",
+                    "pass",
+                    "--records-dir",
+                    str(cli_records),
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout)
+            self.assertEqual(completed.stderr, "")
+            self.assertEqual(json.loads(completed.stdout)["recorded"], True)
+            stored = json.loads(next(cli_records.glob("*.json")).read_text())
+            self.assertEqual(stored["checks"], [{"name": "acceptance-1", "status": "pass"}])
+
+            unsafe = Path(directory) / "unsafe"
+            unsafe.symlink_to(records, target_is_directory=True)
+            with self.assertRaises(Exception):
+                close_routine_record(record, unsafe)
 
     def test_close_is_deterministic_idempotent_and_atomic(self):
         with tempfile.TemporaryDirectory() as directory:

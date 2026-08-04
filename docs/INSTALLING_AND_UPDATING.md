@@ -7,6 +7,26 @@ Choose the smallest installation that matches what you want.
 | Use the workflow, status skill, and optional spawn guard | Install the Git-backed plugin and stop | No |
 | Use the five custom Luna roles with the complete Sol policy | Install the plugin, then invoke `$sol-luna-setup` | Yes, with a preview, backups, and verification |
 
+## Recommended: one-prompt full setup
+
+Paste this into a Codex task, replacing `Fast` with `Standard` if preferred:
+
+```text
+Install and fully configure the Sol/Luna Orchestration Kit with Fast Luna
+subagents. Add the Git marketplace
+msinclair25/codex-sol-luna-orchestration-kit and install
+sol-luna-orchestration-kit@sol-luna. Then inspect `codex plugin list --json`,
+use only that installed entry's verified `source.path`, read its
+skills/sol-luna-setup/SKILL.md, and complete the preview, full-role install,
+backup, and verification in this task. Preserve my existing Codex settings,
+stop on conflicts, and tell me when one final restart is required.
+```
+
+Codex verifies the marketplace and installed source, then operates the bundled
+transactional installer internally. The plugin and full roles are installed in
+the same task. Restart once after verification; no intermediate restart or
+"finish setup" prompt is required.
+
 ## Workflow-only plugin
 
 Add this repository as a Git-backed marketplace, then install the plugin:
@@ -16,18 +36,18 @@ codex plugin marketplace add msinclair25/codex-sol-luna-orchestration-kit
 codex plugin add sol-luna-orchestration-kit@sol-luna
 ```
 
-Review and trust the plugin hook before enabling it. Start a new thread after
+Review and trust the plugin hook before enabling it. Start a new task after
 installation so Codex loads the bundled skills and hook.
 
 For the full role configuration, say in that new Codex task:
 
 ```text
-$sol-luna-setup Install Sol/Luna with Standard Luna subagents.
+$sol-luna-setup Set me up using Standard.
 ```
 
 Use `Fast` in the prompt when preferred. The skill runs the bundled
 transactional implementation internally; the user does not run a Python
-script or manipulate installer flags.
+script, manipulate installer flags, or construct routing/receipt JSON.
 
 To update everything later, say in Codex:
 
@@ -35,13 +55,17 @@ To update everything later, say in Codex:
 $sol-luna-setup Update Sol/Luna.
 ```
 
-The skill refreshes the marketplace and plugin, then stops because Codex must
-reload the replaced plugin. Restart Codex, start a new task, and use the prompt
-it provides:
+The skill first saves a resumable update marker, refreshes the marketplace and
+plugin, then stops because Codex must reload the replaced plugin. Restart
+Codex, start a new task, and say:
 
 ```text
-$sol-luna-setup Finish updating my Sol/Luna roles.
+$sol-luna-setup Continue.
 ```
+
+The setup doctor detects whether to finish the roles, retry the package
+refresh, review drift, or simply report a healthy installation. Users do not
+need to remember which phase completed.
 
 The underlying plugin-package commands remain available as a troubleshooting
 fallback:
@@ -51,7 +75,7 @@ codex plugin marketplace upgrade sol-luna
 codex plugin add sol-luna-orchestration-kit@sol-luna
 ```
 
-Start another new thread after the reinstall. Marketplace refresh and plugin
+Start another new task after the reinstall. Marketplace refresh and plugin
 installation are separate operations; the second command refreshes the
 installed plugin cache from the newly fetched marketplace version.
 
@@ -86,6 +110,16 @@ The guided path previews every managed change, defaults Luna to Fast, asks
 separately about the optional local status skill, creates backups, and verifies
 the result before reporting success.
 
+Maintainers synchronize the approved canonical/plugin mirrors, generated
+status-asset hashes, and plugin version from `scripts/install.py` with:
+
+```sh
+python3 scripts/sync_plugin.py --apply
+python3 scripts/sync_plugin.py
+```
+
+The second command is the read-only parity check used before release.
+
 For a noninteractive Fast install:
 
 ```sh
@@ -103,6 +137,10 @@ The Standard profile installs `luna_*_standard` roles. Their role TOMLs omit
 Fast profile installs `luna_*_fast` roles and pins `service_tier = "fast"` in
 each role. Both profiles keep the global service tier unset.
 
+V0.5.0 retains the validated role prompts from `agents/v0.4/` while installing the same
+stable filenames under the Codex home. Legacy root role sources remain
+byte-stable for historical routing policies and frozen M4 validation.
+
 Use `--without-usage` instead of `--with-usage` to omit the optional status
 skill. Fully restart Codex and begin a new task after installation.
 
@@ -110,8 +148,9 @@ skill. Fully restart Codex and begin a new task after installation.
 
 Every M6+ full install writes a bounded state file at
 `~/.codex/.sol-luna-install-state.json`. It stores only the selected profile
-and SHA-256 values for kit-managed assets—no prompts, repository paths, tokens,
-or credentials.
+and SHA-256 values for kit-managed assets, plus a bounded update phase—no
+prompts, repository paths, tokens, or credentials. V0.5.0 reads legacy schema
+v1 state and writes resumable schema v2 state on the next managed change.
 
 With the plugin installed, ask Codex:
 
@@ -119,8 +158,8 @@ With the plugin installed, ask Codex:
 $sol-luna-setup Update Sol/Luna.
 ```
 
-After the required restart, the skill's provided "Finish updating" prompt uses
-the refreshed plugin bundle and retains the recorded tier. For a
+After the required restart, `$sol-luna-setup Continue.` uses the refreshed
+plugin bundle and retains the recorded tier. For a
 direct-checkout fallback, update the checkout and apply the recorded profile
 and usage choice:
 
@@ -152,8 +191,8 @@ python3 scripts/install.py --update --luna-tier fast
 The installer retains previously installed role aliases so switching back is
 safe, while the managed Sol instructions select only the active profile.
 Routing and status skills read that saved selection automatically, so users do
-not pass profile flags after installation. Milestone receipts likewise retain
-and validate their own profile internally.
+not pass profile flags after installation. Receipt tier selection and profile
+validation are internal; missing optional routine records are allowed.
 
 An installation made before M6 has no state file. Ask `$sol-luna-setup` to
 install the desired tier; it previews a normal installation and stops for

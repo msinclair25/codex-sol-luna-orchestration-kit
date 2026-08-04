@@ -4,9 +4,18 @@
     "kind": "worker",
     "profile": "fast",
     "fork_turns": "none",
+    "task_class": "substantial_implementation",
+    "benefit_code": "isolated_large_implementation",
+    "substantive_work": {
+      "estimated_minutes": 30,
+      "affected_files": 3,
+      "distinct_surfaces": 2,
+      "independent_checks": 1
+    },
+    "work_band": "substantial",
+    "risk_domains": [],
     "separate": true,
     "provable": true,
-    "large_enough": true,
     "isolated": true,
     "tier_appropriate": true,
     "lane_count": 1,
@@ -34,11 +43,10 @@
       "Return the exact evidence packet."
     ],
     "expected_evidence": [
-      "scope",
+      "status",
       "files_or_surfaces",
-      "commands_or_checks",
-      "assumptions",
-      "failures",
+      "checks",
+      "findings",
       "risks",
       "confidence",
       "recommendation"

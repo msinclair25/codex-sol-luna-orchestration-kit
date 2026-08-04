@@ -15,7 +15,7 @@ from pathlib import Path
 from unittest import mock
 
 from scripts import install
-from scripts.routing_policy import POLICY_AGENTS_RELATIVE, verify_active_root
+from scripts.routing_policy import POLICY_AGENTS_RELATIVE, POLICY_RELATIVE, verify_active_root
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -514,7 +514,7 @@ class InstallerTests(unittest.TestCase):
         self.assertTrue(verify_active_root(self.codex, ROOT, self.codex / "config.toml", "standard")["ok"])
         self.assertEqual(
             json.loads((self.codex / install.INSTALL_STATE_NAME).read_text())["kit_version"],
-            "0.3.0",
+            "0.5.0",
         )
 
         switched = install.install(
@@ -532,6 +532,8 @@ class InstallerTests(unittest.TestCase):
         state = json.loads((self.codex / install.INSTALL_STATE_NAME).read_text())
         self.assertEqual(state["active_luna_tier"], "fast")
         self.assertEqual(len(state["roles"]), 10)
+        self.assertEqual(state["schema_version"], 2)
+        self.assertEqual(state["update_phase"], "ready")
 
         restored = install.install(
             ROOT,
@@ -556,13 +558,60 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertEqual(json.loads(output.getvalue().splitlines()[-1])["luna_tier"], "standard")
 
+    def test_doctor_migrates_legacy_state_and_resumes_pending_update(self):
+        install.install(ROOT, self.codex, self.home, apply=True, with_usage=False)
+        state_path = self.codex / install.INSTALL_STATE_NAME
+        legacy = json.loads(state_path.read_text())
+        legacy["schema_version"] = 1
+        legacy["kit_version"] = "0.4.0"
+        legacy.pop("update_phase")
+        state_path.write_text(json.dumps(legacy))
+
+        outdated = install.doctor(ROOT, self.codex)
+        self.assertEqual(outdated["health"], "roles-update-required")
+        self.assertEqual(outdated["next_action"], "finish-update")
+        pending = install.mark_update_pending(self.codex)
+        self.assertEqual(pending["health"], "update-pending")
+        stored = json.loads(state_path.read_text())
+        self.assertEqual(stored["schema_version"], 2)
+        self.assertEqual(stored["update_phase"], "package-refresh-requested")
+        self.assertEqual(install.doctor(ROOT, self.codex)["next_action"], "retry-package-refresh")
+        refreshed = install.mark_package_refreshed(self.codex)
+        self.assertEqual(refreshed["next_action"], "restart-and-finish-update")
+        self.assertEqual(install.doctor(ROOT, self.codex)["next_action"], "finish-update")
+
+        updated = install.install(
+            ROOT,
+            self.codex,
+            self.home,
+            apply=True,
+            with_usage=False,
+            update=True,
+        )
+        self.assertTrue(updated["verification"]["ok"])
+        ready = json.loads(state_path.read_text())
+        self.assertEqual(ready["kit_version"], "0.5.0")
+        self.assertEqual(ready["update_phase"], "ready")
+        self.assertEqual(install.doctor(ROOT, self.codex)["health"], "healthy")
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = install.main([
+                "--repo-root", str(ROOT),
+                "--codex-home", str(self.codex),
+                "--home", str(self.home),
+                "--doctor",
+            ])
+        self.assertEqual(result, 0)
+        self.assertEqual(json.loads(output.getvalue())["next_action"], "none")
+
     def test_state_tracked_update_replaces_only_unchanged_managed_assets(self):
         install.install(ROOT, self.codex, self.home, apply=True, with_usage=False)
         checkout = self.base / "checkout"
         shutil.copytree(ROOT, checkout, ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"))
-        source = checkout / "agents" / "luna_scout_fast.toml"
+        source = checkout / "agents" / "v0.4" / "luna_scout_fast.toml"
         source.write_text(source.read_text() + "\n# compatible update\n")
-        policy_path = checkout / "config" / "routing-policy.v1.2.json"
+        policy_path = checkout / POLICY_RELATIVE
         policy = json.loads(policy_path.read_text())
         policy["roles"]["luna_scout_fast"]["sha256"] = hashlib.sha256(source.read_bytes()).hexdigest()
         policy_path.write_text(json.dumps(policy, indent=2) + "\n")

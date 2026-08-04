@@ -5,10 +5,18 @@ description: Use when routing a bounded milestone or subtask through the Sol/Lun
 
 # Sol/Luna Orchestration
 
-Keep Sol as requirements owner, integrator, and sole acceptance authority. Use
-Luna only when every SPLIT condition is true: Separate, Provable, Large enough,
-Isolated, and Tier-appropriate. Route any failed or unknown condition directly
-to Sol.
+Keep Sol as requirements owner, integrator, and sole acceptance authority.
+Delegation is denied by default. Explanations/questions, status, Git-only work,
+one-command diagnostics, one-cycle lookups, localized single-file edits,
+formatting/documentation corrections, straightforward test reruns, and work
+with comparable assignment overhead stay with Sol.
+
+Use Luna only when routing-policy.v1.4 recognizes a delegable task class, an
+allowed benefit code, class-specific numeric substantive-work thresholds, the
+work band and total-lane budget, isolated ownership, and all four SPLIT checks:
+Separate, Provable, Isolated, and Tier-appropriate. Unknown, malformed, or
+self-contradictory input routes directly to Sol. Keep internal routing JSON
+away from the user.
 
 Before a Luna spawn, prepare the complete JSON message envelope shown in
 `references/spawn-envelope.v1.json`. Keep `fork_turns` equal to `none`, set
@@ -34,6 +42,39 @@ prove cross-lane isolation from hidden state.
 Each assignment must be self-contained and include its outcome, relevant
 inputs, owned scope, constraints, acceptance checks, exact evidence fields,
 risk boundary, and bounded deadline. Luna does not spawn nested agents.
+
+Routine milestones use zero lanes by default and at most one justified lane;
+substantial milestones use at most two total lanes. A third lane requires a
+high-risk/critical justification or explicit user direction. Never use more
+than three total or concurrently active lanes. Independent critic/tester work
+is limited to security, concurrency, destructive, migration, authentication,
+release, deployment, or external-side-effect risk.
+
+Require one delta-only `evidence-packet.v2` with exactly `status`,
+`files_or_surfaces`, `checks`, `findings`, `risks`, `confidence`, and
+`recommendation`. Enforce the policy's 2 KB, 160-character, array, enum, and
+privacy bounds. Empty arrays replace filler; never repeat the assignment or
+include commands, logs, prompts, secrets, production data, or identifiers.
+Sol independently verifies material claims.
+
+Apply `receipt-policy.v1` after acceptance. Direct routine work gets only a
+concise final handoff. Delegated routine work gets a deterministic
+`routine-delegation-record.v1` only when automatic collection is available;
+otherwise attribution stays unknown. Require the full historical-compatible
+`milestone-receipt.v1` for high-risk/critical, security, release, deployment,
+migration, destructive/external-side-effect, app-task fallback, non-success,
+material-rework, pilot/benchmark/evaluation, or explicit-audit triggers. Never
+make the user construct routing or receipt JSON.
+
+For an accepted delegated routine outcome, record metrics internally from the
+project root with the bundled `scripts/receipt_tool.py close-routine` command.
+Pass exactly one of `--useful` or `--not-useful`, the terminal `--outcome`, and
+one generic `--check pass|fail|skipped` for each bounded acceptance check. Pass
+`--total-tokens` only when whole-task attribution is deterministic. The command
+writes to `.sol-luna/routine-records` by default and generates generic check
+names, so never pass task prose, paths, identifiers, evidence text, or secrets.
+Do not surface the internal command to the user. If the recorder is missing or
+fails, keep routine measurement unknown and finish the accepted user outcome.
 
 ## Native transport fallback
 

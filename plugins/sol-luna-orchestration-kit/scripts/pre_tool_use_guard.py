@@ -44,11 +44,10 @@ ASSIGNMENT_FIELDS = {
     "deadline",
 }
 EXPECTED_EVIDENCE = [
-    "scope",
+    "status",
     "files_or_surfaces",
-    "commands_or_checks",
-    "assumptions",
-    "failures",
+    "checks",
+    "findings",
     "risks",
     "confidence",
     "recommendation",

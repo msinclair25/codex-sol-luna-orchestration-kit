@@ -48,8 +48,10 @@ USAGE_SKILL_FILES = (
 USAGE_ASSET_MANIFEST = "config/install-assets.v1.json"
 MAX_ASSET_MANIFEST_BYTES = 16 * 1024
 INSTALL_STATE_NAME = ".sol-luna-install-state.json"
-INSTALL_STATE_SCHEMA = 1
-KIT_VERSION = "0.3.0"
+INSTALL_STATE_SCHEMA = 2
+LEGACY_INSTALL_STATE_SCHEMA = 1
+KIT_VERSION = "0.5.0"
+UPDATE_PHASES = {"ready", "package-refresh-requested", "package-refreshed"}
 MAX_INSTALL_STATE_BYTES = 32 * 1024
 OWNED = {
     "model": '"gpt-5.6-sol"',
@@ -92,22 +94,32 @@ def _load_install_state(path: Path, *, required: bool) -> Optional[Dict[str, Any
             raise InstallError("update_state_missing")
         return None
     value = _strict_json_object(_read(path, MAX_INSTALL_STATE_BYTES), error="install_state_invalid")
-    if set(value) != {
+    legacy_keys = {
         "schema_version",
         "kit_version",
         "active_luna_tier",
         "agents_source_sha256",
         "roles",
         "usage_assets",
-    }:
+    }
+    current_keys = legacy_keys | {"update_phase"}
+    schema_version = value.get("schema_version")
+    if isinstance(schema_version, bool) or (
+        schema_version == LEGACY_INSTALL_STATE_SCHEMA and set(value) != legacy_keys
+    ) or (
+        schema_version == INSTALL_STATE_SCHEMA and set(value) != current_keys
+    ) or schema_version not in {LEGACY_INSTALL_STATE_SCHEMA, INSTALL_STATE_SCHEMA}:
         raise InstallError("install_state_invalid")
+    if schema_version == LEGACY_INSTALL_STATE_SCHEMA:
+        value = dict(value)
+        value["schema_version"] = INSTALL_STATE_SCHEMA
+        value["update_phase"] = "ready"
     roles = value.get("roles")
     usage = value.get("usage_assets")
     if (
-        isinstance(value.get("schema_version"), bool)
-        or value.get("schema_version") != INSTALL_STATE_SCHEMA
-        or not isinstance(value.get("kit_version"), str)
+        not isinstance(value.get("kit_version"), str)
         or re.fullmatch(r"[0-9A-Za-z.+-]{1,32}", value["kit_version"]) is None
+        or value.get("update_phase") not in UPDATE_PHASES
         or value.get("active_luna_tier") not in LUNA_TIERS
         or not isinstance(value.get("agents_source_sha256"), str)
         or re.fullmatch(r"[0-9a-f]{64}", value["agents_source_sha256"]) is None
@@ -730,6 +742,7 @@ def install(
     install_state = {
         "schema_version": INSTALL_STATE_SCHEMA,
         "kit_version": KIT_VERSION,
+        "update_phase": "ready",
         "active_luna_tier": luna_tier,
         "agents_source_sha256": _sha256(agents_source),
         "roles": dict(sorted(next_roles.items())),
@@ -834,6 +847,110 @@ def _ask(prompt: str) -> bool:
     return input(prompt + " [y/N] ").strip().lower() in {"y", "yes"}
 
 
+def doctor(repo: Path, codex_home: Path) -> Dict[str, Any]:
+    """Return one bounded setup state and next action without changing files."""
+
+    state = _load_install_state(codex_home / INSTALL_STATE_NAME, required=False)
+    tier = state["active_luna_tier"] if state is not None else "fast"
+    routing_policy = _load_routing_policy(repo)
+    if not routing_policy.verify_contract(repo, tier).get("ok"):
+        raise InstallError("routing_contract_invalid")
+    if state is None:
+        return {
+            "ok": True,
+            "health": "setup-required",
+            "kit_version": KIT_VERSION,
+            "installed_version": None,
+            "luna_tier": None,
+            "verification": "not-installed",
+            "next_action": "install",
+        }
+    installed_version = state["kit_version"]
+    if state["update_phase"] != "ready":
+        next_action = "finish-update" if state["update_phase"] == "package-refreshed" else "retry-package-refresh"
+        return {
+            "ok": True,
+            "health": "update-pending",
+            "kit_version": KIT_VERSION,
+            "installed_version": installed_version,
+            "luna_tier": state["active_luna_tier"],
+            "verification": "deferred-until-update",
+            "next_action": next_action,
+        }
+    if installed_version != KIT_VERSION:
+        return {
+            "ok": True,
+            "health": "roles-update-required",
+            "kit_version": KIT_VERSION,
+            "installed_version": installed_version,
+            "luna_tier": state["active_luna_tier"],
+            "verification": "deferred-until-update",
+            "next_action": "finish-update",
+        }
+    verification = routing_policy.verify_active_root(
+        codex_home,
+        repo,
+        codex_home / "config.toml",
+        state["active_luna_tier"],
+    )
+    verified = bool(verification.get("ok"))
+    return {
+        "ok": verified,
+        "health": "healthy" if verified else "attention-required",
+        "kit_version": KIT_VERSION,
+        "installed_version": installed_version,
+        "luna_tier": state["active_luna_tier"],
+        "verification": "passed" if verified else "failed",
+        "next_action": "none" if verified else "review-drift",
+    }
+
+
+def mark_update_pending(codex_home: Path) -> Dict[str, Any]:
+    """Persist a resumable package-refresh marker before replacing the plugin."""
+
+    state_path = codex_home / INSTALL_STATE_NAME
+    state = _load_install_state(state_path, required=True)
+    assert state is not None
+    pending = dict(state)
+    pending["schema_version"] = INSTALL_STATE_SCHEMA
+    pending["update_phase"] = "package-refresh-requested"
+    data = (json.dumps(pending, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+    current = _read(state_path, MAX_INSTALL_STATE_BYTES)
+    if current != data:
+        _atomic_write(state_path, data)
+    return {
+        "ok": True,
+        "health": "update-pending",
+        "kit_version": KIT_VERSION,
+        "installed_version": state["kit_version"],
+        "luna_tier": state["active_luna_tier"],
+        "next_action": "refresh-package-and-restart",
+    }
+
+
+def mark_package_refreshed(codex_home: Path) -> Dict[str, Any]:
+    """Record successful package replacement without applying global roles."""
+
+    state_path = codex_home / INSTALL_STATE_NAME
+    state = _load_install_state(state_path, required=True)
+    assert state is not None
+    if state["update_phase"] != "package-refresh-requested":
+        raise InstallError("package_refresh_not_pending")
+    refreshed = dict(state)
+    refreshed["schema_version"] = INSTALL_STATE_SCHEMA
+    refreshed["update_phase"] = "package-refreshed"
+    data = (json.dumps(refreshed, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+    _atomic_write(state_path, data)
+    return {
+        "ok": True,
+        "health": "update-pending",
+        "kit_version": KIT_VERSION,
+        "installed_version": state["kit_version"],
+        "luna_tier": state["active_luna_tier"],
+        "next_action": "restart-and-finish-update",
+    }
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo-root", default=str(REPO_ROOT))
@@ -842,6 +959,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--apply", action="store_true")
     mode.add_argument("--dry-run", action="store_true")
+    mode.add_argument("--doctor", action="store_true")
+    mode.add_argument("--mark-update-pending", action="store_true")
+    mode.add_argument("--mark-package-refreshed", action="store_true")
     parser.add_argument(
         "--update",
         action="store_true",
@@ -859,6 +979,33 @@ def main(argv: Optional[List[str]] = None) -> int:
         repo = _root_arg(args.repo_root, must_exist=True)
         codex_home = _root_arg(args.codex_home)
         home = _root_arg(args.home)
+        state_only = args.doctor or args.mark_update_pending or args.mark_package_refreshed
+        if state_only and any((
+            args.update,
+            args.with_usage,
+            args.without_usage,
+            args.approve_agents_refresh,
+            args.approve_conflicts,
+            args.refresh_usage_pointer,
+            args.luna_tier is not None,
+        )):
+            raise InstallError("state_action_conflict")
+        if state_only:
+            try:
+                relative_codex_home = codex_home.relative_to(home)
+            except ValueError as exc:
+                raise InstallError("codex_home_outside_home") from exc
+            if not relative_codex_home.parts:
+                raise InstallError("codex_home_equals_home")
+        if args.doctor:
+            print(json.dumps(doctor(repo, codex_home), sort_keys=True, separators=(",", ":")))
+            return 0
+        if args.mark_update_pending:
+            print(json.dumps(mark_update_pending(codex_home), sort_keys=True, separators=(",", ":")))
+            return 0
+        if args.mark_package_refreshed:
+            print(json.dumps(mark_package_refreshed(codex_home), sort_keys=True, separators=(",", ":")))
+            return 0
         # Preserve the historical `--update` apply behavior while allowing the
         # setup skill to request an update-aware, non-mutating preview.
         apply_mode = args.apply or (args.update and not args.dry_run)

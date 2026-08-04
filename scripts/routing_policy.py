@@ -27,9 +27,9 @@ except ImportError:  # pragma: no cover - supported Python versions include it.
 
 
 SCHEMA_VERSION = 1
-POLICY_VERSION = "routing-policy.v1.2"
+POLICY_VERSION = "routing-policy.v1.4"
 DEFAULT_ROOT = Path(__file__).resolve().parents[1]
-POLICY_RELATIVE = "config/routing-policy.v1.2.json"
+POLICY_RELATIVE = "config/routing-policy.v1.4.json"
 POLICY_AGENTS_RELATIVE = "AGENTS.override.md"
 AGENTS_RELATIVE = "AGENTS.md"
 MANAGED_AGENTS_START = "# >>> sol-luna-orchestration-kit managed block >>>\n"
@@ -44,6 +44,7 @@ MAX_OWNERSHIP_ENTRIES = 2048
 MAX_CONFLICTS = 256
 MAX_LANES = 3
 MAX_CONCURRENT_LANES = MAX_LANES
+MAX_TOTAL_LANES = 3
 LUNA_TRANSPORT = {
     "fork_turns": "none",
     "history_inherited": False,
@@ -91,21 +92,114 @@ MAX_UPGRADE_REASON_CODES = (
 SPLIT_FIELDS = (
     "separate",
     "provable",
-    "large_enough",
     "isolated",
     "tier_appropriate",
 )
-SPLIT_LABELS = ("Separate", "Provable", "Large enough", "Isolated", "Tier-appropriate")
+SPLIT_LABELS = ("Separate", "Provable", "Isolated", "Tier-appropriate")
 EVIDENCE_FIELDS = (
-    "scope",
+    "status",
     "files_or_surfaces",
-    "commands_or_checks",
-    "assumptions",
-    "failures",
+    "checks",
+    "findings",
     "risks",
     "confidence",
     "recommendation",
 )
+EVIDENCE_VERSION = "evidence-packet.v2"
+EVIDENCE_STATUSES = ("completed", "blocked", "failed")
+CHECK_STATUSES = ("pass", "fail", "skipped")
+FINDING_SEVERITIES = ("info", "low", "medium", "high", "critical")
+EVIDENCE_RECOMMENDATIONS = ("accept", "rework", "direct_sol", "blocked")
+CONFIDENCE_LEVELS = ("low", "medium", "high")
+MAX_EVIDENCE_BYTES = 2048
+MAX_EVIDENCE_TEXT = 160
+MAX_EVIDENCE_FILES = 12
+MAX_EVIDENCE_CHECKS = 8
+MAX_EVIDENCE_FINDINGS = 5
+MAX_EVIDENCE_RISKS = 3
+
+ROUTINE_TASK_CLASSES = (
+    "explanation_question",
+    "status_reporting",
+    "git_operation",
+    "one_command_diagnostic",
+    "targeted_lookup",
+    "localized_single_file_edit",
+    "formatting_documentation",
+    "straightforward_test_rerun",
+    "overhead_comparable",
+)
+DELEGABLE_TASK_CLASSES = {
+    "broad_mapping": {
+        "kinds": ("scout",),
+        "benefits": ("broad_read_only_mapping",),
+        "thresholds": {"estimated_minutes": 20, "distinct_surfaces": 4},
+    },
+    "substantial_implementation": {
+        "kinds": ("worker",),
+        "benefits": ("isolated_large_implementation", "parallel_latency"),
+        "thresholds": {"estimated_minutes": 30, "affected_files": 3},
+    },
+    "substantial_validation": {
+        "kinds": ("tester",),
+        "benefits": ("parallel_latency",),
+        "thresholds": {"estimated_minutes": 20, "independent_checks": 3},
+    },
+    "independent_risk_review": {
+        "kinds": ("critic", "tester"),
+        "benefits": ("independent_risk_review",),
+        "thresholds": {"estimated_minutes": 20, "independent_checks": 2},
+    },
+    "complex_analysis": {
+        "kinds": ("max",),
+        "benefits": ("broad_read_only_mapping",),
+        "thresholds": {"estimated_minutes": 30, "distinct_surfaces": 3},
+    },
+}
+TASK_CLASSES = (*ROUTINE_TASK_CLASSES, *DELEGABLE_TASK_CLASSES)
+BENEFIT_CODES = (
+    "parallel_latency",
+    "isolated_large_implementation",
+    "broad_read_only_mapping",
+    "independent_risk_review",
+)
+WORK_BANDS = ("routine", "substantial", "high_risk", "critical")
+LANE_BUDGETS = {"routine": 1, "substantial": 2, "high_risk": 3, "critical": 3}
+RISK_DOMAINS = (
+    "security",
+    "concurrency",
+    "destructive",
+    "migration",
+    "authentication",
+    "release",
+    "deployment",
+    "external_side_effect",
+)
+THIRD_LANE_JUSTIFICATIONS = ("high_risk", "critical", "explicit_user_direction")
+SUBSTANTIVE_WORK_FIELDS = (
+    "estimated_minutes",
+    "affected_files",
+    "distinct_surfaces",
+    "independent_checks",
+)
+EVIDENCE_CONTRACT = {
+    "version": EVIDENCE_VERSION,
+    "required_fields": list(EVIDENCE_FIELDS),
+    "max_serialized_utf8_bytes": MAX_EVIDENCE_BYTES,
+    "max_free_text_characters": MAX_EVIDENCE_TEXT,
+    "max_files_or_surfaces": MAX_EVIDENCE_FILES,
+    "max_checks": MAX_EVIDENCE_CHECKS,
+    "max_findings": MAX_EVIDENCE_FINDINGS,
+    "max_risks": MAX_EVIDENCE_RISKS,
+    "status": list(EVIDENCE_STATUSES),
+    "check_status": list(CHECK_STATUSES),
+    "finding_severity": list(FINDING_SEVERITIES),
+    "confidence": list(CONFIDENCE_LEVELS),
+    "recommendation": list(EVIDENCE_RECOMMENDATIONS),
+    "empty_arrays": True,
+    "delta_only": True,
+    "on_invalid": "sol",
+}
 SAFE_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
 SAFE_RELATIVE = re.compile(r"^[A-Za-z0-9._/-]+$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -159,7 +253,7 @@ _SENSITIVE_EXTENSIONS = {
 ROLE_DEFINITIONS: Dict[str, Dict[str, str]] = {
     "scout": {
         "role": "luna_scout_fast",
-        "path": "agents/luna_scout_fast.toml",
+        "path": "agents/v0.4/luna_scout_fast.toml",
         "model": "gpt-5.6-luna",
         "reasoning": "medium",
         "service_tier": "fast",
@@ -167,7 +261,7 @@ ROLE_DEFINITIONS: Dict[str, Dict[str, str]] = {
     },
     "worker": {
         "role": "luna_worker_fast",
-        "path": "agents/luna_worker_fast.toml",
+        "path": "agents/v0.4/luna_worker_fast.toml",
         "model": "gpt-5.6-luna",
         "reasoning": "high",
         "service_tier": "fast",
@@ -175,7 +269,7 @@ ROLE_DEFINITIONS: Dict[str, Dict[str, str]] = {
     },
     "critic": {
         "role": "luna_critic_fast",
-        "path": "agents/luna_critic_fast.toml",
+        "path": "agents/v0.4/luna_critic_fast.toml",
         "model": "gpt-5.6-luna",
         "reasoning": "high",
         "service_tier": "fast",
@@ -183,7 +277,7 @@ ROLE_DEFINITIONS: Dict[str, Dict[str, str]] = {
     },
     "tester": {
         "role": "luna_tester_fast",
-        "path": "agents/luna_tester_fast.toml",
+        "path": "agents/v0.4/luna_tester_fast.toml",
         "model": "gpt-5.6-luna",
         "reasoning": "medium",
         "service_tier": "fast",
@@ -191,7 +285,7 @@ ROLE_DEFINITIONS: Dict[str, Dict[str, str]] = {
     },
     "max": {
         "role": "luna_max_fast",
-        "path": "agents/luna_max_fast.toml",
+        "path": "agents/v0.4/luna_max_fast.toml",
         "model": "gpt-5.6-luna",
         "reasoning": "max",
         "service_tier": "fast",
@@ -222,9 +316,15 @@ REQUEST_FIELDS = {
     "profile",
     "split",
     *SPLIT_FIELDS,
+    "task_class",
+    "benefit_code",
+    "substantive_work",
+    "work_band",
+    "risk_domains",
+    "total_lane_count",
+    "third_lane_justification",
     "ownership",
     "lane_count",
-    "wave_count",
     "requested_role",
     "max_upgrade_reason",
     "model",
@@ -273,7 +373,7 @@ PROFILE_SPECS: Dict[str, Dict[str, Any]] = {
         "roles": ROLE_DEFINITIONS,
     },
     "standard": {
-        "policy_relative": "config/routing-policy.standard.v1.2.json",
+        "policy_relative": "config/routing-policy.standard.v1.4.json",
         "agents_relative": "profiles/standard/AGENTS.override.md",
         "snippet_relative": "profiles/standard/config-snippet.toml",
         "roles": STANDARD_ROLE_DEFINITIONS,
@@ -379,19 +479,95 @@ def _bounded_text_list(value: Any) -> bool:
     )
 
 
+def _evidence_text(value: Any) -> bool:
+    """Accept one short privacy-safe item, never a log or raw identifier."""
+
+    if (
+        not isinstance(value, str)
+        or not value.strip()
+        or value != value.strip()
+        or len(value) > MAX_EVIDENCE_TEXT
+        or any(character in value for character in ("\x00", "\n", "\r", "\t"))
+    ):
+        return False
+    lowered = value.lower()
+    if any(marker in lowered for marker in ("traceback (most recent call last)", "begin private key", "api_key=", "password=", "authorization: bearer")):
+        return False
+    if re.search(r"\b(?:task|thread|session)[_-]?id\b", lowered):
+        return False
+    if re.search(r"\bct1-[0-9a-f]{16,}\b", lowered) or re.search(
+        r"\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b",
+        lowered,
+    ):
+        return False
+    if re.search(r"\b(?:sk|pk|rk)_[A-Za-z0-9_-]{12,}\b", value) or re.search(r"\bsk-[A-Za-z0-9_-]{12,}\b", value):
+        return False
+    return True
+
+
+def _evidence_reference(value: Any) -> bool:
+    if not _evidence_text(value):
+        return False
+    if not isinstance(value, str):
+        return False
+    base = value.split("#L", 1)[0]
+    return (
+        (_safe_ownership_relative(base) is not None and ("#L" not in value or re.fullmatch(r"[A-Za-z0-9._/-]+#L[1-9][0-9]{0,5}", value) is not None))
+        or _safe_id(value) is not None
+    )
+
+
 def validate_evidence(evidence: Any) -> bool:
-    """Validate the compact evidence packet required from every delegated lane."""
+    """Validate one delta-only evidence-packet.v2 from a delegated lane."""
 
     if not isinstance(evidence, dict) or set(evidence) != set(EVIDENCE_FIELDS):
         return False
-    if not _bounded_text(evidence["scope"]):
-        return False
-    for field in ("files_or_surfaces", "commands_or_checks", "assumptions", "failures", "risks"):
-        if not _bounded_text_list(evidence[field]):
+    try:
+        if len(json.dumps(evidence, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")) > MAX_EVIDENCE_BYTES:
             return False
-    if not _bounded_text(evidence["confidence"]):
+    except (TypeError, UnicodeError, MemoryError, OverflowError, RecursionError):
         return False
-    return _bounded_text(evidence["recommendation"])
+    if evidence.get("status") not in EVIDENCE_STATUSES:
+        return False
+    files = evidence.get("files_or_surfaces")
+    if (
+        not isinstance(files, list)
+        or len(files) > MAX_EVIDENCE_FILES
+        or any(not _evidence_reference(item) for item in files)
+        or len(files) != len(set(files))
+    ):
+        return False
+    checks = evidence.get("checks")
+    if not isinstance(checks, list) or len(checks) > MAX_EVIDENCE_CHECKS:
+        return False
+    for check in checks:
+        if (
+            not isinstance(check, dict)
+            or set(check) != {"name", "status"}
+            or not _evidence_text(check.get("name"))
+            or check.get("status") not in CHECK_STATUSES
+        ):
+            return False
+    findings = evidence.get("findings")
+    if not isinstance(findings, list) or len(findings) > MAX_EVIDENCE_FINDINGS:
+        return False
+    for finding in findings:
+        if (
+            not isinstance(finding, dict)
+            or set(finding) != {"severity", "code", "reference"}
+            or finding.get("severity") not in FINDING_SEVERITIES
+            or _safe_id(finding.get("code")) is None
+            or not _evidence_reference(finding.get("reference"))
+        ):
+            return False
+    risks = evidence.get("risks")
+    if (
+        not isinstance(risks, list)
+        or len(risks) > MAX_EVIDENCE_RISKS
+        or any(not _evidence_text(item) for item in risks)
+    ):
+        return False
+    return evidence.get("confidence") in CONFIDENCE_LEVELS and evidence.get("recommendation") in EVIDENCE_RECOMMENDATIONS
 
 
 def _safe_path(root: Path, relative: str) -> Optional[Path]:
@@ -552,6 +728,7 @@ def _contract_shape(contract: Any, spec: Mapping[str, Any]) -> List[str]:
         "transport",
         "transport_failure_fallback",
         "split",
+        "task_classification",
         "concurrency",
         "max_upgrade_reason_codes",
         "evidence",
@@ -630,30 +807,48 @@ def _contract_shape(contract: Any, spec: Mapping[str, Any]) -> List[str]:
     }:
         errors.append("split_contract")
 
+    classification = contract.get("task_classification")
+    expected_classification = {
+        "routine_direct_classes": list(ROUTINE_TASK_CLASSES),
+        "delegable_classes": {
+            name: {
+                "kinds": list(value["kinds"]),
+                "benefit_codes": list(value["benefits"]),
+                "minimum_substantive_work": dict(value["thresholds"]),
+            }
+            for name, value in DELEGABLE_TASK_CLASSES.items()
+        },
+        "benefit_codes": list(BENEFIT_CODES),
+        "work_bands": list(WORK_BANDS),
+        "risk_domains": list(RISK_DOMAINS),
+        "unknown_or_malformed": "sol",
+    }
+    if not isinstance(classification, dict) or classification != expected_classification:
+        errors.append("task_classification_contract")
+
     concurrency = contract.get("concurrency")
     if isinstance(concurrency, dict) and set(concurrency) != {
         "max_concurrent_threads_per_session",
         "max_concurrent_delegated_lanes",
-        "processing",
+        "max_total_delegated_lanes",
+        "lane_budgets",
+        "third_lane_justifications",
         "dependent_work",
     }:
         errors.append("unknown_concurrency_key")
     if not isinstance(concurrency, dict) or concurrency != {
         "max_concurrent_threads_per_session": MAX_LANES,
         "max_concurrent_delegated_lanes": MAX_LANES,
-        "processing": "waves",
+        "max_total_delegated_lanes": MAX_TOTAL_LANES,
+        "lane_budgets": LANE_BUDGETS,
+        "third_lane_justifications": list(THIRD_LANE_JUSTIFICATIONS),
         "dependent_work": "serialized",
     }:
         errors.append("concurrency_contract")
     if contract.get("max_upgrade_reason_codes") != list(MAX_UPGRADE_REASON_CODES):
         errors.append("max_upgrade_codes_contract")
     evidence = contract.get("evidence")
-    if isinstance(evidence, dict) and set(evidence) != {"required_fields", "on_missing"}:
-        errors.append("unknown_evidence_key")
-    if not isinstance(evidence, dict) or evidence != {
-        "required_fields": list(EVIDENCE_FIELDS),
-        "on_missing": "sol",
-    }:
+    if not isinstance(evidence, dict) or evidence != EVIDENCE_CONTRACT:
         errors.append("evidence_contract")
     fallback = contract.get("sol_fallback")
     if not isinstance(fallback, dict) or fallback != {
@@ -716,7 +911,7 @@ def _validate_role_file(path: Optional[Path], expected: Mapping[str, Any]) -> bo
     instructions = data.get("developer_instructions")
     if not isinstance(instructions, str) or not instructions.strip():
         return False
-    if "exactly these fields" not in instructions.lower() or any(f"`{field}`" not in instructions for field in EVIDENCE_FIELDS):
+    if EVIDENCE_VERSION not in instructions or "exactly these keys" not in instructions.lower() or any(f"`{field}`" not in instructions for field in EVIDENCE_FIELDS):
         return False
     if expected["role"].startswith("luna_max_") and (
         re.search(r"max\s+upgrade\s+reason", instructions, re.IGNORECASE) is None
@@ -925,7 +1120,7 @@ def verify_active_root(
             report["errors"].append("active_config_drift")
     roles = contract["roles"]
     for expected in role_definitions.values():
-        path = _safe_path(active_path, expected["path"])
+        path = _safe_path(active_path, f"agents/{Path(expected['path']).name}")
         actual = _hash_file(path)
         configured = roles[expected["role"]]
         hash_match = actual is not None and actual[0] == configured["sha256"]
@@ -1052,17 +1247,107 @@ def _request_reason(request: Mapping[str, Any], code: str) -> Dict[str, Any]:
     return _sol_fallback([code])
 
 
+def _substantive_work(value: Any) -> Optional[Dict[str, int]]:
+    if not isinstance(value, dict) or set(value) != set(SUBSTANTIVE_WORK_FIELDS):
+        return None
+    normalized: Dict[str, int] = {}
+    for field in SUBSTANTIVE_WORK_FIELDS:
+        item = value.get(field)
+        if isinstance(item, bool) or not isinstance(item, int) or item < 0 or item > 10000:
+            return None
+        normalized[field] = item
+    return normalized
+
+
+def _risk_domains(value: Any) -> Optional[List[str]]:
+    if not isinstance(value, list) or len(value) > len(RISK_DOMAINS):
+        return None
+    if any(not isinstance(item, str) or item not in RISK_DOMAINS for item in value):
+        return None
+    if len(value) != len(set(value)):
+        return None
+    return sorted(value)
+
+
+def _classification_reason(
+    *,
+    task_class: Any,
+    benefit_code: Any,
+    work: Optional[Mapping[str, int]],
+    work_band: Any,
+    risks: Optional[Sequence[str]],
+    routed_kind: str,
+) -> Optional[str]:
+    if not isinstance(task_class, str) or task_class not in TASK_CLASSES:
+        return "unsupported_task_class"
+    if task_class in ROUTINE_TASK_CLASSES:
+        return "routine_task_class"
+    if not isinstance(benefit_code, str) or benefit_code not in BENEFIT_CODES:
+        return "unsupported_benefit_code"
+    if work_band not in WORK_BANDS or work is None or risks is None:
+        return "malformed_work_classification"
+    definition = DELEGABLE_TASK_CLASSES[task_class]
+    if routed_kind not in definition["kinds"] or benefit_code not in definition["benefits"]:
+        return "unsupported_route_classification"
+    if any(work[field] < minimum for field, minimum in definition["thresholds"].items()):
+        return "substantive_threshold_not_met"
+    risk_review = task_class == "independent_risk_review" or benefit_code == "independent_risk_review"
+    if risk_review and not risks:
+        return "risk_domain_required"
+    if (work_band in {"high_risk", "critical"}) != bool(risks):
+        return "contradictory_risk_classification"
+    return None
+
+
+def _lane_budget_reason(
+    *,
+    work_band: str,
+    lane_count: Any,
+    total_lane_count: Any,
+    ownership_count: int,
+    third_lane_justification: Any,
+) -> Optional[str]:
+    if (
+        isinstance(lane_count, bool)
+        or not isinstance(lane_count, int)
+        or lane_count < 1
+        or lane_count > MAX_CONCURRENT_LANES
+        or isinstance(total_lane_count, bool)
+        or not isinstance(total_lane_count, int)
+        or total_lane_count < lane_count
+        or total_lane_count > MAX_TOTAL_LANES
+        or total_lane_count != ownership_count
+    ):
+        return "unsupported_concurrency"
+    if total_lane_count > LANE_BUDGETS[work_band] and not (
+        total_lane_count == 3
+        and work_band == "substantial"
+        and third_lane_justification == "explicit_user_direction"
+    ):
+        return "lane_budget_exceeded"
+    if total_lane_count == 3:
+        if third_lane_justification not in THIRD_LANE_JUSTIFICATIONS:
+            return "third_lane_justification_required"
+        if third_lane_justification == "high_risk" and work_band != "high_risk":
+            return "contradictory_third_lane_justification"
+        if third_lane_justification == "critical" and work_band != "critical":
+            return "contradictory_third_lane_justification"
+    elif third_lane_justification is not None:
+        return "contradictory_third_lane_justification"
+    return None
+
+
 def evaluate(request: Any, root: Path | str = DEFAULT_ROOT) -> Dict[str, Any]:
     """Evaluate one bounded request and return a route or Sol fallback."""
 
     if not isinstance(request, dict):
         return _sol_fallback(["malformed_request"])
-    if len(request) > 24:
+    if len(request) > 28:
         return _sol_fallback(["malformed_request"])
     if any(key not in REQUEST_FIELDS for key in request):
         return _sol_fallback(["unsupported_request_field"])
     profile = request.get("profile", "fast")
-    if profile not in PROFILE_SPECS:
+    if not isinstance(profile, str) or profile not in PROFILE_SPECS:
         return _sol_fallback(["unsupported_profile"])
     spec = profile_spec(profile)
     role_definitions = spec["roles"]
@@ -1089,12 +1374,6 @@ def evaluate(request: Any, root: Path | str = DEFAULT_ROOT) -> Dict[str, Any]:
     for field in SPLIT_FIELDS:
         if not isinstance(split_values.get(field), bool):
             return _sol_fallback(["malformed_split"])
-    lanes = request.get("lane_count", 1)
-    waves = request.get("wave_count", 1)
-    if isinstance(lanes, bool) or not isinstance(lanes, int) or lanes < 1 or lanes > MAX_CONCURRENT_LANES:
-        return _sol_fallback(["unsupported_concurrency"])
-    if isinstance(waves, bool) or not isinstance(waves, int) or waves < 1:
-        return _sol_fallback(["unsupported_concurrency"])
 
     if "evidence" in request and not validate_evidence(request["evidence"]):
         return _sol_fallback(["malformed_evidence"])
@@ -1120,10 +1399,38 @@ def evaluate(request: Any, root: Path | str = DEFAULT_ROOT) -> Dict[str, Any]:
         if max_reason not in MAX_UPGRADE_REASON_CODES:
             return _sol_fallback(["unsupported_max_upgrade_reason"])
         configured_kind = role_definitions["max"]
+        routed_kind = "max"
     elif requested_role != configured_kind["role"]:
         return _sol_fallback(["unsupported_combination"])
     elif max_reason is not None:
         return _sol_fallback(["unsupported_combination"])
+    else:
+        routed_kind = canonical_kind
+
+    work = _substantive_work(request.get("substantive_work"))
+    risks = _risk_domains(request.get("risk_domains"))
+    classification_reason = _classification_reason(
+        task_class=request.get("task_class"),
+        benefit_code=request.get("benefit_code"),
+        work=work,
+        work_band=request.get("work_band"),
+        risks=risks,
+        routed_kind=routed_kind,
+    )
+    if classification_reason is not None:
+        return _sol_fallback([classification_reason])
+    work_band = request["work_band"]
+    lanes = request.get("lane_count", 1)
+    total_lanes = request.get("total_lane_count", lanes)
+    lane_reason = _lane_budget_reason(
+        work_band=work_band,
+        lane_count=lanes,
+        total_lane_count=total_lanes,
+        ownership_count=len(ownership),
+        third_lane_justification=request.get("third_lane_justification"),
+    )
+    if lane_reason is not None:
+        return _sol_fallback([lane_reason])
 
     for field, expected in (
         ("model", configured_kind["model"]),
@@ -1153,10 +1460,17 @@ def evaluate(request: Any, root: Path | str = DEFAULT_ROOT) -> Dict[str, Any]:
         "fallback": False,
         "kind": canonical_kind,
         "max_upgrade_reason": max_reason,
+        "task_class": request["task_class"],
+        "benefit_code": request["benefit_code"],
+        "substantive_work": work,
+        "work_band": work_band,
+        "risk_domains": risks,
         "lane_count": lanes,
-        "wave_count": waves,
+        "total_lane_count": total_lanes,
+        "lane_budget": LANE_BUDGETS[work_band],
+        "third_lane_justification": request.get("third_lane_justification"),
         "max_concurrent_delegated_lanes": MAX_CONCURRENT_LANES,
-        "processing": "waves",
+        "max_total_delegated_lanes": MAX_TOTAL_LANES,
         "dependent_work": "serialized",
         "split": gate_values,
         "ownership_conflicts": conflicts,
