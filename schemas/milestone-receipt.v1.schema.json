@@ -28,7 +28,7 @@
     "origin"
   ],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"type": "integer", "const": 1},
     "receipt_id": {"type": "string", "pattern": "^mr1-[0-9a-f]{64}$"},
     "project_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._/-]{0,63}$"},
     "codex_task_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$"},
@@ -69,16 +69,32 @@
             "config": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
             "rate_card": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
             "roles": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["luna_scout_fast", "luna_worker_fast", "luna_critic_fast", "luna_tester_fast", "luna_max_fast"],
-              "properties": {
-                "luna_scout_fast": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-                "luna_worker_fast": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-                "luna_critic_fast": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-                "luna_tester_fast": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-                "luna_max_fast": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
-              }
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["luna_scout_fast", "luna_worker_fast", "luna_critic_fast", "luna_tester_fast", "luna_max_fast"],
+                  "properties": {
+                    "luna_scout_fast": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                    "luna_worker_fast": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                    "luna_critic_fast": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                    "luna_tester_fast": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                    "luna_max_fast": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["luna_scout_standard", "luna_worker_standard", "luna_critic_standard", "luna_tester_standard", "luna_max_standard"],
+                  "properties": {
+                    "luna_scout_standard": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                    "luna_worker_standard": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                    "luna_critic_standard": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                    "luna_tester_standard": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                    "luna_max_standard": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+                  }
+                }
+              ]
             }
           }
         },
@@ -95,9 +111,9 @@
         "required": ["lane_id", "role", "reasoning", "tier", "attempts", "retries", "escalation", "max_reason", "outcome", "useful"],
         "properties": {
           "lane_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$"},
-          "role": {"type": "string", "enum": ["luna_scout_fast", "luna_worker_fast", "luna_critic_fast", "luna_tester_fast", "luna_max_fast"]},
+          "role": {"type": "string", "enum": ["luna_scout_fast", "luna_worker_fast", "luna_critic_fast", "luna_tester_fast", "luna_max_fast", "luna_scout_standard", "luna_worker_standard", "luna_critic_standard", "luna_tester_standard", "luna_max_standard"]},
           "reasoning": {"type": "string", "enum": ["medium", "high", "max"]},
-          "tier": {"type": "string", "enum": ["fast"]},
+          "tier": {"type": "string", "enum": ["fast", "standard"]},
           "attempts": {"type": "integer", "minimum": 1, "maximum": 100},
           "retries": {"type": "integer", "minimum": 0, "maximum": 99},
           "escalation": {
@@ -105,7 +121,7 @@
             "additionalProperties": false,
             "required": ["target", "reason"],
             "properties": {
-              "target": {"type": ["string", "null"], "enum": ["sol", "luna_scout_fast", "luna_worker_fast", "luna_critic_fast", "luna_tester_fast", "luna_max_fast", null]},
+              "target": {"type": ["string", "null"], "enum": ["sol", "luna_scout_fast", "luna_worker_fast", "luna_critic_fast", "luna_tester_fast", "luna_max_fast", "luna_scout_standard", "luna_worker_standard", "luna_critic_standard", "luna_tester_standard", "luna_max_standard", null]},
               "reason": {
                 "type": ["string", "null"],
                 "enum": ["genuine_ambiguity", "cross_cutting_risk", "failed_high_attempt", "high_impact_adversarial_review", null]
@@ -117,11 +133,85 @@
             "enum": ["genuine_ambiguity", "cross_cutting_risk", "failed_high_attempt", "high_impact_adversarial_review", null]
           },
           "outcome": {"type": "string", "enum": ["completed", "failed", "blocked", "skipped"]},
-            "useful": {"type": "boolean"}
+          "useful": {"type": "boolean"},
+          "transport": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["requested", "used", "native_failure", "fallback_authorized", "fallback_attempts", "fallback_outcome", "task_ref"],
+            "properties": {
+              "requested": {"const": "native_luna_subagent"},
+              "used": {"type": "string", "enum": ["native_luna_subagent", "codex_app_task", "sol"]},
+              "native_failure": {"type": ["string", "null"], "enum": ["custom_role_rejected", "custom_role_unavailable", "native_spawn_tool_unavailable", "native_spawn_transport_error", null]},
+              "fallback_authorized": {"type": "boolean"},
+              "fallback_attempts": {"type": "integer", "minimum": 0, "maximum": 1},
+              "fallback_outcome": {"type": ["string", "null"], "enum": ["completed", "failed", "blocked", "unavailable", null]},
+              "task_ref": {"type": ["string", "null"], "pattern": "^ct1-[0-9a-f]{64}$"}
+            },
+            "oneOf": [
+              {
+                "properties": {
+                  "used": {"const": "native_luna_subagent"},
+                  "native_failure": {"const": null},
+                  "fallback_authorized": {"const": false},
+                  "fallback_attempts": {"const": 0},
+                  "fallback_outcome": {"const": null},
+                  "task_ref": {"const": null}
+                }
+              },
+              {
+                "properties": {
+                  "used": {"const": "codex_app_task"},
+                  "native_failure": {"type": "string"},
+                  "fallback_authorized": {"const": true},
+                  "fallback_attempts": {"const": 1},
+                  "fallback_outcome": {"enum": ["completed", "failed", "blocked"]},
+                  "task_ref": {"type": "string"}
+                }
+              },
+              {
+                "properties": {
+                  "used": {"const": "sol"},
+                  "native_failure": {"type": "string"},
+                  "fallback_authorized": {"const": false},
+                  "fallback_attempts": {"const": 0},
+                  "fallback_outcome": {"const": null},
+                  "task_ref": {"const": null}
+                }
+              },
+              {
+                "properties": {
+                  "used": {"const": "sol"},
+                  "native_failure": {"type": "string"},
+                  "fallback_authorized": {"const": true},
+                  "fallback_attempts": {"const": 1},
+                  "fallback_outcome": {"const": "unavailable"},
+                  "task_ref": {"const": null}
+                }
+              }
+            ]
+          }
         },
         "allOf": [
           {
-            "if": {"properties": {"role": {"const": "luna_max_fast"}}},
+            "if": {"properties": {"role": {"enum": ["luna_scout_fast", "luna_worker_fast", "luna_critic_fast", "luna_tester_fast", "luna_max_fast"]}}},
+            "then": {
+              "properties": {
+                "tier": {"const": "fast"},
+                "escalation": {"properties": {"target": {"enum": ["sol", "luna_scout_fast", "luna_worker_fast", "luna_critic_fast", "luna_tester_fast", "luna_max_fast", null]}}}
+              }
+            }
+          },
+          {
+            "if": {"properties": {"role": {"enum": ["luna_scout_standard", "luna_worker_standard", "luna_critic_standard", "luna_tester_standard", "luna_max_standard"]}}},
+            "then": {
+              "properties": {
+                "tier": {"const": "standard"},
+                "escalation": {"properties": {"target": {"enum": ["sol", "luna_scout_standard", "luna_worker_standard", "luna_critic_standard", "luna_tester_standard", "luna_max_standard", null]}}}
+              }
+            }
+          },
+          {
+            "if": {"properties": {"role": {"enum": ["luna_max_fast", "luna_max_standard"]}}},
             "then": {"properties": {"max_reason": {"type": "string"}}},
             "else": {"properties": {"max_reason": {"const": null}}}
           },
@@ -130,7 +220,7 @@
             "then": {"properties": {"escalation": {"properties": {"reason": {"const": null}}}}}
           },
           {
-            "if": {"properties": {"escalation": {"properties": {"target": {"enum": ["sol", "luna_scout_fast", "luna_worker_fast", "luna_critic_fast", "luna_tester_fast", "luna_max_fast"]}}}}},
+            "if": {"properties": {"escalation": {"properties": {"target": {"enum": ["sol", "luna_scout_fast", "luna_worker_fast", "luna_critic_fast", "luna_tester_fast", "luna_max_fast", "luna_scout_standard", "luna_worker_standard", "luna_critic_standard", "luna_tester_standard", "luna_max_standard"]}}}}},
             "then": {"properties": {"escalation": {"properties": {"reason": {"type": "string"}}}}}
           }
         ]

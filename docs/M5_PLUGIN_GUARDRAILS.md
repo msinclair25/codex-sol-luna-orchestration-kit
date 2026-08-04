@@ -32,7 +32,10 @@ trust its command hook. Review it with `/hooks` before use.
 ## Guard contract
 
 The `spawn_agent.message` value must be a bounded JSON object with schema
-version 1, a `routing_request`, and a self-contained `assignment`. The
+version 1, a `routing_request`, and a self-contained `assignment`. M10 permits
+one optional exact `fallback_authorization` object for a user-authorized,
+lane-scoped Codex app task in the current checkout; malformed, persistent, or
+cross-lane authorization is denied. The
 assignment carries one `lane_id`; `task_name` must match it. For concurrent
 work, every lane repeats the complete delegated-plan ownership map. The
 `lane_count` remains the maximum simultaneously active lanes, so a multi-wave
@@ -69,6 +72,7 @@ transcript contents.
 | --- | --- |
 | Local `spawn_agent` / `Agent` call | Guarded when the enabled and trusted hook runs |
 | Route, role, context-free transport, and declared wave ownership | Denied before launch on mismatch |
+| Optional app-task fallback authorization | Shape and lane identity guarded in the native spawn envelope; task creation remains a separate, user-visible app action |
 | M4 default status after retirement | Terminal and non-retryable; no next slot is emitted. Historical state requires the explicit audit-only flag plus a plan and never authorizes registration or model work. |
 | Missing or invalid M4 retirement marker | Status fails closed with no next slot and no recommendation to launch measured work |
 | Actual child writes after launch | Not universally enforceable: current common `PreToolUse` input does not identify the active child agent |

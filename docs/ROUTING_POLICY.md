@@ -1,14 +1,16 @@
 # Dynamic routing policy
 
-`config/routing-policy.v1.1.json` is the Fast contract and
-`config/routing-policy.standard.v1.1.json` is the Standard contract for the
+`config/routing-policy.v1.4.json` is the Fast contract and
+`config/routing-policy.standard.v1.4.json` is the Standard contract for the
 Sol-root and Luna-role runtime policy. They are descriptive and advisory: they
 do not spawn agents, change Codex configuration, or replace Sol's judgment.
 The verifier requires Python 3.11 or newer for stdlib `tomllib`; older
 versions fail closed with a diagnostic instead of guessing at TOML semantics.
 The earlier `routing-policy.v1.json` and `AGENTS.md` remain unchanged as frozen
-V0.2.1 M4 inputs; `AGENTS.override.md` is the V0.2.2 policy source installed by
-the guided installer.
+V0.2.1 M4 inputs; the v1.1 contracts preserve the V0.2.2 direct-Sol fallback,
+v1.2 remains the historical V0.3.0 contract. `AGENTS.override.md`, the
+versioned `agents/v0.4/` role prompts, and v1.4 define the V0.5.0 policy
+installed by the guided setup skill.
 
 ## Runtime contract
 
@@ -29,9 +31,10 @@ key and inherit normal service. A route request selects the profile with
 `"profile":"fast"` or `"profile":"standard"`; omitted profile remains Fast
 for compatibility.
 
-Routine kinds include `scout`, `mapping`, `worker`, `implementation`, `write`,
-`critic`, `review`, `tester`, `test`, and `validation`. General `analysis` is
-the Max path. Every route to Max, including general analysis, requires one
+Kinds select role behavior, but never grant delegation by themselves. Each
+request must also name a closed task class, allowed benefit code, work band,
+complete substantive-work metrics, risk domains, and total-lane count. General
+`analysis` is the Max path. Every route to Max, including general analysis, requires one
 exact reason code from the contract: `genuine_ambiguity`,
 `cross_cutting_risk`, `failed_high_attempt`, or
 `high_impact_adversarial_review`.
@@ -45,37 +48,81 @@ ownership, constraints, acceptance checks, evidence contract, risk boundary,
 and deadline. Work that cannot meet that boundary stays with Sol.
 
 Luna children return only to Sol and do not coordinate proactively with other
-children. Sol serializes dependencies. A rejected or unavailable Luna spawn is
-not retried or silently substituted: the evaluator's operational contract is
-direct Sol fallback. The routing result exposes the exact transport object so
-callers do not have to infer these settings. The evaluator requires callers to
-provide `fork_turns` explicitly and fails closed when it is missing.
+children. Sol serializes dependencies. A denied admission is terminal and
+routes directly to Sol; no other task may bypass SPLIT, ownership, guard, or
+runtime-policy rejection. The routing result exposes the exact native
+transport object so callers do not have to infer these settings. The evaluator
+requires callers to provide `fork_turns` explicitly and fails closed when it
+is missing.
+
+After admission, four pre-start native failures are eligible for a separate
+decision: custom role rejected or unavailable, native spawn tool unavailable,
+or native spawn transport error. The user must explicitly authorize one
+visible Codex app task for the named lane in the current checkout. The
+fallback evaluator revalidates the original route, requires that exact
+authorization, canonicalizes the current-checkout and selected-project roots,
+requires them to be the same existing directory, permits one attempt, and
+consumes it. The app task receives the
+same self-contained capsule and ownership, runs serialized from other app-task
+fallbacks, and is independently checked by Sol. No model, reasoning, or tier
+override is inferred; this is prompt-capsule fidelity, not a claim that the
+custom Luna role ran. The task-creation layer must match the saved project and
+canonical checkout root immediately before creation; a mismatch is an
+unavailable attempt and must not create a task. If authorization is missing,
+the app capability is unavailable, creation fails, or the attempt was already
+used, work continues directly with Sol. Once authorized, capability discovery,
+project matching, creation, waiting, or evidence failure consumes the one
+attempt.
+Timeouts, cancellations, child failures, evidence failures, pilots, and
+benchmarks never enter this fallback path.
 
 The evaluator does not parse or grade free-form task prose, so it cannot prove
 that an assignment is truly self-contained. That part remains an instruction-
 level contract enforced by Sol's task packet and independent acceptance checks,
 not a security boundary or a guarantee supplied by the advisory evaluator.
 
-## SPLIT gate
+## Deny-by-default classification and SPLIT gate
 
-Before delegation, all five checks must be true:
+These routine task classes always stay with Sol: explanations/questions,
+status/reporting, Git-only operations, one-command diagnostics, one-cycle
+lookups, localized single-file edits, formatting/documentation corrections,
+straightforward test reruns, and overhead-comparable work. Unknown,
+unsupported, malformed, or contradictory classifications also stay with Sol.
+
+Delegable classes have exact role/benefit combinations and concrete minimums:
+
+| Class | Role kinds | Benefit | Minimum substantive work |
+| --- | --- | --- | --- |
+| `broad_mapping` | scout | `broad_read_only_mapping` | 20 minutes and 4 surfaces |
+| `substantial_implementation` | worker | `isolated_large_implementation` or `parallel_latency` | 30 minutes and 3 files |
+| `substantial_validation` | tester | `parallel_latency` | 20 minutes and 3 independent checks |
+| `independent_risk_review` | critic/tester | `independent_risk_review` | 20 minutes, 2 checks, and a recognized risk domain |
+| `complex_analysis` | Max | `broad_read_only_mapping` | 30 minutes and 3 surfaces |
+
+Independent risk review is limited to security, concurrency, destructive,
+migration, authentication, release, deployment, or external-side-effect work.
+After classification, all four SPLIT checks must be true:
 
 1. **Separate**: the outcome is independently separable from Sol and every
    other lane.
 2. **Provable**: acceptance checks and expected evidence are explicit.
-3. **Large enough**: the work justifies delegation overhead.
-4. **Isolated**: ownership is non-overlapping, including exact and
+3. **Isolated**: ownership is non-overlapping, including exact and
    directory-prefix conflicts; dependent writes are serialized.
-5. **Tier-appropriate**: role model, reasoning, tier, and sandbox match the
+4. **Tier-appropriate**: role model, reasoning, tier, and sandbox match the
    work kind.
 
 The evaluator routes any failed, missing, malformed, unsupported, or stale
-check directly to Sol. At most three delegated lanes may be active
-concurrently. Process dependent work in waves and serialize those dependencies;
-the policy does not cap the total number of lanes or waves. Each delegated lane
-must return compact evidence with exactly `scope`, `files_or_surfaces`,
-`commands_or_checks`, `assumptions`, `failures`, `risks`, `confidence`, and
-`recommendation`.
+check directly to Sol. Routine milestones use at most one justified total lane,
+substantial milestones at most two, and high-risk/critical milestones at most
+three. A third lane may also follow explicit user direction. Three is both the
+total and concurrency ceiling; dependent work is serialized.
+
+Each lane returns one delta-only `evidence-packet.v2` with exactly `status`,
+`files_or_surfaces`, `checks`, `findings`, `risks`, `confidence`, and
+`recommendation`. The packet is at most 2 KB UTF-8; free text is at most 160
+characters; arrays are limited to 12 files/surfaces, 8 checks, 5 findings, and
+3 risks. Enums replace prose where possible. Raw logs, command dumps, prompts,
+sensitive data, and task/thread identifiers are rejected.
 
 ## Policy stability and M4 pilot freeze
 
@@ -183,21 +230,24 @@ required feature flags, concurrency three, and absent default child model.
 
 ## Advisory routing
 
-The evaluator accepts a bounded JSON request and returns a deterministic
-decision. For example:
-
-```sh
-python3 scripts/routing_policy.py route \
-  --request '{"kind":"scout","profile":"standard","fork_turns":"none","separate":true,"provable":true,"large_enough":true,"isolated":true,"tier_appropriate":true,"ownership":{"scout":["docs/spec.md"]}}'
-```
+The evaluator accepts a bounded internal JSON request and returns a
+deterministic decision. The orchestration skill constructs and checks that
+request; end users describe the work conversationally and never provide JSON
+or run the evaluator.
 
 The result identifies the selected role or the Sol fallback and gives compact
 reason codes. It is an evaluator, not an orchestrator: it never launches a
-role or edits the worktree. `lane_count` means simultaneously active lanes and
-must not exceed three; `wave_count` is not capped by this policy. A lane's
-evidence packet is valid only when it contains exactly `scope`,
-`files_or_surfaces`, `commands_or_checks`, `assumptions`, `failures`, `risks`,
-`confidence`, and `recommendation`.
+role or edits the worktree. `lane_count` means simultaneously active lanes;
+`total_lane_count` is the milestone total. Both are bounded, the ownership map
+must contain the complete declared total, and the evidence validator enforces
+the exact `evidence-packet.v2` contract above.
+
+The post-admission `fallback` command accepts the original routing request,
+the closed native failure code, the exact lane-scoped authorization object,
+app-task capability, and attempts used. It returns either
+`create_codex_app_task` or direct Sol. This command is an internal skill
+guardrail; end users authorize the visible task conversationally and do not
+run Python or provide JSON.
 
 The SHA-256 values are local audit and drift signals anchored by Git history
 and human review, not cryptographic authenticity. A coordinated edit to the

@@ -32,8 +32,9 @@ begin a clean execution continuation from the capsule while preserving the
 same milestone name and acceptance decision; this is a context handoff, not a
 new milestone.
 
-At completion, return a milestone receipt with the outcome, acceptance-check
-status, tests, critic findings, rework, unresolved risks, and delivery state.
+At completion, return a short user-facing handoff with outcome, validation,
+unresolved risk, and delivery state. Apply the receipt tiers below; do not
+persist a formal receipt for ordinary direct work merely to prove completion.
 Never treat lifecycle completion alone as proof that the milestone is correct.
 
 ### Policy stability and improvement gate
@@ -78,18 +79,30 @@ proxy metric improves.
 
 ### Delegation gate
 
-Delegate only when a genuinely independent, bounded workstream materially
-improves accuracy or speed. Handle small, obvious, tightly coupled, or
-coordination-heavy work directly.
+Delegation is denied by default. Explanations, ordinary questions, status
+reports, Git-only work, one-command diagnostics, one-cycle lookups, localized
+single-file edits, formatting or documentation corrections, straightforward
+test reruns, and work whose assignment/integration overhead is comparable to
+direct execution stay with Sol.
+
+A lane is eligible only when the versioned routing contract recognizes its
+task class, allowed benefit code, concrete substantive-work metrics, work
+band, role/profile combination, and isolated ownership. Allowed benefits are
+`parallel_latency`, `isolated_large_implementation`,
+`broad_read_only_mapping`, and `independent_risk_review`. Never convert a
+qualitative claim such as "large enough" into admission. Unknown, malformed,
+unsupported, or self-contradictory classifications route directly to Sol.
 
 Every delegated assignment must name the outcome, relevant inputs, read-only
 scope or owned file set, constraints, acceptance checks, expected evidence,
 risk/authorization boundary, and a bounded deadline. Never assign overlapping
 writers or generated-output paths concurrently. Serialize dependent work.
 
-Use no more than three child agents concurrently. For risky changes, reserve
-one available slot for independent review or validation instead of filling all
-slots with implementation work.
+Routine milestones use zero lanes by default and at most one justified lane.
+Substantial milestones use at most two total lanes. A third total lane requires
+a high-risk/critical classification or explicit user direction. Never exceed
+three total or three concurrently active lanes. Serialize dependent work. For
+genuinely risky changes, reserve capacity for independent review or validation.
 
 ### Role routing
 
@@ -128,42 +141,81 @@ Sol, and Sol serializes every dependency and passes only the minimum verified
 result into a later lane. Nested delegation remains disallowed unless the user
 explicitly requests it.
 
-A rejected or unavailable custom Luna spawn is terminal for that lane. Do not
-retry it, switch to a history fork, silently substitute another role or model,
-or fabricate child evidence. Route the work directly to Sol and report the
-compatibility failure. This rule does not authorize retrying single-attempt
-pilots or benchmarks.
+A denied admission, failed SPLIT check, guard rejection, or malformed spawn is
+terminal for that lane and routes directly to Sol. Never use a separate task
+to bypass an admission decision.
 
-### SPLIT delegation gate
+When admission passed but the native custom Luna spawn is rejected or
+unavailable before a child begins, classify the failure with the checked-in
+transport-fallback evaluator. Only the closed native-transport error set is
+eligible. If the user explicitly authorized one visible Codex app task for
+that lane in the current checkout, create exactly one bounded task with the
+same self-contained assignment and ownership. Serialize app-task fallbacks,
+wait for the result, and verify its diff and evidence as untrusted input. Do
+not inherit history, silently select a model or reasoning override, retry the
+native spawn, or recursively create another task. If authorization, the app
+task capability, the project match, or task creation is unavailable, continue
+directly with Sol and report the compatibility failure. Timeouts, cancellations,
+blocked children, and content or validation failures are not transport
+failures and route directly to Sol. This rule does not authorize retrying
+single-attempt pilots or benchmarks.
 
-Before spawning a lane, Sol must check all five SPLIT conditions:
+### SPLIT and classification gate
+
+Before spawning a lane, Sol must check all four SPLIT conditions:
 
 1. **Separate** — the outcome is independently separable from Sol's current
    work and from every other lane.
 2. **Provable** — acceptance checks and the expected evidence are explicit and
    can be verified without trusting the child.
-3. **Large enough** — the bounded work is large enough to justify delegation
-   overhead; trivial or tightly coupled work stays with Sol.
-4. **Isolated** — ownership is non-overlapping, including exact and
+3. **Isolated** — ownership is non-overlapping, including exact and
    directory-prefix conflicts, and dependent writes are serialized.
-5. **Tier-appropriate** — the selected role's model, reasoning, service tier,
+4. **Tier-appropriate** — the selected role's model, reasoning, service tier,
    sandbox, and context-free transport match the work kind and policy table.
 
-Any failed or unknown check routes directly to Sol; do not partially delegate.
-At most three delegated lanes may be active concurrently. Process work in
-waves, serializing dependent work; there is no policy cap on the total number
-of lanes or waves. Declare non-overlapping ownership for every writer and
-generated-output path before launch. Parallelize only independent review and
-validation after the write is complete.
+All four checks, a delegable class/benefit pair, its class-specific numeric
+thresholds, and the applicable total-lane budget must pass. Independent risk
+review is restricted to security, concurrency, destructive, migration,
+authentication, release, deployment, or external-side-effect risk. Declare
+the complete non-overlapping ownership map before launch.
 
-Every delegated lane returns a compact evidence packet with exactly these
-fields: `scope`, `files_or_surfaces`, `commands_or_checks`, `assumptions`,
-`failures`, `risks`, `confidence`, and `recommendation`. Redact secrets,
-credentials, customer data, and production logs. This evidence is advisory
-until Sol independently verifies material claims.
+Every lane returns one delta-only `evidence-packet.v2` with exactly these
+keys: `status`, `files_or_surfaces`, `checks`, `findings`, `risks`,
+`confidence`, and `recommendation`. Keep it within 2 KB; bound free text to
+160 characters; use at most 12 files/surfaces, 8 structured checks, 5
+structured findings, and 3 risks; and use empty arrays instead of filler. Do
+not repeat the assignment, scope, constraints, or acceptance criteria. Never
+include prompts, command dumps, raw logs, secrets, credentials, customer data,
+production logs, or task/thread identifiers. Sol independently verifies every
+material claim.
+
+### Receipt tiers
+
+Routine direct Sol work has no persisted formal receipt; its final handoff is
+normally no more than about 100 words. Routine delegated work may create only
+the deterministic privacy-safe `routine-delegation-record.v1` needed for
+spawn precision, lane outcome, checks, and attributable usage. If automatic
+collection is unavailable, keep measurement unknown; do not ask Sol to author
+bookkeeping JSON and never infer zero usage.
+
+When the active Sol/Luna plugin exposes its bounded routine recorder, Sol
+closes the record automatically after it independently accepts delegated
+routine work. Supply only usefulness, terminal outcome, generic acceptance
+check results, and deterministically attributable total tokens when available.
+Do not include task names, prompts, identifiers, paths, or free-form evidence.
+Recorder absence or failure leaves measurement unknown and must never block an
+otherwise accepted user outcome.
+
+A full historical-compatible `milestone-receipt.v1` is required for
+high-risk or critical work; security; releases; deployments, migrations,
+destructive actions, or external side effects; Codex app-task fallback
+attempts; failures, blocks, abandonment, or material rework; pilots,
+benchmarks, or evaluation windows; and explicit audit requests. Receipt tier
+selection follows `receipt-policy.v1`; missing optional routine records are
+not errors and historical receipts are never reinterpreted.
 
 Unsupported combinations, malformed requests, unsafe paths, ownership
-conflicts, runtime hash drift, or an unavailable required role are fail-closed
+conflicts, runtime hash drift, or pre-admission role failures are fail-closed
 conditions: route directly to Sol and report the reason rather than guessing.
 
 Do not add `agents.default_subagent_model` to global configuration. Each role
@@ -181,12 +233,12 @@ tokens, customer data, or production data/logs. Read the minimum necessary,
 redact evidence, and keep sensitive operations with the root under the user's
 authorization.
 
-Require each agent to return a concise evidence packet with exactly these
-fields: `scope`, `files_or_surfaces`, `commands_or_checks`, `assumptions`,
-`failures`, `risks`, `confidence`, and `recommendation`. The root verifies
-material claims and owns the final answer.
+Require every delegated agent to return `evidence-packet.v2`. The root
+verifies material claims and owns the final answer.
 
 After risky edits, prefer both `luna_critic_fast` and `luna_tester_fast` when
-their workstreams are independent. Use bounded waits. On a Luna timeout or
-launch failure, cancel the lane and continue with an explicit Sol fallback;
-do not retry or wait indefinitely.
+their workstreams are independent. Use bounded waits. On a Luna timeout,
+cancel the lane and continue with an explicit Sol fallback. On an eligible
+pre-start native transport failure, use at most the one explicitly authorized
+Codex app task fallback above; otherwise continue with Sol. Do not retry or
+wait indefinitely.

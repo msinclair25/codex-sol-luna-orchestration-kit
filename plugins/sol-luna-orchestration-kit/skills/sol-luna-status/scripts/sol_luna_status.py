@@ -22,7 +22,16 @@ MODULE_ROOT = SKILL_REPO_CANDIDATE
 MAX_FILES, MAX_BYTES, MAX_SECONDS, MAX_FILE_BYTES = 128, 16 * 1024 * 1024, 3.0, 2 * 1024 * 1024
 MAX_ENTRIES = MAX_FILES * 16
 KIT_POINTER_NAME = ".sol-luna-kit-root"
-ROLE_NAMES = {"luna_scout_fast", "luna_worker_fast", "luna_critic_fast", "luna_tester_fast", "luna_max_fast"}
+INSTALL_STATE_NAME = ".sol-luna-install-state.json"
+INSTALL_STATE_SCHEMAS = {1, 2}
+PROFILE_ROLE_NAMES = {
+    "fast": {"luna_scout_fast", "luna_worker_fast", "luna_critic_fast", "luna_tester_fast", "luna_max_fast"},
+    "standard": {"luna_scout_standard", "luna_worker_standard", "luna_critic_standard", "luna_tester_standard", "luna_max_standard"},
+}
+ROLE_NAMES = set().union(*PROFILE_ROLE_NAMES.values())
+MAX_ROLE_NAMES = {"luna_max_fast", "luna_max_standard"}
+ROLE_STATE_FILES = {profile: {role + ".toml" for role in roles} for profile, roles in PROFILE_ROLE_NAMES.items()}
+USAGE_STATE_FILES = {"SKILL.md", "agents/openai.yaml", "scripts/sol_luna_status.py"}
 MODEL_NAMES = {"gpt-5.6-sol", "gpt-5.6-luna"}
 REASONING_NAMES = {"low", "medium", "high", "xhigh", "max", "ultra"}
 TOKEN_FIELDS = {"input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens", "total_tokens"}
@@ -126,6 +135,89 @@ def _read_json(path: Path, limit: int = MAX_FILE_BYTES) -> Optional[Any]:
         return _strict_loads(data.decode("utf-8"))
     except (OSError, UnicodeError, ValueError, RecursionError, MemoryError):
         return None
+
+
+def _install_state_info(codex_home: Path) -> Optional[Dict[str, Any]]:
+    value = _read_json(codex_home / INSTALL_STATE_NAME, 32 * 1024)
+    if not isinstance(value, dict):
+        return None
+    legacy_keys = {
+        "schema_version", "kit_version", "active_luna_tier",
+        "agents_source_sha256", "roles", "usage_assets",
+    }
+    current_keys = legacy_keys | {"update_phase"}
+    schema_version = value.get("schema_version")
+    if isinstance(schema_version, bool) or (
+        schema_version == 1 and set(value) != legacy_keys
+    ) or (
+        schema_version == 2 and set(value) != current_keys
+    ) or schema_version not in INSTALL_STATE_SCHEMAS:
+        return None
+    tier = value.get("active_luna_tier")
+    roles = value.get("roles")
+    usage = value.get("usage_assets")
+    update_phase = value.get("update_phase", "ready")
+    if (
+        not isinstance(tier, str)
+        or tier not in PROFILE_ROLE_NAMES
+        or not isinstance(value.get("kit_version"), str)
+        or re.fullmatch(r"[0-9A-Za-z.+-]{1,32}", value["kit_version"]) is None
+        or not isinstance(value.get("agents_source_sha256"), str)
+        or re.fullmatch(r"[0-9a-f]{64}", value["agents_source_sha256"]) is None
+        or not isinstance(roles, dict)
+        or not roles
+        or len(roles) > 16
+        or not ROLE_STATE_FILES[tier].issubset(roles)
+        or set(roles) - set().union(*ROLE_STATE_FILES.values())
+        or any(
+            not isinstance(name, str)
+            or re.fullmatch(r"luna_[a-z]+_(?:fast|standard)\.toml", name) is None
+            or not isinstance(digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            for name, digest in roles.items()
+        )
+        or not isinstance(usage, dict)
+        or set(usage) - USAGE_STATE_FILES
+        or any(
+            not isinstance(name, str)
+            or len(name) > 128
+            or not isinstance(digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            for name, digest in usage.items()
+        )
+        or update_phase not in {"ready", "package-refresh-requested", "package-refreshed"}
+    ):
+        return None
+    return {
+        "schema_version": schema_version,
+        "kit_version": value["kit_version"],
+        "tier": tier,
+        "update_phase": update_phase,
+    }
+
+
+def _install_state_tier(codex_home: Path) -> Optional[str]:
+    info = _install_state_info(codex_home)
+    return info["tier"] if info is not None else None
+
+
+def _select_luna_profile(
+    explicit: Optional[str],
+    active_root: Path,
+    receipt: Optional[Dict[str, Any]],
+) -> Tuple[str, str]:
+    if explicit in PROFILE_ROLE_NAMES:
+        return explicit, "explicit"
+    installed = _install_state_tier(active_root)
+    if installed is not None:
+        return installed, "install-state"
+    try:
+        observed = receipt_tool.receipt_profile(receipt) if receipt is not None else None
+    except Exception:
+        observed = None
+    if observed in PROFILE_ROLE_NAMES:
+        return observed, "latest-receipt"
+    return "fast", "compatibility-default"
 
 
 def _m4_retirement(root: Path) -> Optional[Dict[str, Any]]:
@@ -456,6 +548,73 @@ def _valid_receipts(receipts_dir: Path) -> List[Dict[str, Any]]:
     return sorted(out, key=lambda x: (x.get("closed_at", ""), x.get("milestone_id", "")))
 
 
+def _routine_records(records_dir: Path) -> Tuple[List[Dict[str, Any]], int]:
+    """Read optional routine records; a missing directory is valid absence."""
+
+    try:
+        if not records_dir.exists() and not records_dir.is_symlink():
+            return [], 0
+        if not _safe_path(records_dir, directory=True):
+            return [], 1
+        if stat.S_IMODE(records_dir.stat().st_mode) != 0o700:
+            return [], 1
+    except OSError:
+        return [], 1
+    records: List[Dict[str, Any]] = []
+    invalid = 0
+    try:
+        for path in sorted(records_dir.iterdir()):
+            if path.suffix != ".json" or not _safe_path(path):
+                continue
+            try:
+                if stat.S_IMODE(path.stat().st_mode) != 0o600:
+                    invalid += 1
+                    continue
+            except OSError:
+                invalid += 1
+                continue
+            value = _read_json(path, 2048)
+            try:
+                result = receipt_tool.validate_routine_record(value)
+            except Exception:
+                result = {"ok": False}
+            if result.get("ok"):
+                records.append(value)
+            else:
+                invalid += 1
+    except (OSError, RuntimeError):
+        return [], invalid
+    return records, invalid
+
+
+def _routine_summary(records: List[Dict[str, Any]], invalid: int) -> Dict[str, Any]:
+    attributed = [
+        record["usage"]["total_tokens"]
+        for record in records
+        if record.get("usage", {}).get("attribution") == "attributable"
+    ]
+    complete = bool(records) and len(attributed) == len(records)
+    useful = sum(int(record["spawn"]["useful"]) for record in records)
+    checks = [check for record in records for check in record["checks"]]
+    return {
+        "version": "routine-delegation-record.v1",
+        "collection": "partial" if invalid else ("active" if records else "ready-no-records"),
+        "observed": len(records),
+        "invalid": invalid,
+        "optional_missing": not records and invalid == 0,
+        "completed": sum(int(record["outcome"] == "completed") for record in records),
+        "blocked": sum(int(record["outcome"] == "blocked") for record in records),
+        "failed": sum(int(record["outcome"] == "failed") for record in records),
+        "useful": useful,
+        "spawn_precision": useful / len(records) if records else None,
+        "check_pass": sum(int(check["status"] == "pass") for check in checks),
+        "check_fail": sum(int(check["status"] == "fail") for check in checks),
+        "check_skipped": sum(int(check["status"] == "skipped") for check in checks),
+        "usage_attribution": "attributable" if complete else "unknown",
+        "total_tokens": sum(attributed) if complete else None,
+    }
+
+
 def _empty_receipt_summary() -> Dict[str, Any]:
     return {
         "receipts_observed": 0,
@@ -548,11 +707,14 @@ def _drift(root: Path, active_root: Optional[Path], active_config: Optional[Path
     try: frozen = verify_bundle.verify(bundle)
     except Exception: frozen = {"ok": False, "errors": ["bundle_error"]}
     card, card_warnings = _rate_card(root)
+    try: receipt_policy = receipt_tool.verify_receipt_policy(root)
+    except Exception: receipt_policy = {"ok": False}
     if not policy.get("ok"): errors.append("routing_contract_drift")
+    if not receipt_policy.get("ok"): errors.append("receipt_policy_drift")
     if active is not None and not active.get("ok"): errors.append("active_runtime_drift")
     if not frozen.get("ok"): errors.append("all_max_bundle_drift")
     errors.extend(card_warnings)
-    return {"routing_contract": bool(policy.get("ok")), "active_runtime": None if active is None else bool(active.get("ok")), "all_max_bundle": bool(frozen.get("ok")), "rate_card": not bool(card_warnings), "errors": sorted(set(errors))}, card_warnings
+    return {"routing_contract": bool(policy.get("ok")), "receipt_policy": bool(receipt_policy.get("ok")), "active_runtime": None if active is None else bool(active.get("ok")), "all_max_bundle": bool(frozen.get("ok")), "rate_card": not bool(card_warnings), "errors": sorted(set(errors))}, card_warnings
 
 
 def _mark_probe_failed(probe: Dict[str, Any], reason: str) -> None:
@@ -583,6 +745,13 @@ def _quality(receipt: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         "max_reason_counts": {},
         "useful_count": None,
         "spawn_precision": None,
+        "transport_observed_count": None,
+        "native_transport_failure_count": None,
+        "app_task_fallback_count": None,
+        "app_task_fallback_completed_count": None,
+        "app_task_fallback_failed_count": None,
+        "app_task_fallback_unavailable_count": None,
+        "sol_after_transport_failure_count": None,
         "rework_count": None,
         "check_pass_count": None,
         "check_fail_count": None,
@@ -600,10 +769,15 @@ def _quality(receipt: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     checks = receipt.get("acceptance_checks", [])
     risks = receipt.get("risks", [])
     useful = sum(int(isinstance(lane, dict) and lane.get("useful") is True) for lane in lanes)
+    transports = [
+        lane.get("transport")
+        for lane in lanes
+        if isinstance(lane, dict) and isinstance(lane.get("transport"), dict)
+    ]
     max_reasons = Counter(
         lane.get("max_reason")
         for lane in lanes
-        if isinstance(lane, dict) and lane.get("role") == "luna_max_fast" and isinstance(lane.get("max_reason"), str)
+        if isinstance(lane, dict) and lane.get("role") in MAX_ROLE_NAMES and isinstance(lane.get("max_reason"), str)
     )
     open_risks = [
         {"code": risk.get("code"), "severity": risk.get("severity")}
@@ -615,16 +789,41 @@ def _quality(receipt: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         "lane_count": len(lanes),
         "retry_count": sum(int(lane.get("retries", 0)) for lane in lanes if isinstance(lane, dict)),
         "escalation_count": sum(int(isinstance(lane.get("escalation"), dict) and lane["escalation"].get("target") is not None) for lane in lanes if isinstance(lane, dict)),
-        "max_count": sum(int(isinstance(lane, dict) and lane.get("role") == "luna_max_fast") for lane in lanes),
+        "max_count": sum(int(isinstance(lane, dict) and lane.get("role") in MAX_ROLE_NAMES) for lane in lanes),
         "max_reason_counts": dict(sorted(max_reasons.items())),
         "useful_count": useful,
         "spawn_precision": useful / len(lanes) if lanes else None,
+        "transport_observed_count": len(transports),
+        "native_transport_failure_count": sum(int(isinstance(item.get("native_failure"), str)) for item in transports),
+        "app_task_fallback_count": sum(int(item.get("used") == "codex_app_task") for item in transports),
+        "app_task_fallback_completed_count": sum(int(item.get("used") == "codex_app_task" and item.get("fallback_outcome") == "completed") for item in transports),
+        "app_task_fallback_failed_count": sum(int(item.get("used") == "codex_app_task" and item.get("fallback_outcome") in {"failed", "blocked"}) for item in transports),
+        "app_task_fallback_unavailable_count": sum(int(item.get("fallback_outcome") == "unavailable") for item in transports),
+        "sol_after_transport_failure_count": sum(int(item.get("used") == "sol" and isinstance(item.get("native_failure"), str)) for item in transports),
         "rework_count": receipt.get("rework_count"),
         "check_pass_count": sum(int(isinstance(check, dict) and check.get("result") == "pass") for check in checks),
         "check_fail_count": sum(int(isinstance(check, dict) and check.get("result") == "fail") for check in checks),
         "check_unknown_count": sum(int(isinstance(check, dict) and check.get("result") == "unknown") for check in checks),
         "open_risk_count": len(open_risks),
         "open_risks": open_risks,
+    })
+    return result
+
+
+def _minimal_quality(records: List[Dict[str, Any]]) -> Dict[str, Any]:
+    result = _quality(None)
+    if not records:
+        return result
+    useful = sum(int(record["spawn"]["useful"]) for record in records)
+    checks = [check for record in records for check in record["checks"]]
+    result.update({
+        "status": "observed-minimal-records",
+        "lane_count": len(records),
+        "useful_count": useful,
+        "spawn_precision": useful / len(records),
+        "check_pass_count": sum(int(check["status"] == "pass") for check in checks),
+        "check_fail_count": sum(int(check["status"] == "fail") for check in checks),
+        "check_unknown_count": sum(int(check["status"] == "skipped") for check in checks),
     })
     return result
 
@@ -690,7 +889,7 @@ def _recommendation(
         if state == "in-progress":
             return "direct Sol: close pending M4 evidence before the next predeclared slot"
     if receipt is None:
-        return "direct Sol: create a validated milestone receipt before changing routing"
+        return "direct Sol: no formal receipt is required unless receipt-policy.v1 selects the full tier"
     if receipt.get("disposition") in {"rejected", "abandoned"} or quality.get("check_fail_count") or quality.get("open_risk_count"):
         return "direct Sol: terminal quality evidence requires remediation"
     if not attributed:
@@ -702,9 +901,17 @@ def _report(args: argparse.Namespace) -> Dict[str, Any]:
     root = _resolve_root(args.root)
     _load_modules(root)
     receipts_dir = Path(args.receipts_dir).expanduser() if args.receipts_dir else root / ".sol-luna" / "receipts"
+    routine_records_dir = Path(args.routine_records_dir).expanduser() if args.routine_records_dir else root / ".sol-luna" / "routine-records"
     session_root = Path(args.session_root).expanduser() if args.session_root else Path.home() / ".codex" / "sessions"
     receipts = _valid_receipts(receipts_dir)
+    routine_records, invalid_routine_records = _routine_records(routine_records_dir)
+    routine_summary = _routine_summary(routine_records, invalid_routine_records)
     latest = receipts[-1] if receipts else None
+    profile_root = Path(args.active_root).expanduser() if args.active_root else Path.home() / ".codex"
+    install_state_path = profile_root / INSTALL_STATE_NAME
+    install_state_present = install_state_path.exists() or install_state_path.is_symlink()
+    install_info = _install_state_info(profile_root)
+    luna_tier, luna_tier_provenance = _select_luna_profile(args.luna_tier, profile_root, latest)
     receipt_summary = _empty_receipt_summary()
     if _safe_path(receipts_dir, directory=True):
         try:
@@ -775,10 +982,16 @@ def _report(args: argparse.Namespace) -> Dict[str, Any]:
             receipt_summary["receipt_coverage_reason"] = "pilot_status_unavailable"
 
     selected, probe, warnings = _scan_sessions(session_root)
+    if luna_tier_provenance == "compatibility-default":
+        warnings.append("luna_profile_defaulted_fast")
     if pilot_warning:
         warnings.append(pilot_warning)
     if receipt_summary.get("invalid_receipts"):
         warnings.append("invalid_receipts_observed")
+    if invalid_routine_records:
+        warnings.append("invalid_routine_records_observed")
+    if install_state_present and install_info is None:
+        warnings.append("install_state_invalid")
 
     if latest and probe.get("status") == "candidate":
         matches = []
@@ -813,16 +1026,23 @@ def _report(args: argparse.Namespace) -> Dict[str, Any]:
                     and root_label.get("service_tier") == expected_root_tier
                 )
                 lanes = latest.get("delegated_lanes", [])
-                expected_children = Counter(
-                    (lane.get("role"), "gpt-5.6-luna", lane.get("reasoning"), "fast")
-                    for lane in lanes
+                native_lanes = [
+                    lane for lane in lanes
                     if isinstance(lane, dict)
+                    and (
+                        not isinstance(lane.get("transport"), dict)
+                        or lane["transport"].get("used") == "native_luna_subagent"
+                    )
+                ]
+                expected_children = Counter(
+                    (lane.get("role"), "gpt-5.6-luna", lane.get("reasoning"), lane.get("tier"))
+                    for lane in native_lanes
                 )
                 actual_children = Counter(
                     (label.get("role"), label.get("model"), label.get("reasoning"), label.get("service_tier"))
                     for label in labels[1:]
                 )
-                if not root_ok or len(children) != len(lanes) or actual_children != expected_children:
+                if not root_ok or len(children) != len(native_lanes) or actual_children != expected_children:
                     selected = []
                     _mark_probe_failed(probe, "runtime_or_lane_mismatch")
                 else:
@@ -851,7 +1071,7 @@ def _report(args: argparse.Namespace) -> Dict[str, Any]:
     if active_path is not None and config_path is None:
         active_path = None
         warnings.append("active_runtime_not_checked")
-    drift, drift_warnings = _drift(root, active_path, config_path, args.luna_tier)
+    drift, drift_warnings = _drift(root, active_path, config_path, luna_tier)
     warnings.extend(drift_warnings)
 
     usage: Dict[str, Any] = {
@@ -946,7 +1166,7 @@ def _report(args: argparse.Namespace) -> Dict[str, Any]:
     if usage["status"] == "unknown":
         warnings.append("whole_workflow_usage_unknown")
 
-    quality = _quality(latest)
+    quality = _quality(latest) if latest is not None else _minimal_quality(routine_records)
     if usage["status"] == "estimated" and analysis is not None:
         quality["session_runs"] = analysis.get("runs")
         quality["session_children"] = probe.get("child_count")
@@ -989,13 +1209,28 @@ def _report(args: argparse.Namespace) -> Dict[str, Any]:
     latest_is_current = latest is not None and pilot_is_retired
     return {
         "schema_version": 1,
-        "mode": "session+receipts" if usage["status"] == "estimated" else "receipt-only",
+        "mode": "session+receipts" if usage["status"] == "estimated" else ("minimal-records" if routine_records and latest is None else "receipt-only"),
+        "installation": {
+            "status": (
+                "invalid"
+                if install_info is None and install_state_present
+                else "not-installed"
+                if install_info is None
+                else "update-pending"
+                if install_info["update_phase"] != "ready"
+                else "installed"
+            ),
+            "kit_version": install_info["kit_version"] if install_info is not None else None,
+            "update_phase": install_info["update_phase"] if install_info is not None else None,
+        },
+        "luna_profile": {"tier": luna_tier, "provenance": luna_tier_provenance},
         "milestone": {
             "id": latest.get("milestone_id") if latest_is_current else (pilot_summary.get("plan_id") if pilot_summary else (latest.get("milestone_id") if latest else None)),
             "state": latest.get("disposition") if latest_is_current else (pilot_summary.get("state") if pilot_summary else (latest.get("disposition") if latest else "unknown")),
             "scope": "latest-terminal-after-m4-retirement" if latest_is_current else ("m4-terminal-retirement" if pilot_is_retired else ("m4-retirement-evidence-blocked" if pilot_retirement_blocked else ("m4-pilot-registry" if pilot_summary else ("latest-terminal-no-start-registry" if latest else "unregistered")))),
         },
         "receipts": {key: receipt_summary.get(key) for key in receipt_keys},
+        "routine_records": routine_summary,
         "pilot": pilot_summary,
         "latest_terminal": latest_terminal,
         "latest_accepted_outcome": latest_accepted,
@@ -1024,10 +1259,12 @@ def _report(args: argparse.Namespace) -> Dict[str, Any]:
 
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Report bounded privacy-safe Sol/Luna status")
-    p.add_argument("--root"); p.add_argument("--receipts-dir"); p.add_argument("--session-root"); p.add_argument("--active-root"); p.add_argument("--active-config")
+    p.add_argument("--root"); p.add_argument("--receipts-dir"); p.add_argument("--routine-records-dir"); p.add_argument("--session-root"); p.add_argument("--active-root"); p.add_argument("--active-config")
     p.add_argument("--plan"); p.add_argument("--starts-dir"); p.add_argument("--pilot-home"); p.add_argument("--as-of")
     p.add_argument("--allow-retired-m4-audit", action="store_true")
-    p.add_argument("--luna-tier", choices=("fast", "standard"), default="fast")
+    p.add_argument("--detail", action="store_true")
+    p.add_argument("--historical", action="store_true")
+    p.add_argument("--luna-tier", choices=("fast", "standard"))
     p.add_argument("--budget", type=float); p.add_argument("--format", choices=("markdown", "json"), default="markdown")
     return p
 
@@ -1042,9 +1279,57 @@ def _display(value: Any) -> str:
     return str(value)
 
 
+def _summary_markdown(report: Dict[str, Any]) -> str:
+    installation = report.get("installation", {})
+    drift = report.get("drift", {})
+    routine = report.get("routine_records", {})
+    tier = report.get("luna_profile", {}).get("tier")
+    invalid = int(routine.get("invalid") or 0) + int(report.get("receipts", {}).get("invalid_receipts") or 0)
+    if installation.get("status") == "update-pending":
+        health = "Update pending"
+        next_action = "Restart Codex, then ask Sol/Luna setup to finish the update."
+    elif installation.get("status") == "invalid" or invalid or drift.get("errors") or drift.get("active_runtime") is False:
+        health = "Needs attention"
+        next_action = "Ask Sol/Luna setup to verify the installation and explain the drift."
+    elif installation.get("status") == "not-installed":
+        health = "Setup incomplete"
+        next_action = "Ask Sol/Luna setup to complete installation."
+    else:
+        health = "Healthy" if drift.get("active_runtime") is True else "Healthy; runtime not checked"
+        next_action = "No action needed."
+    observed = int(routine.get("observed") or 0)
+    collection = routine.get("collection") or "unavailable"
+    if observed:
+        metrics = f"{collection}; {observed} delegated task{'s' if observed != 1 else ''} observed"
+        precision = routine.get("spawn_precision")
+        effectiveness = (
+            f"{float(precision) * 100:.0f}% useful; checks {int(routine.get('check_pass') or 0)} pass / {int(routine.get('check_fail') or 0)} fail"
+            if isinstance(precision, (int, float)) and not isinstance(precision, bool)
+            else "Usefulness unknown"
+        )
+    else:
+        metrics = "Ready; no delegated work observed yet" if collection == "ready-no-records" else str(collection)
+        effectiveness = "No delegated outcomes to evaluate yet"
+    version = installation.get("kit_version") or "unknown"
+    tier_label = str(tier).title() if tier else "Unknown tier"
+    return "\n".join([
+        "# Sol/Luna status",
+        "",
+        f"- Health: {health}",
+        f"- Version: {version} · {tier_label}",
+        f"- Metrics: {metrics}",
+        f"- Delegation: {effectiveness}",
+        f"- Next: {next_action}",
+        "",
+        "Use `--detail` for evidence, usage, drift, and provenance details.",
+        "",
+    ])
+
+
 def _markdown(report: Dict[str, Any]) -> str:
     milestone = report["milestone"]
     receipts = report["receipts"]
+    routine_records = report.get("routine_records", {})
     pilot = report.get("pilot") or {}
     probe = report["session_probe"]
     usage = report["usage"]
@@ -1058,6 +1343,7 @@ def _markdown(report: Dict[str, Any]) -> str:
         "# Sol/Luna status",
         "",
         f"- Mode: {_display(report['mode'])}",
+        f"- Luna profile: {_display(report.get('luna_profile', {}).get('tier'))} ({_display(report.get('luna_profile', {}).get('provenance'))})",
         "",
         "## Milestone",
         "",
@@ -1071,6 +1357,10 @@ def _markdown(report: Dict[str, Any]) -> str:
         f"- Observed: {_display(receipts.get('receipts_observed'))} (accepted {_display(receipts.get('accepted_count'))}, rejected {_display(receipts.get('rejected_count'))}, abandoned {_display(receipts.get('abandoned_count'))})",
         f"- Invalid: {_display(receipts.get('invalid_receipts'))}",
         f"- Coverage: {_display(receipts.get('receipt_coverage'))} ({_display(receipts.get('receipt_coverage_reason'))})",
+        f"- Optional routine records: {_display(routine_records.get('observed'))}; invalid: {_display(routine_records.get('invalid'))}; missing is allowed: {_display(routine_records.get('optional_missing'))}",
+        f"- Routine completed/blocked/failed/useful: {_display(routine_records.get('completed'))} / {_display(routine_records.get('blocked'))} / {_display(routine_records.get('failed'))} / {_display(routine_records.get('useful'))}",
+        f"- Routine check pass/fail/skipped: {_display(routine_records.get('check_pass'))} / {_display(routine_records.get('check_fail'))} / {_display(routine_records.get('check_skipped'))}; spawn precision: {_display(routine_records.get('spawn_precision'))}",
+        f"- Routine attributable usage: {_display(routine_records.get('total_tokens'))} ({_display(routine_records.get('usage_attribution'))})",
         "",
         "## M4 pilot",
         "",
@@ -1114,6 +1404,7 @@ def _markdown(report: Dict[str, Any]) -> str:
         "",
         f"- Lanes/useful/spawn precision: {_display(quality.get('lane_count'))} / {_display(quality.get('useful_count'))} / {_display(quality.get('spawn_precision'))}",
         f"- Retries/escalations/Max/rework: {_display(quality.get('retry_count'))} / {_display(quality.get('escalation_count'))} / {_display(quality.get('max_count'))} / {_display(quality.get('rework_count'))}",
+        f"- Native transport failures/app-task fallbacks/completed/unavailable/Sol: {_display(quality.get('native_transport_failure_count'))} / {_display(quality.get('app_task_fallback_count'))} / {_display(quality.get('app_task_fallback_completed_count'))} / {_display(quality.get('app_task_fallback_unavailable_count'))} / {_display(quality.get('sol_after_transport_failure_count'))}",
         f"- Checks pass/fail/unknown: {_display(quality.get('check_pass_count'))} / {_display(quality.get('check_fail_count'))} / {_display(quality.get('check_unknown_count'))}",
         f"- Open risks/conflicts/suspected over-reasoning: {_display(quality.get('open_risk_count'))} / unknown / unknown",
         "",
@@ -1127,6 +1418,7 @@ def _markdown(report: Dict[str, Any]) -> str:
         "## Drift and freshness",
         "",
         f"- Repository routing contract: {_display(drift.get('routing_contract'))}",
+        f"- Receipt tier policy: {_display(drift.get('receipt_policy'))}",
         f"- Active dynamic runtime: {_display(drift.get('active_runtime'))}",
         f"- Frozen all-Max bundle: {_display(drift.get('all_max_bundle'))}",
         f"- Rate card: {_display(drift.get('rate_card'))}; latest receipt: {_display(report['freshness'].get('latest_receipt_closed_at'))}",
@@ -1148,8 +1440,11 @@ def _failure_report() -> Dict[str, Any]:
     return {
         "schema_version": 1,
         "mode": "receipt-only",
+        "installation": {"status": "unknown", "kit_version": None, "update_phase": None},
+        "luna_profile": {"tier": None, "provenance": "unknown"},
         "milestone": {"id": None, "state": "unknown", "scope": "unregistered"},
         "receipts": _empty_receipt_summary(),
+        "routine_records": {"version": "routine-delegation-record.v1", "collection": "unavailable", "observed": 0, "invalid": 0, "optional_missing": True, "completed": 0, "blocked": 0, "failed": 0, "useful": 0, "spawn_precision": None, "check_pass": 0, "check_fail": 0, "check_skipped": 0, "usage_attribution": "unknown", "total_tokens": None},
         "pilot": {"ok": False, "schema_version": 1, "plan_id": None, "state": "blocked", "registered_count": None, "terminal_count": None, "pending_count": None, "overdue_count": None, "receipt_coverage": "unknown", "receipt_coverage_reason": "status_report_failed", "receipt_coverage_fraction": None, "next_slot": None, "next_slot_eligible": False, "latest_terminal_closed_at": None, "kill_criteria_triggered": [], "comparison": {"status": "unknown", "automatic_promotion": False, "promotion_status": "blocked-or-unknown"}, "environment": None, "errors": ["status_report_failed"]},
         "latest_terminal": None,
         "latest_accepted_outcome": None,
@@ -1158,7 +1453,7 @@ def _failure_report() -> Dict[str, Any]:
         "timing": {"status": "unknown", "provenance": "unknown", "elapsed_ms": None, "time_to_verified_outcome_ms": None, "active_time_ms": None, "wall_time_ms": None},
         "delegation_quality": _quality(None),
         "budget": _budget(None, None, None),
-        "drift": {"routing_contract": False, "active_runtime": None, "all_max_bundle": False, "rate_card": False, "errors": ["status_report_failed"]},
+        "drift": {"routing_contract": False, "receipt_policy": False, "active_runtime": None, "all_max_bundle": False, "rate_card": False, "errors": ["status_report_failed"]},
         "freshness": {"latest_receipt_closed_at": None, "rate_card_status": "stale-or-invalid"},
         "routing_recommendation": "direct Sol: control or rate-card drift requires review",
         "provenance": {"receipts": "unknown", "sessions": "unknown", "weighted_usage": "unknown", "billed_usage": "unknown", "privacy": "paths-identifiers-prompts-content-redacted", "bounded": True},
@@ -1178,7 +1473,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         if args.format == "json":
             print(json.dumps(report, sort_keys=True, separators=(",", ":")))
         else:
-            print(_markdown(report), end="")
+            print(_markdown(report) if args.detail or args.historical else _summary_markdown(report), end="")
         return 0
     except Exception:
         report = _failure_report()

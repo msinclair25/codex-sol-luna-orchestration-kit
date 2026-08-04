@@ -9,12 +9,25 @@ Operate the bundled transactional installer on the user's behalf. Keep Python
 and installer flags as implementation details unless troubleshooting requires
 them.
 
+## Finish a same-task bootstrap
+
+When the user asked Codex to install and fully configure Sol/Luna in one task,
+the plugin skill may not have been loaded when the task began. After the exact
+Git-backed plugin is installed, inspect `codex plugin list --json`, require the
+installed entry `sol-luna-orchestration-kit@sol-luna`, require its marketplace
+source to identify
+`https://github.com/msinclair25/codex-sol-luna-orchestration-kit`, and use only
+that entry's absolute `source.path`. Read this setup skill from that installed
+path, resolve `KIT_ROOT` normally, and complete preview, apply, and verification
+in the current task. Do not require an intermediate restart. Ask for one final
+restart only after the verified full-role install changes files.
+
 ## Resolve the kit
 
 1. Resolve this `SKILL.md` to an absolute path.
 2. Walk upward through at most four parent directories and select the nearest
    directory containing `scripts/install.py`, `scripts/routing_policy.py`,
-   `agents/`, and `config/routing-policy.v1.1.json`.
+   `agents/`, and `config/routing-policy.v1.4.json`.
 3. Treat that directory as `KIT_ROOT`. Stop if no such directory exists. Do
    not download a replacement or use a different checkout silently.
 4. When the root contains `.codex-plugin/plugin.json`, treat the bundled
@@ -27,6 +40,11 @@ them.
 
 ## Select the operation
 
+- First run the installer's read-only `--doctor` operation. A plain request
+  such as "set me up", "continue", or "finish setup" selects the doctor's
+  single safe next action: install, finish a pending roles update, retry a
+  package refresh, review drift, or report healthy. Do not make the user know
+  which phase they are in.
 - For a new installation, use the tier the user named. Default to Fast when no
   tier was requested. Standard means the `*_standard` roles.
 - When running from a plugin bundle and the user asks to update Sol/Luna, first
@@ -43,6 +61,15 @@ them.
   cannot be inferred safely instead of assuming Fast.
 - For repair, follow the update path. Never broaden repair into conflict
   approval or replacement of user-edited files.
+
+Run the doctor with the equivalent of:
+
+```text
+PYTHON KIT_ROOT/scripts/install.py --repo-root KIT_ROOT --doctor
+```
+
+Summarize only its health, active tier, verification, and next action. The user
+does not need to see the internal state schema or installer command.
 
 ## Update the plugin package
 
@@ -62,7 +89,13 @@ the user requested a general Sol/Luna update rather than a roles-only update.
    matching source provenance when supplied. Stop when provenance is missing,
    ambiguous, local, or different; do not repair or replace marketplace
    configuration implicitly.
-3. Treat the direct update request as authorization to refresh this one
+3. When the doctor reports a full state-tracked installation, run the bundled
+   installer with `--mark-update-pending` before replacing the package. Stop if
+   the resumable marker cannot be written. This preserves the active tier and
+   lets the refreshed setup skill determine whether to retry the package or
+   finish the roles after restart. When the doctor reports workflow-only
+   `setup-required`, skip the marker because no global roles need resuming.
+4. Treat the direct update request as authorization to refresh this one
    marketplace and reinstall this one plugin. Run these operations
    sequentially, never as a combined shell expression:
 
@@ -71,15 +104,25 @@ the user requested a general Sol/Luna update rather than a roles-only update.
    codex plugin add sol-luna-orchestration-kit@sol-luna
    ```
 
-4. Stop if either operation fails. Do not switch to another marketplace,
+5. Stop if either operation fails. Do not switch to another marketplace,
    repository, plugin name, or installation method.
-5. After success, do not run the bundled installer from the now-replaced
-   plugin snapshot in the same task. Tell the user to restart Codex, begin a
-   new task, and invoke:
+6. For a full installation after both package commands succeed, inspect the
+   newly installed entry again, verify the same provenance, and run only its
+   state-only `install.py --mark-package-refreshed` operation. Do not apply or
+   verify global roles from the replaced snapshot. Stop if this completion
+   marker cannot be written; it distinguishes a successful package refresh
+   from an interrupted one after restart.
+7. After success, do not run the role installer from the now-replaced plugin
+   snapshot in the same task. For a full installation, tell the user to
+   restart Codex and invoke setup normally; the new skill will detect and
+   finish the pending update:
 
    ```text
-   $sol-luna-setup Finish updating my Sol/Luna roles.
+   $sol-luna-setup Continue.
    ```
+
+   For workflow-only mode, tell the user only to restart Codex; there are no
+   global roles to finish.
 
 When the skill runs from a repository checkout rather than a plugin bundle,
 skip package self-update and use the state-tracked role update directly.
@@ -147,3 +190,8 @@ Report:
 
 Keep the final response concise. Lead with the outcome, not the internal
 command sequence.
+
+Installing or updating never grants standing permission to create Codex app
+tasks. The orchestration skill requests lane-scoped authorization only after
+an eligible native Luna transport failure, unless the user explicitly included
+that authorization in the current task.

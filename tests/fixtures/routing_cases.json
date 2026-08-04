@@ -2,9 +2,13 @@
   "valid_delegation": {
     "kind": "scout",
     "fork_turns": "none",
+    "task_class": "broad_mapping",
+    "benefit_code": "broad_read_only_mapping",
+    "substantive_work": {"estimated_minutes": 20, "affected_files": 0, "distinct_surfaces": 4, "independent_checks": 0},
+    "work_band": "substantial",
+    "risk_domains": [],
     "separate": true,
     "provable": true,
-    "large_enough": true,
     "isolated": true,
     "tier_appropriate": true,
     "ownership": {
@@ -14,9 +18,13 @@
   "direct_work": {
     "kind": "worker",
     "fork_turns": "none",
+    "task_class": "localized_single_file_edit",
+    "benefit_code": "isolated_large_implementation",
+    "substantive_work": {"estimated_minutes": 30, "affected_files": 3, "distinct_surfaces": 1, "independent_checks": 1},
+    "work_band": "routine",
+    "risk_domains": [],
     "separate": true,
     "provable": true,
-    "large_enough": false,
     "isolated": true,
     "tier_appropriate": true,
     "ownership": {
@@ -26,9 +34,13 @@
   "rejected_gate": {
     "kind": "critic",
     "fork_turns": "none",
+    "task_class": "independent_risk_review",
+    "benefit_code": "independent_risk_review",
+    "substantive_work": {"estimated_minutes": 20, "affected_files": 2, "distinct_surfaces": 2, "independent_checks": 2},
+    "work_band": "high_risk",
+    "risk_domains": ["security"],
     "separate": true,
     "provable": false,
-    "large_enough": true,
     "isolated": true,
     "tier_appropriate": true,
     "ownership": {
@@ -40,9 +52,13 @@
     "fork_turns": "none",
     "requested_role": "luna_max_fast",
     "max_upgrade_reason": "genuine_ambiguity",
+    "task_class": "complex_analysis",
+    "benefit_code": "broad_read_only_mapping",
+    "substantive_work": {"estimated_minutes": 30, "affected_files": 0, "distinct_surfaces": 3, "independent_checks": 1},
+    "work_band": "substantial",
+    "risk_domains": [],
     "separate": true,
     "provable": true,
-    "large_enough": true,
     "isolated": true,
     "tier_appropriate": true,
     "ownership": {
@@ -52,9 +68,15 @@
   "overlapping_ownership": {
     "kind": "worker",
     "fork_turns": "none",
+    "task_class": "substantial_implementation",
+    "benefit_code": "isolated_large_implementation",
+    "substantive_work": {"estimated_minutes": 30, "affected_files": 3, "distinct_surfaces": 2, "independent_checks": 1},
+    "work_band": "substantial",
+    "risk_domains": [],
+    "lane_count": 2,
+    "total_lane_count": 2,
     "separate": true,
     "provable": true,
-    "large_enough": true,
     "isolated": true,
     "tier_appropriate": true,
     "ownership": {
@@ -65,9 +87,13 @@
   "malformed_input": {
     "kind": "scout",
     "fork_turns": "none",
+    "task_class": "broad_mapping",
+    "benefit_code": "broad_read_only_mapping",
+    "substantive_work": {"estimated_minutes": 20, "affected_files": 0, "distinct_surfaces": 4, "independent_checks": 0},
+    "work_band": "substantial",
+    "risk_domains": [],
     "separate": true,
     "provable": true,
-    "large_enough": true,
     "isolated": true,
     "tier_appropriate": true,
     "ownership": {
@@ -78,17 +104,19 @@
     "kind": "tester",
     "fork_turns": "none",
     "lane_count": 2,
-    "wave_count": 12,
+    "total_lane_count": 2,
+    "task_class": "substantial_validation",
+    "benefit_code": "parallel_latency",
+    "substantive_work": {"estimated_minutes": 20, "affected_files": 0, "distinct_surfaces": 2, "independent_checks": 3},
+    "work_band": "substantial",
+    "risk_domains": [],
     "separate": true,
     "provable": true,
-    "large_enough": true,
     "isolated": true,
     "tier_appropriate": true,
     "ownership": {
-      "test_wave_a": ["tests/a.py"],
-      "test_wave_b": ["tests/b.py"],
-      "test_wave_c": ["tests/c.py"],
-      "test_wave_d": ["tests/d.py"]
+      "test_a": ["tests/a.py"],
+      "test_b": ["tests/b.py"]
     }
   }
 }
