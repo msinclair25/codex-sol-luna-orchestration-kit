@@ -22,7 +22,15 @@ MODULE_ROOT = SKILL_REPO_CANDIDATE
 MAX_FILES, MAX_BYTES, MAX_SECONDS, MAX_FILE_BYTES = 128, 16 * 1024 * 1024, 3.0, 2 * 1024 * 1024
 MAX_ENTRIES = MAX_FILES * 16
 KIT_POINTER_NAME = ".sol-luna-kit-root"
-ROLE_NAMES = {"luna_scout_fast", "luna_worker_fast", "luna_critic_fast", "luna_tester_fast", "luna_max_fast"}
+INSTALL_STATE_NAME = ".sol-luna-install-state.json"
+PROFILE_ROLE_NAMES = {
+    "fast": {"luna_scout_fast", "luna_worker_fast", "luna_critic_fast", "luna_tester_fast", "luna_max_fast"},
+    "standard": {"luna_scout_standard", "luna_worker_standard", "luna_critic_standard", "luna_tester_standard", "luna_max_standard"},
+}
+ROLE_NAMES = set().union(*PROFILE_ROLE_NAMES.values())
+MAX_ROLE_NAMES = {"luna_max_fast", "luna_max_standard"}
+ROLE_STATE_FILES = {profile: {role + ".toml" for role in roles} for profile, roles in PROFILE_ROLE_NAMES.items()}
+USAGE_STATE_FILES = {"SKILL.md", "agents/openai.yaml", "scripts/sol_luna_status.py"}
 MODEL_NAMES = {"gpt-5.6-sol", "gpt-5.6-luna"}
 REASONING_NAMES = {"low", "medium", "high", "xhigh", "max", "ultra"}
 TOKEN_FIELDS = {"input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens", "total_tokens"}
@@ -126,6 +134,70 @@ def _read_json(path: Path, limit: int = MAX_FILE_BYTES) -> Optional[Any]:
         return _strict_loads(data.decode("utf-8"))
     except (OSError, UnicodeError, ValueError, RecursionError, MemoryError):
         return None
+
+
+def _install_state_tier(codex_home: Path) -> Optional[str]:
+    value = _read_json(codex_home / INSTALL_STATE_NAME, 32 * 1024)
+    if not isinstance(value, dict) or set(value) != {
+        "schema_version", "kit_version", "active_luna_tier",
+        "agents_source_sha256", "roles", "usage_assets",
+    }:
+        return None
+    tier = value.get("active_luna_tier")
+    roles = value.get("roles")
+    usage = value.get("usage_assets")
+    if (
+        isinstance(value.get("schema_version"), bool)
+        or value.get("schema_version") != 1
+        or not isinstance(tier, str)
+        or tier not in PROFILE_ROLE_NAMES
+        or not isinstance(value.get("kit_version"), str)
+        or re.fullmatch(r"[0-9A-Za-z.+-]{1,32}", value["kit_version"]) is None
+        or not isinstance(value.get("agents_source_sha256"), str)
+        or re.fullmatch(r"[0-9a-f]{64}", value["agents_source_sha256"]) is None
+        or not isinstance(roles, dict)
+        or not roles
+        or len(roles) > 16
+        or not ROLE_STATE_FILES[tier].issubset(roles)
+        or set(roles) - set().union(*ROLE_STATE_FILES.values())
+        or any(
+            not isinstance(name, str)
+            or re.fullmatch(r"luna_[a-z]+_(?:fast|standard)\.toml", name) is None
+            or not isinstance(digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            for name, digest in roles.items()
+        )
+        or not isinstance(usage, dict)
+        or set(usage) - USAGE_STATE_FILES
+        or any(
+            not isinstance(name, str)
+            or len(name) > 128
+            or not isinstance(digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            for name, digest in usage.items()
+        )
+    ):
+        return None
+    return tier
+
+
+def _select_luna_profile(
+    explicit: Optional[str],
+    active_root: Path,
+    receipt: Optional[Dict[str, Any]],
+) -> Tuple[str, str]:
+    if explicit in PROFILE_ROLE_NAMES:
+        return explicit, "explicit"
+    installed = _install_state_tier(active_root)
+    if installed is not None:
+        return installed, "install-state"
+    try:
+        observed = receipt_tool.receipt_profile(receipt) if receipt is not None else None
+    except Exception:
+        observed = None
+    if observed in PROFILE_ROLE_NAMES:
+        return observed, "latest-receipt"
+    return "fast", "compatibility-default"
 
 
 def _m4_retirement(root: Path) -> Optional[Dict[str, Any]]:
@@ -583,6 +655,13 @@ def _quality(receipt: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         "max_reason_counts": {},
         "useful_count": None,
         "spawn_precision": None,
+        "transport_observed_count": None,
+        "native_transport_failure_count": None,
+        "app_task_fallback_count": None,
+        "app_task_fallback_completed_count": None,
+        "app_task_fallback_failed_count": None,
+        "app_task_fallback_unavailable_count": None,
+        "sol_after_transport_failure_count": None,
         "rework_count": None,
         "check_pass_count": None,
         "check_fail_count": None,
@@ -600,10 +679,15 @@ def _quality(receipt: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     checks = receipt.get("acceptance_checks", [])
     risks = receipt.get("risks", [])
     useful = sum(int(isinstance(lane, dict) and lane.get("useful") is True) for lane in lanes)
+    transports = [
+        lane.get("transport")
+        for lane in lanes
+        if isinstance(lane, dict) and isinstance(lane.get("transport"), dict)
+    ]
     max_reasons = Counter(
         lane.get("max_reason")
         for lane in lanes
-        if isinstance(lane, dict) and lane.get("role") == "luna_max_fast" and isinstance(lane.get("max_reason"), str)
+        if isinstance(lane, dict) and lane.get("role") in MAX_ROLE_NAMES and isinstance(lane.get("max_reason"), str)
     )
     open_risks = [
         {"code": risk.get("code"), "severity": risk.get("severity")}
@@ -615,10 +699,17 @@ def _quality(receipt: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         "lane_count": len(lanes),
         "retry_count": sum(int(lane.get("retries", 0)) for lane in lanes if isinstance(lane, dict)),
         "escalation_count": sum(int(isinstance(lane.get("escalation"), dict) and lane["escalation"].get("target") is not None) for lane in lanes if isinstance(lane, dict)),
-        "max_count": sum(int(isinstance(lane, dict) and lane.get("role") == "luna_max_fast") for lane in lanes),
+        "max_count": sum(int(isinstance(lane, dict) and lane.get("role") in MAX_ROLE_NAMES) for lane in lanes),
         "max_reason_counts": dict(sorted(max_reasons.items())),
         "useful_count": useful,
         "spawn_precision": useful / len(lanes) if lanes else None,
+        "transport_observed_count": len(transports),
+        "native_transport_failure_count": sum(int(isinstance(item.get("native_failure"), str)) for item in transports),
+        "app_task_fallback_count": sum(int(item.get("used") == "codex_app_task") for item in transports),
+        "app_task_fallback_completed_count": sum(int(item.get("used") == "codex_app_task" and item.get("fallback_outcome") == "completed") for item in transports),
+        "app_task_fallback_failed_count": sum(int(item.get("used") == "codex_app_task" and item.get("fallback_outcome") in {"failed", "blocked"}) for item in transports),
+        "app_task_fallback_unavailable_count": sum(int(item.get("fallback_outcome") == "unavailable") for item in transports),
+        "sol_after_transport_failure_count": sum(int(item.get("used") == "sol" and isinstance(item.get("native_failure"), str)) for item in transports),
         "rework_count": receipt.get("rework_count"),
         "check_pass_count": sum(int(isinstance(check, dict) and check.get("result") == "pass") for check in checks),
         "check_fail_count": sum(int(isinstance(check, dict) and check.get("result") == "fail") for check in checks),
@@ -705,6 +796,8 @@ def _report(args: argparse.Namespace) -> Dict[str, Any]:
     session_root = Path(args.session_root).expanduser() if args.session_root else Path.home() / ".codex" / "sessions"
     receipts = _valid_receipts(receipts_dir)
     latest = receipts[-1] if receipts else None
+    profile_root = Path(args.active_root).expanduser() if args.active_root else Path.home() / ".codex"
+    luna_tier, luna_tier_provenance = _select_luna_profile(args.luna_tier, profile_root, latest)
     receipt_summary = _empty_receipt_summary()
     if _safe_path(receipts_dir, directory=True):
         try:
@@ -775,6 +868,8 @@ def _report(args: argparse.Namespace) -> Dict[str, Any]:
             receipt_summary["receipt_coverage_reason"] = "pilot_status_unavailable"
 
     selected, probe, warnings = _scan_sessions(session_root)
+    if luna_tier_provenance == "compatibility-default":
+        warnings.append("luna_profile_defaulted_fast")
     if pilot_warning:
         warnings.append(pilot_warning)
     if receipt_summary.get("invalid_receipts"):
@@ -813,16 +908,23 @@ def _report(args: argparse.Namespace) -> Dict[str, Any]:
                     and root_label.get("service_tier") == expected_root_tier
                 )
                 lanes = latest.get("delegated_lanes", [])
-                expected_children = Counter(
-                    (lane.get("role"), "gpt-5.6-luna", lane.get("reasoning"), "fast")
-                    for lane in lanes
+                native_lanes = [
+                    lane for lane in lanes
                     if isinstance(lane, dict)
+                    and (
+                        not isinstance(lane.get("transport"), dict)
+                        or lane["transport"].get("used") == "native_luna_subagent"
+                    )
+                ]
+                expected_children = Counter(
+                    (lane.get("role"), "gpt-5.6-luna", lane.get("reasoning"), lane.get("tier"))
+                    for lane in native_lanes
                 )
                 actual_children = Counter(
                     (label.get("role"), label.get("model"), label.get("reasoning"), label.get("service_tier"))
                     for label in labels[1:]
                 )
-                if not root_ok or len(children) != len(lanes) or actual_children != expected_children:
+                if not root_ok or len(children) != len(native_lanes) or actual_children != expected_children:
                     selected = []
                     _mark_probe_failed(probe, "runtime_or_lane_mismatch")
                 else:
@@ -851,7 +953,7 @@ def _report(args: argparse.Namespace) -> Dict[str, Any]:
     if active_path is not None and config_path is None:
         active_path = None
         warnings.append("active_runtime_not_checked")
-    drift, drift_warnings = _drift(root, active_path, config_path, args.luna_tier)
+    drift, drift_warnings = _drift(root, active_path, config_path, luna_tier)
     warnings.extend(drift_warnings)
 
     usage: Dict[str, Any] = {
@@ -990,6 +1092,7 @@ def _report(args: argparse.Namespace) -> Dict[str, Any]:
     return {
         "schema_version": 1,
         "mode": "session+receipts" if usage["status"] == "estimated" else "receipt-only",
+        "luna_profile": {"tier": luna_tier, "provenance": luna_tier_provenance},
         "milestone": {
             "id": latest.get("milestone_id") if latest_is_current else (pilot_summary.get("plan_id") if pilot_summary else (latest.get("milestone_id") if latest else None)),
             "state": latest.get("disposition") if latest_is_current else (pilot_summary.get("state") if pilot_summary else (latest.get("disposition") if latest else "unknown")),
@@ -1027,7 +1130,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--root"); p.add_argument("--receipts-dir"); p.add_argument("--session-root"); p.add_argument("--active-root"); p.add_argument("--active-config")
     p.add_argument("--plan"); p.add_argument("--starts-dir"); p.add_argument("--pilot-home"); p.add_argument("--as-of")
     p.add_argument("--allow-retired-m4-audit", action="store_true")
-    p.add_argument("--luna-tier", choices=("fast", "standard"), default="fast")
+    p.add_argument("--luna-tier", choices=("fast", "standard"))
     p.add_argument("--budget", type=float); p.add_argument("--format", choices=("markdown", "json"), default="markdown")
     return p
 
@@ -1058,6 +1161,7 @@ def _markdown(report: Dict[str, Any]) -> str:
         "# Sol/Luna status",
         "",
         f"- Mode: {_display(report['mode'])}",
+        f"- Luna profile: {_display(report.get('luna_profile', {}).get('tier'))} ({_display(report.get('luna_profile', {}).get('provenance'))})",
         "",
         "## Milestone",
         "",
@@ -1114,6 +1218,7 @@ def _markdown(report: Dict[str, Any]) -> str:
         "",
         f"- Lanes/useful/spawn precision: {_display(quality.get('lane_count'))} / {_display(quality.get('useful_count'))} / {_display(quality.get('spawn_precision'))}",
         f"- Retries/escalations/Max/rework: {_display(quality.get('retry_count'))} / {_display(quality.get('escalation_count'))} / {_display(quality.get('max_count'))} / {_display(quality.get('rework_count'))}",
+        f"- Native transport failures/app-task fallbacks/completed/unavailable/Sol: {_display(quality.get('native_transport_failure_count'))} / {_display(quality.get('app_task_fallback_count'))} / {_display(quality.get('app_task_fallback_completed_count'))} / {_display(quality.get('app_task_fallback_unavailable_count'))} / {_display(quality.get('sol_after_transport_failure_count'))}",
         f"- Checks pass/fail/unknown: {_display(quality.get('check_pass_count'))} / {_display(quality.get('check_fail_count'))} / {_display(quality.get('check_unknown_count'))}",
         f"- Open risks/conflicts/suspected over-reasoning: {_display(quality.get('open_risk_count'))} / unknown / unknown",
         "",
@@ -1148,6 +1253,7 @@ def _failure_report() -> Dict[str, Any]:
     return {
         "schema_version": 1,
         "mode": "receipt-only",
+        "luna_profile": {"tier": None, "provenance": "unknown"},
         "milestone": {"id": None, "state": "unknown", "scope": "unregistered"},
         "receipts": _empty_receipt_summary(),
         "pilot": {"ok": False, "schema_version": 1, "plan_id": None, "state": "blocked", "registered_count": None, "terminal_count": None, "pending_count": None, "overdue_count": None, "receipt_coverage": "unknown", "receipt_coverage_reason": "status_report_failed", "receipt_coverage_fraction": None, "next_slot": None, "next_slot_eligible": False, "latest_terminal_closed_at": None, "kill_criteria_triggered": [], "comparison": {"status": "unknown", "automatic_promotion": False, "promotion_status": "blocked-or-unknown"}, "environment": None, "errors": ["status_report_failed"]},

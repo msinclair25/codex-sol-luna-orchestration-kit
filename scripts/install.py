@@ -49,7 +49,7 @@ USAGE_ASSET_MANIFEST = "config/install-assets.v1.json"
 MAX_ASSET_MANIFEST_BYTES = 16 * 1024
 INSTALL_STATE_NAME = ".sol-luna-install-state.json"
 INSTALL_STATE_SCHEMA = 1
-KIT_VERSION = "0.2.1"
+KIT_VERSION = "0.3.0"
 MAX_INSTALL_STATE_BYTES = 32 * 1024
 OWNED = {
     "model": '"gpt-5.6-sol"',
@@ -104,7 +104,8 @@ def _load_install_state(path: Path, *, required: bool) -> Optional[Dict[str, Any
     roles = value.get("roles")
     usage = value.get("usage_assets")
     if (
-        value.get("schema_version") != INSTALL_STATE_SCHEMA
+        isinstance(value.get("schema_version"), bool)
+        or value.get("schema_version") != INSTALL_STATE_SCHEMA
         or not isinstance(value.get("kit_version"), str)
         or re.fullmatch(r"[0-9A-Za-z.+-]{1,32}", value["kit_version"]) is None
         or value.get("active_luna_tier") not in LUNA_TIERS
@@ -513,6 +514,7 @@ def _usage_plan(
     if (
         not isinstance(manifest, dict)
         or set(manifest) != {"schema_version", "assets"}
+        or isinstance(manifest.get("schema_version"), bool)
         or manifest.get("schema_version") != 1
         or not isinstance(manifest.get("assets"), dict)
         or set(manifest["assets"]) != set(expected_paths.values())
@@ -611,6 +613,16 @@ def _receipt_target(target: Path, codex_home: Path, home: Path) -> str:
         except ValueError:
             continue
     return "other/" + hashlib.sha256(str(target).encode("utf-8")).hexdigest()
+
+
+def _matches_installer_write(path: Path, data: bytes) -> bool:
+    """Return whether a target is still the regular file written by us."""
+    try:
+        if path.is_symlink() or not path.is_file():
+            return False
+        return path.read_bytes() == data
+    except OSError:
+        return False
 
 
 def install(
@@ -753,6 +765,7 @@ def install(
         plan["receipt"] = None
         return plan
     originals: Dict[Path, Optional[bytes]] = {}
+    written: Dict[Path, bytes] = {}
     new_dirs: set[Path] = set()
     for target in writes:
         parent = target.parent
@@ -770,6 +783,7 @@ def install(
                 backup = _backup_destination(backup_root, path, codex_home, home)
                 _atomic_write(backup, originals[path] or b"")
             _atomic_write(path, data)
+            written[path] = data
         verification = routing_policy.verify_active_root(codex_home, repo, config_target, luna_tier)
         plan["verification"] = _verification_receipt(verification)
         if not verification.get("ok"):
@@ -793,7 +807,11 @@ def install(
         rollback_failures = 0
         for path, original in originals.items():
             try:
-                if original is None and path.exists():
+                if path not in written:
+                    continue
+                if not _matches_installer_write(path, written[path]):
+                    rollback_failures += 1
+                elif original is None:
                     path.unlink()
                 elif original is not None:
                     _atomic_write(path, original)

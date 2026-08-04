@@ -14,7 +14,7 @@ them.
 1. Resolve this `SKILL.md` to an absolute path.
 2. Walk upward through at most four parent directories and select the nearest
    directory containing `scripts/install.py`, `scripts/routing_policy.py`,
-   `agents/`, and `config/routing-policy.v1.1.json`.
+   `agents/`, and `config/routing-policy.v1.2.json`.
 3. Treat that directory as `KIT_ROOT`. Stop if no such directory exists. Do
    not download a replacement or use a different checkout silently.
 4. When the root contains `.codex-plugin/plugin.json`, treat the bundled
@@ -147,3 +147,8 @@ Report:
 
 Keep the final response concise. Lead with the outcome, not the internal
 command sequence.
+
+Installing or updating never grants standing permission to create Codex app
+tasks. The orchestration skill requests lane-scoped authorization only after
+an eligible native Luna transport failure, unless the user explicitly included
+that authorization in the current task.

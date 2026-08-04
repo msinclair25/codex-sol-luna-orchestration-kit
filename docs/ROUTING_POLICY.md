@@ -1,14 +1,15 @@
 # Dynamic routing policy
 
-`config/routing-policy.v1.1.json` is the Fast contract and
-`config/routing-policy.standard.v1.1.json` is the Standard contract for the
+`config/routing-policy.v1.2.json` is the Fast contract and
+`config/routing-policy.standard.v1.2.json` is the Standard contract for the
 Sol-root and Luna-role runtime policy. They are descriptive and advisory: they
 do not spawn agents, change Codex configuration, or replace Sol's judgment.
 The verifier requires Python 3.11 or newer for stdlib `tomllib`; older
 versions fail closed with a diagnostic instead of guessing at TOML semantics.
 The earlier `routing-policy.v1.json` and `AGENTS.md` remain unchanged as frozen
-V0.2.1 M4 inputs; `AGENTS.override.md` is the V0.2.2 policy source installed by
-the guided installer.
+V0.2.1 M4 inputs; the v1.1 contracts preserve the V0.2.2 direct-Sol fallback,
+while `AGENTS.override.md` and v1.2 define the V0.3.0 policy installed by the
+guided setup skill.
 
 ## Runtime contract
 
@@ -45,11 +46,33 @@ ownership, constraints, acceptance checks, evidence contract, risk boundary,
 and deadline. Work that cannot meet that boundary stays with Sol.
 
 Luna children return only to Sol and do not coordinate proactively with other
-children. Sol serializes dependencies. A rejected or unavailable Luna spawn is
-not retried or silently substituted: the evaluator's operational contract is
-direct Sol fallback. The routing result exposes the exact transport object so
-callers do not have to infer these settings. The evaluator requires callers to
-provide `fork_turns` explicitly and fails closed when it is missing.
+children. Sol serializes dependencies. A denied admission is terminal and
+routes directly to Sol; no other task may bypass SPLIT, ownership, guard, or
+runtime-policy rejection. The routing result exposes the exact native
+transport object so callers do not have to infer these settings. The evaluator
+requires callers to provide `fork_turns` explicitly and fails closed when it
+is missing.
+
+After admission, four pre-start native failures are eligible for a separate
+decision: custom role rejected or unavailable, native spawn tool unavailable,
+or native spawn transport error. The user must explicitly authorize one
+visible Codex app task for the named lane in the current checkout. The
+fallback evaluator revalidates the original route, requires that exact
+authorization, canonicalizes the current-checkout and selected-project roots,
+requires them to be the same existing directory, permits one attempt, and
+consumes it. The app task receives the
+same self-contained capsule and ownership, runs serialized from other app-task
+fallbacks, and is independently checked by Sol. No model, reasoning, or tier
+override is inferred; this is prompt-capsule fidelity, not a claim that the
+custom Luna role ran. The task-creation layer must match the saved project and
+canonical checkout root immediately before creation; a mismatch is an
+unavailable attempt and must not create a task. If authorization is missing,
+the app capability is unavailable, creation fails, or the attempt was already
+used, work continues directly with Sol. Once authorized, capability discovery,
+project matching, creation, waiting, or evidence failure consumes the one
+attempt.
+Timeouts, cancellations, child failures, evidence failures, pilots, and
+benchmarks never enter this fallback path.
 
 The evaluator does not parse or grade free-form task prose, so it cannot prove
 that an assignment is truly self-contained. That part remains an instruction-
@@ -198,6 +221,13 @@ must not exceed three; `wave_count` is not capped by this policy. A lane's
 evidence packet is valid only when it contains exactly `scope`,
 `files_or_surfaces`, `commands_or_checks`, `assumptions`, `failures`, `risks`,
 `confidence`, and `recommendation`.
+
+The post-admission `fallback` command accepts the original routing request,
+the closed native failure code, the exact lane-scoped authorization object,
+app-task capability, and attempts used. It returns either
+`create_codex_app_task` or direct Sol. This command is an internal skill
+guardrail; end users authorize the visible task conversationally and do not
+run Python or provide JSON.
 
 The SHA-256 values are local audit and drift signals anchored by Git history
 and human review, not cryptographic authenticity. A coordinated edit to the

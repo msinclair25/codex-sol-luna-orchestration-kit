@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "version": "routing-policy.v1.2",
+  "root": {
+    "model": "gpt-5.6-sol",
+    "reasoning": "user-selected",
+    "service_tier": "standard",
+    "service_tier_configured": false
+  },
+  "runtime": {
+    "agents_path": "profiles/standard/AGENTS.override.md",
+    "agents_sha256": "92cc528eadc03028d2d389817e78bb1980fb6b07ffba4d960f34eb5bd06614d8",
+    "config_snippet_path": "profiles/standard/config-snippet.toml",
+    "config_snippet_sha256": "f8174c61565ad47ededa3fefc4dd99be38a8836f3666045072e21766d6443bd7"
+  },
+  "roles": {
+    "luna_critic_standard": {
+      "path": "agents/luna_critic_standard.toml",
+      "model": "gpt-5.6-luna",
+      "reasoning": "high",
+      "service_tier": "standard",
+      "sandbox_mode": "read-only",
+      "sha256": "f6cd27f247cdcd9d63d65c3b565b94f894dc28016d3526f1f748e62a60cf61eb"
+    },
+    "luna_max_standard": {
+      "path": "agents/luna_max_standard.toml",
+      "model": "gpt-5.6-luna",
+      "reasoning": "max",
+      "service_tier": "standard",
+      "sandbox_mode": "read-only",
+      "sha256": "702d0c23cab6fde366eab2036e332751f84940b408b423b1d0934b43922b00dd"
+    },
+    "luna_scout_standard": {
+      "path": "agents/luna_scout_standard.toml",
+      "model": "gpt-5.6-luna",
+      "reasoning": "medium",
+      "service_tier": "standard",
+      "sandbox_mode": "read-only",
+      "sha256": "6b3ccec70a9cbc934b93e10ac2836887b1ddfc9cacecd398678a11d173c3207b"
+    },
+    "luna_tester_standard": {
+      "path": "agents/luna_tester_standard.toml",
+      "model": "gpt-5.6-luna",
+      "reasoning": "medium",
+      "service_tier": "standard",
+      "sandbox_mode": "workspace-write",
+      "sha256": "6fc122b481e1f0c4c8746094c3ef81f849e03c725417821a188f2bb7baf38474"
+    },
+    "luna_worker_standard": {
+      "path": "agents/luna_worker_standard.toml",
+      "model": "gpt-5.6-luna",
+      "reasoning": "high",
+      "service_tier": "standard",
+      "sandbox_mode": "workspace-write",
+      "sha256": "0bccea86d1401fcbcd8b986df938558de603999d1db59da1fa7b260680a682a6"
+    }
+  },
+  "transport": {
+    "fork_turns": "none",
+    "history_inherited": false,
+    "assignment": "self-contained",
+    "nested_delegation": false,
+    "on_spawn_error": "evaluate_transport_failure",
+    "retry_spawn": false
+  },
+  "transport_failure_fallback": {
+    "target": "codex_app_task",
+    "requires_explicit_user_authorization": true,
+    "authorization_scope": "this_lane_once",
+    "max_attempts_per_lane": 1,
+    "current_checkout_only": true,
+    "requires_canonical_project_root_match": true,
+    "user_visible": true,
+    "recursive": false,
+    "on_unavailable": "sol",
+    "on_ineligible": "sol",
+    "eligible_failure_codes": [
+      "custom_role_rejected",
+      "custom_role_unavailable",
+      "native_spawn_tool_unavailable",
+      "native_spawn_transport_error"
+    ]
+  },
+  "split": {
+    "checks": [
+      {"name": "Separate", "field": "separate", "required": true},
+      {"name": "Provable", "field": "provable", "required": true},
+      {"name": "Large enough", "field": "large_enough", "required": true},
+      {"name": "Isolated", "field": "isolated", "required": true},
+      {"name": "Tier-appropriate", "field": "tier_appropriate", "required": true}
+    ],
+    "all_required": true,
+    "on_failure": "sol"
+  },
+  "concurrency": {
+    "max_concurrent_threads_per_session": 3,
+    "max_concurrent_delegated_lanes": 3,
+    "processing": "waves",
+    "dependent_work": "serialized"
+  },
+  "max_upgrade_reason_codes": [
+    "genuine_ambiguity",
+    "cross_cutting_risk",
+    "failed_high_attempt",
+    "high_impact_adversarial_review"
+  ],
+  "evidence": {
+    "required_fields": [
+      "scope",
+      "files_or_surfaces",
+      "commands_or_checks",
+      "assumptions",
+      "failures",
+      "risks",
+      "confidence",
+      "recommendation"
+    ],
+    "on_missing": "sol"
+  },
+  "sol_fallback": {
+    "route": "sol",
+    "role": "sol",
+    "model": "gpt-5.6-sol",
+    "reasoning": "user-selected",
+    "service_tier": "standard",
+    "service_tier_configured": false,
+    "on_error": "direct"
+  }
+}

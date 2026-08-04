@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Verify and evaluate the versioned Sol/Luna routing policy.
 
-This module is deliberately advisory.  It validates a checked-in contract and
-evaluates bounded JSON requests, but it never launches agents or edits a
-worktree.  Invalid input, unsupported combinations, ownership conflicts, and
-runtime drift fail closed to direct Sol work.
+This module is deliberately advisory.  It validates a checked-in contract,
+evaluates bounded JSON routing requests, and evaluates one post-admission
+transport fallback.  It never launches agents, creates Codex app tasks, or
+edits a worktree.  Invalid input, unsupported combinations, ownership
+conflicts, runtime drift, and ineligible fallback events fail closed to direct
+Sol work.
 """
 
 from __future__ import annotations
@@ -25,9 +27,9 @@ except ImportError:  # pragma: no cover - supported Python versions include it.
 
 
 SCHEMA_VERSION = 1
-POLICY_VERSION = "routing-policy.v1.1"
+POLICY_VERSION = "routing-policy.v1.2"
 DEFAULT_ROOT = Path(__file__).resolve().parents[1]
-POLICY_RELATIVE = "config/routing-policy.v1.1.json"
+POLICY_RELATIVE = "config/routing-policy.v1.2.json"
 POLICY_AGENTS_RELATIVE = "AGENTS.override.md"
 AGENTS_RELATIVE = "AGENTS.md"
 MANAGED_AGENTS_START = "# >>> sol-luna-orchestration-kit managed block >>>\n"
@@ -47,8 +49,38 @@ LUNA_TRANSPORT = {
     "history_inherited": False,
     "assignment": "self-contained",
     "nested_delegation": False,
-    "on_spawn_error": "sol",
+    "on_spawn_error": "evaluate_transport_failure",
     "retry_spawn": False,
+}
+ELIGIBLE_NATIVE_FAILURE_CODES = (
+    "custom_role_rejected",
+    "custom_role_unavailable",
+    "native_spawn_tool_unavailable",
+    "native_spawn_transport_error",
+)
+APP_TASK_FALLBACK = {
+    "target": "codex_app_task",
+    "requires_explicit_user_authorization": True,
+    "authorization_scope": "this_lane_once",
+    "max_attempts_per_lane": 1,
+    "current_checkout_only": True,
+    "requires_canonical_project_root_match": True,
+    "user_visible": True,
+    "recursive": False,
+    "on_unavailable": "sol",
+    "on_ineligible": "sol",
+    "eligible_failure_codes": list(ELIGIBLE_NATIVE_FAILURE_CODES),
+}
+APP_TASK_TRANSPORT = {
+    "surface": "codex_app",
+    "kind": "task",
+    "environment": "local_current_checkout",
+    "history_inherited": False,
+    "assignment": "same_self_contained_capsule",
+    "user_visible": True,
+    "max_attempts": 1,
+    "recursive_fallback": False,
+    "on_create_error": "sol",
 }
 MAX_UPGRADE_REASON_CODES = (
     "genuine_ambiguity",
@@ -202,6 +234,26 @@ REQUEST_FIELDS = {
     "fork_turns",
     "evidence",
 }
+FALLBACK_EVENT_FIELDS = {
+    "routing_request",
+    "fallback_authorization",
+    "failure_code",
+    "attempts_used",
+    "app_task_available",
+    "project_context",
+}
+FALLBACK_AUTHORIZATION_FIELDS = {
+    "authorized",
+    "target",
+    "scope",
+    "lane_id",
+    "max_attempts",
+    "current_checkout",
+}
+PROJECT_CONTEXT_FIELDS = {
+    "current_checkout_root",
+    "app_project_root",
+}
 
 STANDARD_ROLE_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     kind: {
@@ -221,7 +273,7 @@ PROFILE_SPECS: Dict[str, Dict[str, Any]] = {
         "roles": ROLE_DEFINITIONS,
     },
     "standard": {
-        "policy_relative": "config/routing-policy.standard.v1.1.json",
+        "policy_relative": "config/routing-policy.standard.v1.2.json",
         "agents_relative": "profiles/standard/AGENTS.override.md",
         "snippet_relative": "profiles/standard/config-snippet.toml",
         "roles": STANDARD_ROLE_DEFINITIONS,
@@ -498,6 +550,7 @@ def _contract_shape(contract: Any, spec: Mapping[str, Any]) -> List[str]:
         "runtime",
         "roles",
         "transport",
+        "transport_failure_fallback",
         "split",
         "concurrency",
         "max_upgrade_reason_codes",
@@ -561,6 +614,9 @@ def _contract_shape(contract: Any, spec: Mapping[str, Any]) -> List[str]:
     transport = contract.get("transport")
     if not isinstance(transport, dict) or transport != LUNA_TRANSPORT:
         errors.append("transport_contract")
+    transport_fallback = contract.get("transport_failure_fallback")
+    if not isinstance(transport_fallback, dict) or transport_fallback != APP_TASK_FALLBACK:
+        errors.append("transport_fallback_contract")
 
     split = contract.get("split")
     expected_checks = [
@@ -1111,26 +1167,196 @@ def evaluate(request: Any, root: Path | str = DEFAULT_ROOT) -> Dict[str, Any]:
     }
 
 
+def _transport_direct(
+    reason_code: str,
+    *,
+    stage: str = "post_admission_transport",
+    failure_code: Optional[str] = None,
+    attempts_used: int = 0,
+    fallback: bool = True,
+    authorization_consumed: bool = False,
+    admission_reason_codes: Iterable[str] = (),
+    errors: Iterable[str] = (),
+) -> Dict[str, Any]:
+    """Return a privacy-safe direct-Sol decision for a fallback event."""
+
+    result = _sol_fallback([reason_code], errors=errors)
+    result.update({
+        "fallback": fallback,
+        "fallback_stage": stage,
+        "native_failure_code": failure_code,
+        "app_task_attempts_used": attempts_used,
+        "authorization_consumed": authorization_consumed,
+        "admission_reason_codes": sorted({code for code in admission_reason_codes if isinstance(code, str)}),
+    })
+    return result
+
+
+def _project_roots_match(value: Any) -> bool:
+    """Return true only for the same two existing canonical directories."""
+
+    if not isinstance(value, dict) or set(value) != PROJECT_CONTEXT_FIELDS:
+        return False
+    resolved = []
+    for field in ("current_checkout_root", "app_project_root"):
+        raw = value.get(field)
+        if not isinstance(raw, str) or not raw or len(raw) > 4096 or "\x00" in raw:
+            return False
+        path = Path(raw)
+        if not path.is_absolute():
+            return False
+        try:
+            canonical = path.resolve(strict=True)
+        except (OSError, RuntimeError):
+            return False
+        if not canonical.is_dir():
+            return False
+        resolved.append(canonical)
+    return resolved[0] == resolved[1]
+
+
+def evaluate_transport_failure(event: Any, root: Path | str = DEFAULT_ROOT) -> Dict[str, Any]:
+    """Evaluate one post-admission native Luna transport failure.
+
+    This does not create a task.  It only authorizes exactly one user-visible
+    Codex app task when the original route still passes, the failure belongs to
+    the closed native-transport enum, and the user explicitly authorized this
+    lane and current checkout.  Every other condition routes directly to Sol.
+    """
+
+    if not isinstance(event, dict) or set(event) != FALLBACK_EVENT_FIELDS:
+        return _transport_direct(
+            "malformed_fallback_event",
+            stage="fallback_validation",
+            fallback=False,
+        )
+    failure_code = event.get("failure_code")
+    attempts_used = event.get("attempts_used")
+    if isinstance(attempts_used, bool) or not isinstance(attempts_used, int) or attempts_used not in (0, 1):
+        return _transport_direct(
+            "malformed_fallback_event",
+            stage="fallback_validation",
+            fallback=False,
+        )
+    app_task_available = event.get("app_task_available")
+    if not isinstance(failure_code, str) or not isinstance(app_task_available, bool):
+        return _transport_direct(
+            "malformed_fallback_event",
+            stage="fallback_validation",
+            fallback=False,
+        )
+
+    admission = evaluate(event.get("routing_request"), root)
+    if admission.get("ok") is not True or admission.get("decision") != "delegate":
+        return _transport_direct(
+            "admission_not_approved",
+            stage="pre_admission",
+            fallback=False,
+            admission_reason_codes=admission.get("reason_codes", []),
+            errors=admission.get("errors", []),
+        )
+    if failure_code not in ELIGIBLE_NATIVE_FAILURE_CODES:
+        return _transport_direct(
+            "ineligible_transport_failure",
+            stage="post_admission_ineligible",
+            attempts_used=attempts_used,
+            fallback=False,
+        )
+
+    authorization = event.get("fallback_authorization")
+    if not isinstance(authorization, dict) or set(authorization) != FALLBACK_AUTHORIZATION_FIELDS:
+        return _transport_direct(
+            "fallback_not_authorized",
+            failure_code=failure_code,
+            attempts_used=attempts_used,
+        )
+    lane_id = authorization.get("lane_id")
+    max_attempts = authorization.get("max_attempts")
+    ownership = event["routing_request"].get("ownership")
+    if (
+        authorization.get("authorized") is not True
+        or authorization.get("target") != APP_TASK_FALLBACK["target"]
+        or authorization.get("scope") != APP_TASK_FALLBACK["authorization_scope"]
+        or isinstance(max_attempts, bool)
+        or max_attempts != APP_TASK_FALLBACK["max_attempts_per_lane"]
+        or authorization.get("current_checkout") is not True
+        or _safe_id(lane_id) is None
+        or not isinstance(ownership, dict)
+        or lane_id not in ownership
+    ):
+        return _transport_direct(
+            "fallback_not_authorized",
+            failure_code=failure_code,
+            attempts_used=attempts_used,
+        )
+    if attempts_used != 0:
+        return _transport_direct(
+            "fallback_attempt_exhausted",
+            failure_code=failure_code,
+            attempts_used=attempts_used,
+            authorization_consumed=True,
+        )
+    if not app_task_available:
+        return _transport_direct(
+            "app_task_unavailable",
+            failure_code=failure_code,
+            attempts_used=1,
+            authorization_consumed=True,
+        )
+    if not _project_roots_match(event.get("project_context")):
+        return _transport_direct(
+            "app_project_mismatch",
+            failure_code=failure_code,
+            attempts_used=1,
+            authorization_consumed=True,
+        )
+
+    return {
+        "ok": True,
+        "decision": "create_codex_app_task",
+        "route": "codex_app_task",
+        "role": "codex_app_task",
+        "requested_role": admission["role"],
+        "requested_profile": admission["profile"],
+        "model_override": None,
+        "reasoning_override": None,
+        "service_tier_override": None,
+        "custom_role_fidelity": "prompt_capsule_only",
+        "transport": dict(APP_TASK_TRANSPORT),
+        "fallback": True,
+        "fallback_stage": "post_admission_transport",
+        "native_failure_code": failure_code,
+        "authorization_consumed": True,
+        "app_task_attempt_number": 1,
+        "app_task_attempts_remaining": 0,
+        "project_root_verified": True,
+        "lane_id": lane_id,
+        "reason_codes": [failure_code],
+        "errors": [],
+        "policy_version": POLICY_VERSION,
+    }
+
+
 def _json_output(value: Mapping[str, Any]) -> str:
     return json.dumps(value, indent=2, sort_keys=True, separators=(",", ": "))
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Verify and evaluate the Sol/Luna routing policy.")
-    parser.add_argument("command", nargs="?", choices=("verify", "route", "active-root"), help="operation (defaults to verify)")
+    parser.add_argument("command", nargs="?", choices=("verify", "route", "fallback", "active-root"), help="operation (defaults to verify)")
     parser.add_argument("--verify", action="store_true", help="run static contract verification")
     parser.add_argument("--root", default=str(DEFAULT_ROOT), help="repository root containing the policy")
     parser.add_argument("--profile", choices=tuple(PROFILE_SPECS), default="fast", help="Luna service-tier profile")
     parser.add_argument("--active-root", help="installed root to compare in active-root mode")
     parser.add_argument("--active-config", help="optional installed config.toml to check without reporting its contents")
     parser.add_argument("--format", choices=("json", "pretty"), default="pretty")
-    parser.add_argument("--request", help="bounded JSON request for route mode (or '-' for stdin)")
+    parser.add_argument("--request", help="bounded JSON request for route or fallback mode (or '-' for stdin)")
     return parser
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = _build_parser().parse_args(argv)
-    command = "route" if args.request is not None or args.command == "route" else (args.command or "verify")
+    command = args.command or ("route" if args.request is not None else "verify")
     if args.verify:
         command = "verify"
     if command == "verify":
@@ -1153,12 +1379,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         raw = sys.stdin.read(MAX_ROUTE_INPUT_BYTES + 1) if args.request == "-" else args.request
         request = parse_route_input(raw) if isinstance(raw, str) else None
-        if isinstance(request, dict) and "profile" not in request:
+        if command == "route" and isinstance(request, dict) and "profile" not in request:
             request = dict(request)
             request["profile"] = args.profile
-        result = evaluate(request, args.root)
+        result = evaluate_transport_failure(request, args.root) if command == "fallback" else evaluate(request, args.root)
     except (TypeError, ValueError, UnicodeError, MemoryError, OverflowError, RecursionError):
-        result = _sol_fallback(["malformed_route_input"])
+        result = (
+            _transport_direct("malformed_fallback_event")
+            if command == "fallback"
+            else _sol_fallback(["malformed_route_input"])
+        )
     print(_json_output(result) if args.format == "json" else _json_output(result))
     return 0 if result["ok"] else 1
 

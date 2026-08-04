@@ -34,7 +34,7 @@ STATUS = _load_status_module()
 
 
 class SolLunaStatusTests(unittest.TestCase):
-    def _payload(self, task_id="root-id-secret"):
+    def _payload(self, task_id="root-id-secret", profile="fast"):
         value = json.loads((FIXTURES / "receipt_accepted.json").read_text())
         value["codex_task_id"] = task_id
         value["started_at"] = "2026-08-01T10:00:00Z"
@@ -57,27 +57,45 @@ class SolLunaStatusTests(unittest.TestCase):
             "outcome": "completed",
             "useful": True,
         }]
+        if profile == "standard":
+            value["repository"]["hashes"]["roles"] = {
+                role.replace("_fast", "_standard"): digest
+                for role, digest in value["repository"]["hashes"]["roles"].items()
+            }
+            lane = value["delegated_lanes"][0]
+            lane["role"] = "luna_max_standard"
+            lane["tier"] = "standard"
+            lane["escalation"]["target"] = "luna_max_standard"
         return value
 
-    def _workspace(self, *, task_id="root-id-secret", child_records=None, root_records=None, unrelated=False):
+    def _workspace(self, *, task_id="root-id-secret", child_records=None, root_records=None, unrelated=False, profile="fast", payload=None, include_child=True):
         temporary = tempfile.TemporaryDirectory()
         base = Path(temporary.name)
         receipts = base / "receipts"
         sessions = base / "sessions"
         sessions.mkdir()
-        close_receipt(self._payload(task_id), receipts)
+        close_receipt(payload or self._payload(task_id, profile), receipts)
         if root_records is None:
             root_records = [json.loads(line) for line in (FIXTURES / "root.jsonl").read_text().splitlines()]
-        if child_records is None:
+        if child_records is None and include_child:
             child_records = [json.loads(line) for line in (FIXTURES / "luna_child.jsonl").read_text().splitlines()]
+        if child_records is None:
+            child_records = []
         root_records = copy.deepcopy(root_records)
         child_records = copy.deepcopy(child_records)
+        if profile == "standard" and child_records:
+            child_records[0]["payload"]["agent_role"] = "luna_max_standard"
+            for item in child_records:
+                settings = item.get("payload", {}).get("thread_settings")
+                if isinstance(settings, dict) and settings.get("model") == "gpt-5.6-luna":
+                    settings["service_tier"] = "standard"
         for item in [*root_records, *child_records]:
             item.setdefault("schema_version", 1)
         root_text = "\n".join(json.dumps(item, separators=(",", ":")) for item in root_records) + "\n"
-        child_text = "\n".join(json.dumps(item, separators=(",", ":")) for item in child_records) + "\n"
         (sessions / "root.jsonl").write_text(root_text)
-        (sessions / "child.jsonl").write_text(child_text)
+        if child_records:
+            child_text = "\n".join(json.dumps(item, separators=(",", ":")) for item in child_records) + "\n"
+            (sessions / "child.jsonl").write_text(child_text)
         if unrelated:
             records = [json.loads(line) for line in (FIXTURES / "root.jsonl").read_text().splitlines()]
             for item in records:
@@ -146,6 +164,44 @@ class SolLunaStatusTests(unittest.TestCase):
         report, _ = self._json(base, receipts, sessions)
         self.assertEqual(report["mode"], "session+receipts")
         self.assertEqual(report["session_probe"]["child_count"], 1)
+
+    def test_standard_profile_receipt_session_and_usage_are_automatic(self):
+        temporary, base, receipts, sessions = self._workspace(profile="standard")
+        self.addCleanup(temporary.cleanup)
+        report, _ = self._json(base, receipts, sessions)
+        self.assertEqual(report["mode"], "session+receipts")
+        self.assertEqual(report["luna_profile"], {"tier": "standard", "provenance": "latest-receipt"})
+        self.assertEqual(report["session_probe"]["status"], "pass")
+        self.assertEqual(report["usage"]["observed_total_tokens"], 315)
+        self.assertEqual(report["usage"]["estimated_weighted_usage"], 315.0)
+        self.assertEqual(report["delegation_quality"]["max_count"], 1)
+        child_group = next(group for group in report["usage"]["groups"] if group["role"] == "luna_max_standard")
+        self.assertEqual(child_group["service_tier"], "standard")
+
+    def test_app_task_transport_is_counted_without_claiming_native_child(self):
+        payload = self._payload()
+        payload["delegated_lanes"][0]["transport"] = {
+            "requested": "native_luna_subagent",
+            "used": "codex_app_task",
+            "native_failure": "custom_role_rejected",
+            "fallback_authorized": True,
+            "fallback_attempts": 1,
+            "fallback_outcome": "completed",
+            "task_ref": "ct1-" + "c" * 64,
+        }
+        temporary, base, receipts, sessions = self._workspace(payload=payload, include_child=False)
+        self.addCleanup(temporary.cleanup)
+        report, rendered = self._json(base, receipts, sessions)
+        quality = report["delegation_quality"]
+        self.assertEqual(report["session_probe"]["status"], "pass")
+        self.assertEqual(report["session_probe"]["child_count"], 0)
+        self.assertEqual(quality["native_transport_failure_count"], 1)
+        self.assertEqual(quality["app_task_fallback_count"], 1)
+        self.assertEqual(quality["app_task_fallback_completed_count"], 1)
+        self.assertEqual(quality["app_task_fallback_failed_count"], 0)
+        self.assertEqual(quality["app_task_fallback_unavailable_count"], 0)
+        self.assertEqual(quality["sol_after_transport_failure_count"], 0)
+        self.assertNotIn(payload["delegated_lanes"][0]["transport"]["task_ref"], rendered)
 
     def test_capability_failures_fall_back_without_zero_usage(self):
         cases = {}
@@ -327,12 +383,30 @@ class SolLunaStatusTests(unittest.TestCase):
             base,
             receipts,
             sessions,
-            "--luna-tier", "standard",
             "--active-root", str(codex),
             "--active-config", str(codex / "config.toml"),
         )
         self.assertTrue(report["drift"]["routing_contract"])
         self.assertTrue(report["drift"]["active_runtime"])
+        self.assertEqual(report["luna_profile"], {"tier": "standard", "provenance": "install-state"})
+
+        state_path = codex / installer.INSTALL_STATE_NAME
+        malformed = json.loads(state_path.read_text())
+        malformed["schema_version"] = True
+        state_path.write_text(json.dumps(malformed))
+        self.assertIsNone(STATUS._install_state_tier(codex))
+        malformed["schema_version"] = 1
+        malformed["active_luna_tier"] = []
+        state_path.write_text(json.dumps(malformed))
+        fallback, _ = self._json(
+            base,
+            receipts,
+            sessions,
+            "--active-root", str(codex),
+            "--active-config", str(codex / "config.toml"),
+        )
+        self.assertEqual(fallback["luna_profile"], {"tier": "fast", "provenance": "latest-receipt"})
+        self.assertNotIn("status_report_failed", fallback["warnings"])
 
     def test_pilot_registry_drives_coverage_deadline_and_recommendation(self):
         temporary, base, receipts, sessions = self._workspace()

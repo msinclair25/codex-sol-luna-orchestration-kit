@@ -9,7 +9,9 @@ import unittest
 from pathlib import Path
 
 from scripts.routing_policy import (
+    APP_TASK_TRANSPORT,
     DEFAULT_ROOT,
+    ELIGIBLE_NATIVE_FAILURE_CODES,
     LUNA_TRANSPORT,
     MAX_UPGRADE_REASON_CODES,
     POLICY_AGENTS_RELATIVE,
@@ -18,6 +20,7 @@ from scripts.routing_policy import (
     STANDARD_ROLE_DEFINITIONS,
     detect_ownership_conflicts,
     evaluate,
+    evaluate_transport_failure,
     validate_evidence,
     verify_active_root,
     verify_contract,
@@ -94,7 +97,7 @@ class RoutingPolicyTests(unittest.TestCase):
             "history_inherited": False,
             "assignment": "self-contained",
             "nested_delegation": False,
-            "on_spawn_error": "sol",
+            "on_spawn_error": "evaluate_transport_failure",
             "retry_spawn": False,
         })
 
@@ -112,6 +115,129 @@ class RoutingPolicyTests(unittest.TestCase):
             self.assertFalse(result["ok"], history_fork)
             self.assertEqual(result["route"], "sol")
             self.assertIn("split_tier_appropriate", result["reason_codes"])
+
+    def _fallback_event(self, *, profile="fast"):
+        request = dict(self.cases["valid_delegation"])
+        request["profile"] = profile
+        lane_id = next(iter(request["ownership"]))
+        return {
+            "routing_request": request,
+            "fallback_authorization": {
+                "authorized": True,
+                "target": "codex_app_task",
+                "scope": "this_lane_once",
+                "lane_id": lane_id,
+                "max_attempts": 1,
+                "current_checkout": True,
+            },
+            "failure_code": "custom_role_rejected",
+            "attempts_used": 0,
+            "app_task_available": True,
+            "project_context": {
+                "current_checkout_root": str(ROOT),
+                "app_project_root": str(ROOT),
+            },
+        }
+
+    def test_eligible_native_failure_can_route_once_to_explicit_app_task(self):
+        for profile in ("fast", "standard"):
+            with self.subTest(profile=profile):
+                event = self._fallback_event(profile=profile)
+                result = evaluate_transport_failure(event, ROOT)
+                self.assertTrue(result["ok"], result)
+                self.assertEqual(result["decision"], "create_codex_app_task")
+                self.assertEqual(result["route"], "codex_app_task")
+                self.assertEqual(result["transport"], APP_TASK_TRANSPORT)
+                self.assertEqual(result["requested_profile"], profile)
+                self.assertEqual(result["model_override"], None)
+                self.assertTrue(result["authorization_consumed"])
+                self.assertEqual(result["app_task_attempt_number"], 1)
+                self.assertEqual(result["app_task_attempts_remaining"], 0)
+                self.assertTrue(result["project_root_verified"])
+                self.assertNotIn(str(ROOT), json.dumps(result))
+
+    def test_app_task_fallback_never_bypasses_admission_or_replays(self):
+        denied = self._fallback_event()
+        denied["routing_request"] = dict(denied["routing_request"])
+        denied["routing_request"]["provable"] = False
+        result = evaluate_transport_failure(denied, ROOT)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["route"], "sol")
+        self.assertFalse(result["fallback"])
+        self.assertEqual(result["fallback_stage"], "pre_admission")
+        self.assertIsNone(result["native_failure_code"])
+        self.assertEqual(result["app_task_attempts_used"], 0)
+        self.assertFalse(result["authorization_consumed"])
+        self.assertIn("admission_not_approved", result["reason_codes"])
+        self.assertIn("split_provable", result["admission_reason_codes"])
+
+        replay = self._fallback_event()
+        replay["attempts_used"] = 1
+        result = evaluate_transport_failure(replay, ROOT)
+        self.assertFalse(result["ok"])
+        self.assertIn("fallback_attempt_exhausted", result["reason_codes"])
+        self.assertEqual(result["fallback_stage"], "post_admission_transport")
+        self.assertEqual(result["app_task_attempts_used"], 1)
+        self.assertTrue(result["authorization_consumed"])
+
+    def test_app_task_fallback_requires_exact_authorization_and_capability(self):
+        cases = []
+        missing = self._fallback_event(); missing["fallback_authorization"] = None; cases.append(("fallback_not_authorized", missing))
+        wrong_lane = self._fallback_event(); wrong_lane["fallback_authorization"] = dict(wrong_lane["fallback_authorization"], lane_id="other_lane"); cases.append(("fallback_not_authorized", wrong_lane))
+        bool_attempt = self._fallback_event(); bool_attempt["fallback_authorization"] = dict(bool_attempt["fallback_authorization"], max_attempts=True); cases.append(("fallback_not_authorized", bool_attempt))
+        unavailable = self._fallback_event(); unavailable["app_task_available"] = False; cases.append(("app_task_unavailable", unavailable))
+        ineligible = self._fallback_event(); ineligible["failure_code"] = "lane_timeout"; cases.append(("ineligible_transport_failure", ineligible))
+        malformed = self._fallback_event(); malformed["attempts_used"] = True; cases.append(("malformed_fallback_event", malformed))
+        for expected, event in cases:
+            with self.subTest(expected=expected):
+                result = evaluate_transport_failure(event, ROOT)
+                self.assertFalse(result["ok"], result)
+                self.assertEqual(result["route"], "sol")
+                self.assertIn(expected, result["reason_codes"])
+
+        unavailable_result = evaluate_transport_failure(unavailable, ROOT)
+        self.assertEqual(unavailable_result["fallback_stage"], "post_admission_transport")
+        self.assertEqual(unavailable_result["native_failure_code"], "custom_role_rejected")
+        self.assertEqual(unavailable_result["app_task_attempts_used"], 1)
+        self.assertTrue(unavailable_result["authorization_consumed"])
+
+        ineligible_result = evaluate_transport_failure(ineligible, ROOT)
+        self.assertFalse(ineligible_result["fallback"])
+        self.assertEqual(ineligible_result["fallback_stage"], "post_admission_ineligible")
+        self.assertIsNone(ineligible_result["native_failure_code"])
+
+        malformed_result = evaluate_transport_failure(malformed, ROOT)
+        self.assertFalse(malformed_result["fallback"])
+        self.assertEqual(malformed_result["fallback_stage"], "fallback_validation")
+        self.assertIsNone(malformed_result["native_failure_code"])
+
+    def test_app_task_fallback_requires_matching_canonical_project_root(self):
+        with tempfile.TemporaryDirectory() as other_root:
+            mismatch = self._fallback_event()
+            mismatch["project_context"] = dict(
+                mismatch["project_context"],
+                app_project_root=other_root,
+            )
+            result = evaluate_transport_failure(mismatch, ROOT)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["route"], "sol")
+        self.assertIn("app_project_mismatch", result["reason_codes"])
+        self.assertEqual(result["fallback_stage"], "post_admission_transport")
+        self.assertEqual(result["app_task_attempts_used"], 1)
+        self.assertTrue(result["authorization_consumed"])
+        self.assertNotIn(other_root, json.dumps(result))
+
+        missing = self._fallback_event()
+        missing["project_context"] = None
+        result = evaluate_transport_failure(missing, ROOT)
+        self.assertFalse(result["ok"])
+        self.assertIn("app_project_mismatch", result["reason_codes"])
+        self.assertEqual(result["app_task_attempts_used"], 1)
+
+        self.assertEqual(
+            set(ELIGIBLE_NATIVE_FAILURE_CODES),
+            {"custom_role_rejected", "custom_role_unavailable", "native_spawn_tool_unavailable", "native_spawn_transport_error"},
+        )
 
     def test_failed_gate_routes_directly_to_sol(self):
         for case_name in ("direct_work", "rejected_gate"):
@@ -427,6 +553,19 @@ class RoutingPolicyTests(unittest.TestCase):
         completed = subprocess.run(command, cwd=ROOT, env=environment, text=True, capture_output=True)
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertTrue(json.loads(completed.stdout)["ok"])
+
+        fallback = json.dumps(self._fallback_event(profile="standard"), separators=(",", ":"))
+        completed = subprocess.run(
+            [sys.executable, "scripts/routing_policy.py", "fallback", "--format", "json", "--request", fallback],
+            cwd=ROOT,
+            env=environment,
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        fallback_result = json.loads(completed.stdout)
+        self.assertEqual(fallback_result["decision"], "create_codex_app_task")
+        self.assertEqual(fallback_result["requested_profile"], "standard")
 
         for raw in (
             '{"kind":"scout","kind":"worker"}',

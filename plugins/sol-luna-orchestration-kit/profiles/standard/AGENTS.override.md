@@ -128,11 +128,24 @@ Sol, and Sol serializes every dependency and passes only the minimum verified
 result into a later lane. Nested delegation remains disallowed unless the user
 explicitly requests it.
 
-A rejected or unavailable custom Luna spawn is terminal for that lane. Do not
-retry it, switch to a history fork, silently substitute another role or model,
-or fabricate child evidence. Route the work directly to Sol and report the
-compatibility failure. This rule does not authorize retrying single-attempt
-pilots or benchmarks.
+A denied admission, failed SPLIT check, guard rejection, or malformed spawn is
+terminal for that lane and routes directly to Sol. Never use a separate task
+to bypass an admission decision.
+
+When admission passed but the native custom Luna spawn is rejected or
+unavailable before a child begins, classify the failure with the checked-in
+transport-fallback evaluator. Only the closed native-transport error set is
+eligible. If the user explicitly authorized one visible Codex app task for
+that lane in the current checkout, create exactly one bounded task with the
+same self-contained assignment and ownership. Serialize app-task fallbacks,
+wait for the result, and verify its diff and evidence as untrusted input. Do
+not inherit history, silently select a model or reasoning override, retry the
+native spawn, or recursively create another task. If authorization, the app
+task capability, the project match, or task creation is unavailable, continue
+directly with Sol and report the compatibility failure. Timeouts, cancellations,
+blocked children, and content or validation failures are not transport
+failures and route directly to Sol. This rule does not authorize retrying
+single-attempt pilots or benchmarks.
 
 ### SPLIT delegation gate
 
@@ -163,7 +176,7 @@ credentials, customer data, and production logs. This evidence is advisory
 until Sol independently verifies material claims.
 
 Unsupported combinations, malformed requests, unsafe paths, ownership
-conflicts, runtime hash drift, or an unavailable required role are fail-closed
+conflicts, runtime hash drift, or pre-admission role failures are fail-closed
 conditions: route directly to Sol and report the reason rather than guessing.
 
 Do not add `agents.default_subagent_model` to global configuration. Each role
@@ -187,6 +200,8 @@ fields: `scope`, `files_or_surfaces`, `commands_or_checks`, `assumptions`,
 material claims and owns the final answer.
 
 After risky edits, prefer both `luna_critic_standard` and `luna_tester_standard` when
-their workstreams are independent. Use bounded waits. On a Luna timeout or
-launch failure, cancel the lane and continue with an explicit Sol fallback;
-do not retry or wait indefinitely.
+their workstreams are independent. Use bounded waits. On a Luna timeout,
+cancel the lane and continue with an explicit Sol fallback. On an eligible
+pre-start native transport failure, use at most the one explicitly authorized
+Codex app task fallback above; otherwise continue with Sol. Do not retry or
+wait indefinitely.

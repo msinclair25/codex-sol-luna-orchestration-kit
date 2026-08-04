@@ -13,8 +13,10 @@ Use `--root`, `--receipts-dir`, and `--session-root` for a synthetic or
 alternate local fixture. When running a globally installed copy, `--root` is
 required so the skill can resolve the orchestration-kit modules. Add
 `--active-root` and `--active-config` to compare the installed dynamic runtime.
-Pass `--luna-tier standard` when the full installer selected Standard Luna;
-Fast remains the default profile.
+Normal status invocations automatically reuse the profile in the validated
+install state, then the latest validated receipt profile, with Fast retained
+only as the workflow-only compatibility default. `--luna-tier standard` or
+`--luna-tier fast` is available solely as an explicit diagnostic override.
 M4 is terminal and non-retryable by default. Historical inspection requires
 `--allow-retired-m4-audit` together with `--plan`; add `--pilot-home`,
 `--starts-dir`, or `--as-of` only for the named audit fixture. Audit mode keeps
@@ -31,6 +33,12 @@ state and counts without making a slot eligible. A missing or invalid
 retirement marker fails closed with no next slot and no model-work
 recommendation. Numeric usage, timing, and budget values remain null and
 explicitly unknown in receipt-only mode.
+
+M10 transport-aware receipts add aggregate counts for eligible native spawn
+failures, bounded Codex app-task fallbacks, completed or failed app tasks,
+unavailable fallbacks, and lanes completed directly by Sol. The report never
+prints the privacy-safe task reference, and a separate app task is not counted
+as a native child session.
 
 The scanner is bounded (under 30 seconds in normal operation), redacts paths,
 identifiers, prompts, source, tool payloads, and secrets, and requires explicit

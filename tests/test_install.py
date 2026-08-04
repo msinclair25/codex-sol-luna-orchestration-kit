@@ -129,6 +129,13 @@ class InstallerTests(unittest.TestCase):
             install.install(checkout, self.codex, self.home, apply=False, with_usage=True)
 
         manifest = checkout / install.USAGE_ASSET_MANIFEST
+        status_script.write_bytes((ROOT / ".agents" / "skills" / "sol-luna-status" / "scripts" / "sol_luna_status.py").read_bytes())
+        bool_schema = json.loads((ROOT / install.USAGE_ASSET_MANIFEST).read_text())
+        bool_schema["schema_version"] = True
+        manifest.write_text(json.dumps(bool_schema))
+        with self.assertRaisesRegex(install.InstallError, "usage_source_integrity"):
+            install.install(checkout, self.codex, self.home, apply=False, with_usage=True)
+
         manifest.write_text('{"schema_version":1,"assets":' + "[" * 1100 + "0" + "]" * 1100 + "}")
         with self.assertRaisesRegex(install.InstallError, "usage_source_integrity"):
             install.install(checkout, self.codex, self.home, apply=False, with_usage=True)
@@ -226,6 +233,92 @@ class InstallerTests(unittest.TestCase):
         self.assertFalse((self.codex / "AGENTS.md").exists())
         self.assertFalse((self.codex / "config.toml").exists())
         self.assertFalse((self.codex / "agents").exists() and any((self.codex / "agents").iterdir()))
+
+    def test_rollback_preserves_concurrent_edit_to_new_target(self):
+        target = self.codex / "agents" / "luna_scout_fast.toml"
+        original = install._atomic_write
+
+        def edit_then_fail_receipt(path, data):
+            result = original(path, data)
+            if path == target:
+                target.write_bytes(b"concurrent edit\n")
+            if path.name == "install-receipt.json":
+                raise OSError("injected receipt failure")
+            return result
+
+        install._atomic_write = edit_then_fail_receipt
+        try:
+            with self.assertRaisesRegex(install.InstallError, "install_failed_rollback_incomplete;backup="):
+                install.install(ROOT, self.codex, self.home, apply=True, with_usage=False)
+        finally:
+            install._atomic_write = original
+
+        self.assertEqual(target.read_bytes(), b"concurrent edit\n")
+
+    def test_rollback_preserves_concurrent_edit_to_preexisting_target_and_backup(self):
+        self.codex.mkdir()
+        target = self.codex / "agents" / "luna_scout_fast.toml"
+        target.parent.mkdir()
+        original_bytes = b"pre-existing role\n"
+        target.write_bytes(original_bytes)
+        original = install._atomic_write
+
+        def edit_then_fail_receipt(path, data):
+            result = original(path, data)
+            if path == target:
+                target.write_bytes(b"concurrent edit\n")
+            if path.name == "install-receipt.json":
+                raise OSError("injected receipt failure")
+            return result
+
+        install._atomic_write = edit_then_fail_receipt
+        try:
+            with self.assertRaisesRegex(install.InstallError, "install_failed_rollback_incomplete;backup="):
+                install.install(
+                    ROOT,
+                    self.codex,
+                    self.home,
+                    apply=True,
+                    with_usage=False,
+                    approve_conflicts=True,
+                )
+        finally:
+            install._atomic_write = original
+
+        self.assertEqual(target.read_bytes(), b"concurrent edit\n")
+        backup_roots = list((self.home / install.BACKUP_DIRECTORY).iterdir())
+        self.assertEqual(len(backup_roots), 1)
+        backup = backup_roots[0] / "codex-home" / "agents" / target.name
+        self.assertEqual(backup.read_bytes(), original_bytes)
+
+    def test_rollback_restores_unchanged_preexisting_target(self):
+        self.codex.mkdir()
+        target = self.codex / "agents" / "luna_scout_fast.toml"
+        target.parent.mkdir()
+        original_bytes = b"pre-existing role\n"
+        target.write_bytes(original_bytes)
+        original = install._atomic_write
+
+        def fail_receipt(path, data):
+            if path.name == "install-receipt.json":
+                raise OSError("injected receipt failure")
+            return original(path, data)
+
+        install._atomic_write = fail_receipt
+        try:
+            with self.assertRaisesRegex(install.InstallError, "install_failed_rolled_back;backup="):
+                install.install(
+                    ROOT,
+                    self.codex,
+                    self.home,
+                    apply=True,
+                    with_usage=False,
+                    approve_conflicts=True,
+                )
+        finally:
+            install._atomic_write = original
+
+        self.assertEqual(target.read_bytes(), original_bytes)
 
     def test_config_merge_keeps_unrelated_table_and_requires_approval_for_conflicts(self):
         self.codex.mkdir()
@@ -419,6 +512,10 @@ class InstallerTests(unittest.TestCase):
         self.assertNotIn("service_tier", standard_role)
         self.assertFalse((self.codex / "agents" / "luna_scout_fast.toml").exists())
         self.assertTrue(verify_active_root(self.codex, ROOT, self.codex / "config.toml", "standard")["ok"])
+        self.assertEqual(
+            json.loads((self.codex / install.INSTALL_STATE_NAME).read_text())["kit_version"],
+            "0.3.0",
+        )
 
         switched = install.install(
             ROOT,
@@ -465,7 +562,7 @@ class InstallerTests(unittest.TestCase):
         shutil.copytree(ROOT, checkout, ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"))
         source = checkout / "agents" / "luna_scout_fast.toml"
         source.write_text(source.read_text() + "\n# compatible update\n")
-        policy_path = checkout / "config" / "routing-policy.v1.1.json"
+        policy_path = checkout / "config" / "routing-policy.v1.2.json"
         policy = json.loads(policy_path.read_text())
         policy["roles"]["luna_scout_fast"]["sha256"] = hashlib.sha256(source.read_bytes()).hexdigest()
         policy_path.write_text(json.dumps(policy, indent=2) + "\n")
@@ -501,6 +598,12 @@ class InstallerTests(unittest.TestCase):
         role = self.codex / "agents" / "luna_scout_fast.toml"
         before_role = role.read_bytes()
         before_state = (self.codex / install.INSTALL_STATE_NAME).read_bytes()
+        malformed_state = json.loads(before_state)
+        malformed_state["schema_version"] = True
+        (self.codex / install.INSTALL_STATE_NAME).write_text(json.dumps(malformed_state))
+        with self.assertRaisesRegex(install.InstallError, "install_state_invalid"):
+            install.install(ROOT, self.codex, self.home, apply=False, with_usage=False, update=True)
+        (self.codex / install.INSTALL_STATE_NAME).write_bytes(before_state)
         preview_output = io.StringIO()
         with contextlib.redirect_stdout(preview_output):
             preview_result = install.main([

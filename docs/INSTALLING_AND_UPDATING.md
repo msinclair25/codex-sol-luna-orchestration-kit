@@ -59,6 +59,18 @@ Plugin installation alone does not modify `~/.codex/config.toml`, global
 instructions, or custom role TOMLs. The setup skill changes those surfaces
 only in response to an explicit install, update, or tier-switch request.
 
+Installation also does not grant standing permission to create user-visible
+Codex tasks. For a single current task, the user can say:
+
+```text
+$sol-luna-orchestration Route this milestone. If native Luna is unavailable,
+create one bounded, visible Codex task in this project's current checkout.
+```
+
+Otherwise the orchestration skill asks once only after an admitted Luna lane
+hits an eligible pre-start native transport failure. Policy or SPLIT rejection
+still routes directly to Sol and never triggers a separate task.
+
 ## Full role installation without the skill
 
 The direct CLI remains a fallback for maintainers and troubleshooting. Clone
@@ -139,6 +151,9 @@ python3 scripts/install.py --update --luna-tier fast
 
 The installer retains previously installed role aliases so switching back is
 safe, while the managed Sol instructions select only the active profile.
+Routing and status skills read that saved selection automatically, so users do
+not pass profile flags after installation. Milestone receipts likewise retain
+and validate their own profile internally.
 
 An installation made before M6 has no state file. Ask `$sol-luna-setup` to
 install the desired tier; it previews a normal installation and stops for

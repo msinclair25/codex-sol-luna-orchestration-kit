@@ -2,7 +2,7 @@
 
 **Sol leads. Luna specializes. Every milestone ends in evidence.**
 
-The advanced V0.2.2 orchestration and measurement edition for Codex. GPT-5.6
+The advanced V0.3.0 orchestration and measurement edition for Codex. GPT-5.6
 Sol owns planning, routing, integration, and final acceptance; dynamically
 routed GPT-5.6 Luna Fast roles scout, build, challenge, and test within explicit
 boundaries.
@@ -19,10 +19,18 @@ boundaries.
 > its negative result constrains M5 but does not leave the retired experiment
 > open.
 
-V0.2.2 adds one compatibility variable without retuning models: every Luna
+V0.2.2 added one compatibility variable without retuning models: every Luna
 spawn is context-free (`fork_turns = "none"`), receives a self-contained task
 packet, and fails directly to Sol without a spawn retry. The frozen V0.2.1 M4
 inputs and immutable all-Max control bundle remain unchanged.
+
+V0.3.0 separates unsafe admission failures from native transport failures.
+SPLIT, ownership, guard, and runtime-policy rejections still route directly to
+Sol. When an approved Luna lane cannot start for one of four closed native
+transport reasons, the user may explicitly authorize one visible, bounded
+Codex app task in the current checkout. It receives the same capsule and
+ownership, runs once without recursive fallback, and remains subject to Sol's
+diff, evidence, and acceptance checks.
 
 The incident audit attributed at least 178,564 root tokens to the incomplete
 control workflow; child usage and total arm usage remain unknown. Automatic
@@ -82,6 +90,28 @@ Later, update or switch tiers conversationally:
 $sol-luna-setup Update Sol/Luna.
 $sol-luna-setup Switch Luna subagents to Fast.
 ```
+
+Check the current profile, receipts, drift, and attributable usage without
+remembering which tier was installed:
+
+```text
+$sol-luna-status Report my Sol/Luna status.
+```
+
+The setup state and validated receipts carry the profile automatically; users
+do not pass tier flags or edit receipt JSON.
+
+For the clean task fallback when native Luna is unavailable, say once in the
+current task:
+
+```text
+$sol-luna-orchestration Route this milestone. If native Luna is unavailable,
+create one bounded, visible Codex task in this project's current checkout.
+```
+
+Without that explicit request, the skill asks one concise question only after
+an eligible native rejection. Installation never grants a standing permission
+to create user-visible tasks.
 
 For a package update, the skill refreshes the Git marketplace and plugin, then
 hands back one restart prompt to finish updating the global roles from the new
@@ -218,7 +248,9 @@ codex-sol-luna-orchestration-kit/
 │   ├── rate-card.v1.json
 │   ├── routing-policy.v1.json
 │   ├── routing-policy.v1.1.json
-│   └── routing-policy.standard.v1.1.json
+│   ├── routing-policy.standard.v1.1.json
+│   ├── routing-policy.v1.2.json
+│   └── routing-policy.standard.v1.2.json
 ├── control-bundles/
 │   └── all-max-v1/
 ├── schemas/
@@ -300,10 +332,11 @@ across both arms. Missing or changed capabilities fail before measured work.
 Seeing a model in an
 API account does not necessarily mean the same model is enabled in every Codex
 surface. Verify your own model picker or model catalog before installing.
-The active V0.2.2 contract requires context-free Luna launches; a task that
+The active V0.3.0 contract requires context-free Luna launches; a task that
 cannot be expressed as a self-contained packet stays with Sol. The original
-V0.2.1 `AGENTS.md` and routing-policy file remain as frozen M4 inputs, while
-`AGENTS.override.md` and `routing-policy.v1.1.json` define new installations.
+V0.2.1 `AGENTS.md` and routing-policy file remain as frozen M4 inputs; v1.1
+preserves V0.2.2 behavior, while `AGENTS.override.md` and
+`routing-policy.v1.2.json` define new installations.
 The advisory evaluator requires callers to provide `fork_turns` explicitly;
 omission and history-fork values fail closed. It does not parse free-form task
 prose, so Sol still owns the judgment that a child packet is self-contained.
@@ -324,16 +357,20 @@ That makes Sol-to-Luna custom-role launches a version-, account-, and
 workspace-dependent compatibility boundary rather than a universal guarantee.
 
 This kit does not replace or edit Codex's model catalog. It narrows Luna to
-bounded, context-free lanes, prohibits nested Luna delegation, and routes a
-rejected spawn directly back to Sol without retrying or silently substituting
-a model. Work that depends on proactive child-to-child coordination or hidden
-conversation history stays with Sol.
+bounded, context-free lanes and prohibits nested Luna delegation. Admission
+rejections route directly to Sol. An approved lane with an eligible pre-start
+native transport failure can use one explicitly authorized, visible Codex app
+task in the current checkout; otherwise it returns to Sol. The app task uses
+the user's configured runtime unless the user explicitly requests overrides,
+so it is not reported as a native custom Luna role. Work that depends on
+proactive child-to-child coordination or hidden conversation history stays
+with Sol.
 
 ### Evidence so far
 
 | Evidence | Result | What it establishes |
 | --- | --- | --- |
-| Static policy and installer tests | Passing on the V0.2.2 branch | The checked-in configuration is internally consistent; this is not proof of runtime availability. |
+| Static policy and installer tests | Passing on the V0.3.0 branch | The checked-in configuration is internally consistent; this is not proof of runtime availability. |
 | [M1 role smoke](evidence/m1-role-smoke-2026-08-02.json) | All five Luna roles launched and completed on the tested account and Codex build | The configured roles worked in one observed environment. |
 | Maintainer operational sample (August 3, 2026 snapshot) | 63 of 64 privacy-safe named Luna role runs completed | Practical reliability evidence from mixed work; completion does not prove correctness or savings. |
 | M4 matched comparison | Interrupted control; dynamic arm not started; pair retired | No verified whole-workflow savings percentage exists yet. |
@@ -857,8 +894,10 @@ The active `AGENTS.override.md` gives the Sol root these operating rules:
    to Sol.
 3. Give every child an outcome, relevant inputs, ownership or read-only scope,
    constraints, acceptance checks, evidence requirements, and a deadline.
-4. Explicitly use `fork_turns = "none"` for Luna, pass a self-contained task,
-   and route a rejected spawn directly to Sol without retrying or substitution.
+4. Explicitly use `fork_turns = "none"` for Luna and pass a self-contained
+   task. Admission failures route directly to Sol. An eligible pre-start native
+   transport failure may use one explicitly authorized Codex app task; it is
+   never a native retry or silent role substitution.
 5. Never run overlapping writers concurrently; exact and directory-prefix
    ownership conflicts are rejected.
 6. Serialize dependent work in waves; parallelize independent review and
@@ -904,8 +943,12 @@ See [SECURITY.md](SECURITY.md) for the public-reporting policy.
 If direct Luna works but a custom Luna agent does not, the likely issue is the
 current launcher/model registry or workspace policy—not the role prompt itself.
 Do not repair a rejected custom-role spawn by omitting `fork_turns` or using a
-full-history fork. Start from a self-contained `fork_turns = "none"` request;
-if that is rejected, keep the work with Sol and record the compatibility issue.
+full-history fork. Start from a self-contained `fork_turns = "none"` request.
+If admission fails, keep the work with Sol. If admission passed and the native
+role is unavailable before start, explicitly authorize the orchestration skill
+to create one visible bounded task in the current checkout, or let Sol continue
+directly. Record the actual transport rather than claiming the app task was a
+native Luna child.
 
 ### Custom roles are missing
 

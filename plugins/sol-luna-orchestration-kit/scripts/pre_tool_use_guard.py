@@ -30,7 +30,8 @@ SPAWN_FIELDS = {
     "reasoning_effort",
     "task_name",
 }
-ENVELOPE_FIELDS = {"schema_version", "routing_request", "assignment"}
+ENVELOPE_REQUIRED_FIELDS = {"schema_version", "routing_request", "assignment"}
+ENVELOPE_OPTIONAL_FIELDS = {"fallback_authorization"}
 ASSIGNMENT_FIELDS = {
     "lane_id",
     "outcome",
@@ -195,6 +196,24 @@ def _validate_assignment(assignment: Any) -> Dict[str, Any]:
     return assignment
 
 
+def _validate_fallback_authorization(value: Any, lane_id: str) -> None:
+    if routing_policy is None:
+        raise GuardError("policy_module_unavailable")
+    if not isinstance(value, dict) or set(value) != routing_policy.FALLBACK_AUTHORIZATION_FIELDS:
+        raise GuardError("fallback_authorization_shape")
+    max_attempts = value.get("max_attempts")
+    if (
+        value.get("authorized") is not True
+        or value.get("target") != routing_policy.APP_TASK_FALLBACK["target"]
+        or value.get("scope") != routing_policy.APP_TASK_FALLBACK["authorization_scope"]
+        or value.get("lane_id") != lane_id
+        or isinstance(max_attempts, bool)
+        or max_attempts != routing_policy.APP_TASK_FALLBACK["max_attempts_per_lane"]
+        or value.get("current_checkout") is not True
+    ):
+        raise GuardError("fallback_authorization_invalid")
+
+
 def _validate_event(event: Any) -> None:
     if routing_policy is None:
         raise GuardError("policy_module_unavailable")
@@ -212,7 +231,11 @@ def _validate_event(event: Any) -> None:
         raise GuardError("history_fork_denied")
 
     envelope = _strict_loads(spawn.get("message"))
-    if not isinstance(envelope, dict) or set(envelope) != ENVELOPE_FIELDS:
+    if (
+        not isinstance(envelope, dict)
+        or not ENVELOPE_REQUIRED_FIELDS.issubset(envelope)
+        or set(envelope) - ENVELOPE_REQUIRED_FIELDS - ENVELOPE_OPTIONAL_FIELDS
+    ):
         raise GuardError("envelope_shape")
     if envelope.get("schema_version") != 1:
         raise GuardError("envelope_version")
@@ -242,6 +265,8 @@ def _validate_event(event: Any) -> None:
     lane_id = assignment["lane_id"]
     if lane_id not in ownership or spawn.get("task_name") != lane_id:
         raise GuardError("lane_identity_mismatch")
+    if "fallback_authorization" in envelope:
+        _validate_fallback_authorization(envelope["fallback_authorization"], lane_id)
     expected_paths = ownership[lane_id]
     if not isinstance(expected_paths, list) or sorted(assignment["scope_or_owned_files"]) != sorted(expected_paths):
         raise GuardError("assignment_ownership_mismatch")

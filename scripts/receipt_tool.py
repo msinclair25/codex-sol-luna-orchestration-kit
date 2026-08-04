@@ -33,15 +33,41 @@ COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 LABEL_RE = re.compile(r"^[a-z0-9][a-z0-9._/-]{0,63}$")
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9._:-]{0,63}$")
 REF_RE = re.compile(r"^[a-z0-9][a-z0-9._:/-]{0,127}$")
+TASK_REF_RE = re.compile(r"^ct1-[0-9a-f]{64}$")
 UTC_RE = re.compile(r"^20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")
 FAMILIES = {"foundation", "routing", "receipts", "feature", "bugfix", "integration", "release", "security", "other"}
 RISK_BANDS = {"small", "medium", "large", "high-risk", "critical"}
 DISPOSITIONS = {"accepted", "rejected", "abandoned"}
-ROLES = {"luna_scout_fast", "luna_worker_fast", "luna_critic_fast", "luna_tester_fast", "luna_max_fast"}
+PROFILE_ROLES = {
+    "fast": {
+        "luna_scout_fast",
+        "luna_worker_fast",
+        "luna_critic_fast",
+        "luna_tester_fast",
+        "luna_max_fast",
+    },
+    "standard": {
+        "luna_scout_standard",
+        "luna_worker_standard",
+        "luna_critic_standard",
+        "luna_tester_standard",
+        "luna_max_standard",
+    },
+}
+ROLES = set().union(*PROFILE_ROLES.values())
+MAX_ROLES = {"luna_max_fast", "luna_max_standard"}
 REASONING = {"medium", "high", "max"}
 ROOT_REASONING = {"low", "medium", "high", "xhigh", "max", "ultra"}
 MAX_REASONS = {"genuine_ambiguity", "cross_cutting_risk", "failed_high_attempt", "high_impact_adversarial_review"}
 LANE_OUTCOMES = {"completed", "failed", "blocked", "skipped"}
+NATIVE_TRANSPORT_FAILURES = {
+    "custom_role_rejected",
+    "custom_role_unavailable",
+    "native_spawn_tool_unavailable",
+    "native_spawn_transport_error",
+}
+LANE_TRANSPORTS = {"native_luna_subagent", "codex_app_task", "sol"}
+APP_TASK_OUTCOMES = {"completed", "failed", "blocked", "unavailable"}
 CHECK_RESULTS = {"pass", "fail", "unknown"}
 RISK_CODES = {"none", "runtime_drift", "scope", "security", "privacy", "validation", "availability", "cost", "data_loss", "unknown"}
 COVERAGE = {"complete-full-workflow", "incomplete", "unknown"}
@@ -173,7 +199,7 @@ def _hash(value: Any) -> bool:
     return isinstance(value, str) and HASH_RE.fullmatch(value) is not None
 
 
-def _validate_hashes(repository: Any) -> None:
+def _validate_hashes(repository: Any) -> str:
     if not isinstance(repository, dict) or set(repository) != {"base_commit", "dirty", "hashes", "bundle_version", "rate_card_version"}:
         raise ReceiptError("repository_shape")
     if not isinstance(repository["base_commit"], str) or COMMIT_RE.fullmatch(repository["base_commit"]) is None or not isinstance(repository["dirty"], bool):
@@ -184,24 +210,79 @@ def _validate_hashes(repository: Any) -> None:
     if any(not _hash(hashes[name]) for name in ("agents", "policy", "config", "rate_card")):
         raise ReceiptError("invalid_hash")
     roles = hashes["roles"]
-    if not isinstance(roles, dict) or set(roles) != ROLES or any(not _hash(v) for v in roles.values()):
+    if not isinstance(roles, dict) or any(not _hash(v) for v in roles.values()):
+        raise ReceiptError("invalid_role_hashes")
+    profiles = [profile for profile, expected in PROFILE_ROLES.items() if set(roles) == expected]
+    if len(profiles) != 1:
         raise ReceiptError("invalid_role_hashes")
     if not _safe_text(repository["bundle_version"]) or repository["rate_card_version"] != "rate-card.v1":
         raise ReceiptError("repository_versions")
+    return profiles[0]
 
 
-def _validate_lane(lane: Any) -> None:
+def _validate_lane_transport(transport: Any) -> None:
+    required = {
+        "requested",
+        "used",
+        "native_failure",
+        "fallback_authorized",
+        "fallback_attempts",
+        "fallback_outcome",
+        "task_ref",
+    }
+    if not isinstance(transport, dict) or set(transport) != required:
+        raise ReceiptError("lane_transport_shape")
+    if transport["requested"] != "native_luna_subagent" or not _enum(transport["used"], LANE_TRANSPORTS):
+        raise ReceiptError("lane_transport_values")
+    attempts = transport["fallback_attempts"]
+    if isinstance(attempts, bool) or not isinstance(attempts, int) or attempts not in (0, 1):
+        raise ReceiptError("lane_transport_attempts")
+    if not isinstance(transport["fallback_authorized"], bool):
+        raise ReceiptError("lane_transport_authorization")
+    failure = transport["native_failure"]
+    outcome = transport["fallback_outcome"]
+    task_ref = transport["task_ref"]
+    used = transport["used"]
+    if used == "native_luna_subagent":
+        if failure is not None or transport["fallback_authorized"] or attempts != 0 or outcome is not None or task_ref is not None:
+            raise ReceiptError("lane_transport_consistency")
+        return
+    if not _enum(failure, NATIVE_TRANSPORT_FAILURES):
+        raise ReceiptError("lane_transport_failure")
+    if used == "codex_app_task":
+        if (
+            transport["fallback_authorized"] is not True
+            or attempts != 1
+            or not _enum(outcome, APP_TASK_OUTCOMES - {"unavailable"})
+            or not isinstance(task_ref, str)
+            or TASK_REF_RE.fullmatch(task_ref) is None
+        ):
+            raise ReceiptError("lane_transport_consistency")
+        return
+    if task_ref is not None:
+        raise ReceiptError("lane_transport_consistency")
+    if transport["fallback_authorized"] is False:
+        if attempts != 0 or outcome is not None:
+            raise ReceiptError("lane_transport_consistency")
+    elif outcome != "unavailable" or attempts != 1:
+        raise ReceiptError("lane_transport_consistency")
+
+
+def _validate_lane(lane: Any, profile: str = "fast") -> None:
     required = {"lane_id", "role", "reasoning", "tier", "attempts", "retries", "escalation", "max_reason", "outcome", "useful"}
-    if not isinstance(lane, dict) or set(lane) != required:
+    if not isinstance(lane, dict) or set(lane) not in (required, required | {"transport"}):
         raise ReceiptError("lane_shape")
-    if not _safe_text(lane["lane_id"], ID_RE) or not _enum(lane["role"], ROLES) or not _enum(lane["reasoning"], REASONING) or lane["tier"] != "fast":
+    roles = PROFILE_ROLES.get(profile)
+    if roles is None:
+        raise ReceiptError("lane_runtime")
+    if not _safe_text(lane["lane_id"], ID_RE) or not _enum(lane["role"], roles) or not _enum(lane["reasoning"], REASONING) or lane["tier"] != profile:
         raise ReceiptError("lane_runtime")
     if any(isinstance(lane[k], bool) or not isinstance(lane[k], int) or not 0 <= lane[k] <= 100 for k in ("attempts", "retries")) or lane["attempts"] < 1 or lane["retries"] >= lane["attempts"]:
         raise ReceiptError("lane_counts")
     escalation = lane["escalation"]
     if not isinstance(escalation, dict) or set(escalation) != {"target", "reason"}:
         raise ReceiptError("escalation_shape")
-    if (escalation["target"] is not None and not _enum(escalation["target"], {"sol"} | ROLES)) or (escalation["reason"] is not None and not _enum(escalation["reason"], MAX_REASONS)):
+    if (escalation["target"] is not None and not _enum(escalation["target"], {"sol"} | roles)) or (escalation["reason"] is not None and not _enum(escalation["reason"], MAX_REASONS)):
         raise ReceiptError("escalation_values")
     if (escalation["target"] is None) != (escalation["reason"] is None):
         raise ReceiptError("escalation_consistency")
@@ -210,10 +291,12 @@ def _validate_lane(lane: Any) -> None:
     reason = lane["max_reason"]
     if reason is not None and not _enum(reason, MAX_REASONS):
         raise ReceiptError("max_reason")
-    if lane["role"] == "luna_max_fast" and reason is None:
+    if lane["role"] in MAX_ROLES and reason is None:
         raise ReceiptError("max_reason_required")
-    if lane["role"] != "luna_max_fast" and reason is not None:
+    if lane["role"] not in MAX_ROLES and reason is not None:
         raise ReceiptError("max_reason_unsupported")
+    if "transport" in lane:
+        _validate_lane_transport(lane["transport"])
 
 
 def _validate_checks(checks: Any) -> None:
@@ -249,7 +332,7 @@ def _validate_usage(usage: Any) -> None:
 def _validate_receipt_shape(receipt: Any, *, require_id: bool = True) -> None:
     if not isinstance(receipt, dict) or set(receipt) != TOP_KEYS:
         raise ReceiptError("top_level_shape")
-    if receipt["schema_version"] != SCHEMA_VERSION or (require_id and (not isinstance(receipt["receipt_id"], str) or RECEIPT_ID_RE.fullmatch(receipt["receipt_id"]) is None)):
+    if isinstance(receipt["schema_version"], bool) or receipt["schema_version"] != SCHEMA_VERSION or (require_id and (not isinstance(receipt["receipt_id"], str) or RECEIPT_ID_RE.fullmatch(receipt["receipt_id"]) is None)):
         raise ReceiptError("schema_version_or_id")
     if not _safe_text(receipt["project_id"]) or not _safe_text(receipt["codex_task_id"], ID_RE) or not _safe_text(receipt["milestone_id"], ID_RE):
         raise ReceiptError("identity_values")
@@ -270,13 +353,13 @@ def _validate_receipt_shape(receipt: Any, *, require_id: bool = True) -> None:
     runtime = receipt["root_runtime"]
     if not isinstance(runtime, dict) or set(runtime) != {"model", "reasoning", "service_tier", "service_tier_provenance"} or runtime["model"] != "gpt-5.6-sol" or not _enum(runtime["reasoning"], ROOT_REASONING) or not _enum(runtime["service_tier"], {"standard", "default"}) or not _enum(runtime["service_tier_provenance"], {"global-unset-standard", "explicit-standard"}):
         raise ReceiptError("root_runtime")
-    _validate_hashes(receipt["repository"])
+    profile = _validate_hashes(receipt["repository"])
     lanes = receipt["delegated_lanes"]
     if not isinstance(lanes, list) or len(lanes) > 32:
         raise ReceiptError("lanes_shape")
     lane_ids = set()
     for lane in lanes:
-        _validate_lane(lane)
+        _validate_lane(lane, profile)
         if lane["lane_id"] in lane_ids:
             raise ReceiptError("duplicate_lane_id")
         lane_ids.add(lane["lane_id"])
@@ -297,6 +380,21 @@ def _validate_receipt_shape(receipt: Any, *, require_id: bool = True) -> None:
     _validate_usage(receipt["usage"])
     if receipt["origin"] != ORIGIN:
         raise ReceiptError("origin")
+
+
+def receipt_profile(receipt: Any) -> Optional[str]:
+    """Return the validated Luna profile without exposing receipt content."""
+
+    try:
+        _walk_privacy(receipt)
+        _validate_receipt_shape(receipt)
+        payload = dict(receipt)
+        receipt_id = payload.pop("receipt_id")
+        if receipt_id != "mr1-" + hashlib.sha256(_canonical(payload)).hexdigest():
+            raise ReceiptError("receipt_id_mismatch")
+        return _validate_hashes(receipt["repository"])
+    except (ReceiptError, TypeError, ValueError, OverflowError, MemoryError, RecursionError):
+        return None
 
 
 def validate_receipt(receipt: Any) -> Dict[str, Any]:

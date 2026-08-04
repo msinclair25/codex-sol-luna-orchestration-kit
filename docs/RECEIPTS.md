@@ -29,10 +29,25 @@ hashes, timestamps, booleans, integers, or safe references; no unrestricted
 summary text is accepted.
 
 `delegated_lanes`, `acceptance_checks`, and `usage` are bounded structured
-records. A Max lane requires one exact reason code:
+records. The exact five role hashes select either the Fast or Standard
+profile; mixed hash families are rejected, and every lane role, tier, and
+role-targeted escalation must match that selected profile. Existing Fast
+receipts remain valid. A Max lane in either profile requires one exact reason code:
 `genuine_ambiguity`, `cross_cutting_risk`, `failed_high_attempt`, or
 `high_impact_adversarial_review`. `accepted_by` is `sol` only for accepted
 receipts and must be null otherwise.
+
+M10 adds an optional `transport` object to each delegated lane while retaining
+compatibility with existing v1 receipts. It records the requested native Luna
+transport, the transport actually used (`native_luna_subagent`,
+`codex_app_task`, or `sol`), one closed native-failure code, explicit fallback
+authorization, zero or one app-task attempt, its bounded outcome, and a
+privacy-safe `ct1-<sha256>` task reference only when a visible task was
+created. An authorized but unavailable app-task path consumes its sole attempt
+and records `fallback_attempts: 1` with `fallback_outcome: unavailable`.
+Cross-field rules reject task fallback without authorization, more
+than one attempt, raw task identifiers, ineligible errors such as timeouts, or
+claims that a Codex app task ran as a native Luna child.
 
 `summarize` reports accepted outcome count as an observed numerator. The
 north-star `verified_outcomes_per_weighted_usage` value is computed only within

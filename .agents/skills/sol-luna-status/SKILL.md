@@ -25,9 +25,11 @@ installed bundle; it does not depend on a repository `.agents` directory.
 Pass `--root /path/to/codex-sol-luna-orchestration-kit` when invoked from a
 globally installed copy.
 Add `--active-root` and `--active-config` to compare the installed runtime, a
-positive `--budget` to report attributable budget thresholds, `--luna-tier
-standard` when the Standard role profile is installed, and `--format json`
-for automation. M4 is terminal and non-retryable by default. For a
+positive `--budget` to report attributable budget thresholds, and `--format
+json` for automation. The reporter automatically reuses the profile recorded
+by `$sol-luna-setup`; when no valid install state is available, it uses the
+latest validated receipt profile. Pass `--luna-tier` only for an explicit
+historical or diagnostic override. M4 is terminal and non-retryable by default. For a
 historical M4 fixture audit only, pass `--allow-retired-m4-audit` together with
 `--plan` and any required `--pilot-home`, `--starts-dir`, or `--as-of` values;
 audit mode never authorizes registration or model work. Treat the single
@@ -43,3 +45,8 @@ validate. It never prints paths, identifiers, prompts, source, tool payloads,
 or secrets, and falls back to receipt-only status when any capability or
 attribution check fails. Preserve unknown values as unknown; do not infer zero
 usage, zero elapsed time, or zero budget burn.
+
+When a receipt includes the optional M10 lane transport block, report only
+aggregate native-failure, Codex app-task fallback, completion, unavailability,
+and direct-Sol counts. Never print the task reference or infer an app task as a
+native Luna child for session attribution.

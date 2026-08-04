@@ -98,7 +98,7 @@ class M5PluginTests(unittest.TestCase):
     def test_manifest_and_default_hook_discovery_are_valid(self):
         manifest = json.loads((PLUGIN / ".codex-plugin" / "plugin.json").read_text())
         self.assertEqual(manifest["name"], PLUGIN.name)
-        self.assertEqual(manifest["version"], "0.2.1")
+        self.assertEqual(manifest["version"], "0.3.0")
         self.assertEqual(manifest["skills"], "./skills/")
         self.assertNotIn("hooks", manifest)
         self.assertIsInstance(manifest["interface"]["defaultPrompt"], list)
@@ -119,6 +119,18 @@ class M5PluginTests(unittest.TestCase):
         self.assertIn("codex plugin marketplace upgrade sol-luna", setup)
         self.assertIn("codex plugin marketplace list --json", setup)
         self.assertIn("Finish updating my Sol/Luna roles", setup)
+        orchestration = (PLUGIN / "skills" / "sol-luna-orchestration" / "SKILL.md").read_text()
+        status = (PLUGIN / "skills" / "sol-luna-status" / "SKILL.md").read_text()
+        self.assertIn(".sol-luna-install-state.json", orchestration)
+        self.assertIn("Native transport fallback", orchestration)
+        self.assertIn("May I create one visible", orchestration)
+        self.assertIn("do not persist", orchestration)
+        self.assertIn("canonical root and the routing evaluator's canonical", orchestration)
+        self.assertIn("checkout root and require exact equality", orchestration)
+        self.assertIn("missing or mismatched root consumes", orchestration)
+        self.assertIn("`project_context` object", orchestration)
+        self.assertIn("`project_root_verified: true`", orchestration)
+        self.assertIn("automatically reuses the profile", status)
 
         marketplace = json.loads((ROOT / ".agents" / "plugins" / "marketplace.json").read_text())
         self.assertEqual(marketplace["name"], "sol-luna")
@@ -220,6 +232,35 @@ class M5PluginTests(unittest.TestCase):
         result = _run_guard(_event())
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "")
+
+    def test_exact_lane_scoped_fallback_authorization_is_optional_and_guarded(self):
+        authorized = _envelope()
+        authorized["fallback_authorization"] = {
+            "authorized": True,
+            "target": "codex_app_task",
+            "scope": "this_lane_once",
+            "lane_id": "m5_guard",
+            "max_attempts": 1,
+            "current_checkout": True,
+        }
+        result = _run_guard(_event(authorized))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "")
+
+        for name, mutate in (
+            ("lane", lambda value: value.update(lane_id="different_lane")),
+            ("attempts", lambda value: value.update(max_attempts=2)),
+            ("bool_attempts", lambda value: value.update(max_attempts=True)),
+            ("checkout", lambda value: value.update(current_checkout=False)),
+            ("extra", lambda value: value.update(persist=True)),
+        ):
+            with self.subTest(name=name):
+                envelope = _envelope()
+                authorization = dict(authorized["fallback_authorization"])
+                mutate(authorization)
+                envelope["fallback_authorization"] = authorization
+                code = _deny_code(_run_guard(_event(envelope)))
+                self.assertIn(code, {"sol-luna-guard:fallback_authorization_shape", "sol-luna-guard:fallback_authorization_invalid"})
 
     def test_standard_profile_spawn_is_allowed_with_standard_role(self):
         envelope = _envelope()
