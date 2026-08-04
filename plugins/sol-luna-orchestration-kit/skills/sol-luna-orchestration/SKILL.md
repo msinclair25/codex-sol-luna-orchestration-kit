@@ -11,7 +11,7 @@ one-command diagnostics, one-cycle lookups, localized single-file edits,
 formatting/documentation corrections, straightforward test reruns, and work
 with comparable assignment overhead stay with Sol.
 
-Use Luna only when routing-policy.v1.4 recognizes a delegable task class, an
+Use Luna only when routing-policy.v1.5 recognizes a delegable task class, an
 allowed benefit code, class-specific numeric substantive-work thresholds, the
 work band and total-lane budget, isolated ownership, and all four SPLIT checks:
 Separate, Provable, Isolated, and Tier-appropriate. Unknown, malformed, or
@@ -27,7 +27,8 @@ unless the values exactly match the policy result.
 Set `routing_request.profile` to the active installed profile. When the user
 did not explicitly name a tier, inspect the bounded
 `CODEX_HOME/.sol-luna-install-state.json` written by `$sol-luna-setup` and
-require schema version 1 plus `active_luna_tier` equal to `fast` or `standard`.
+require install-state schema version 1 or 2 plus `active_luna_tier` equal to
+`fast` or `standard` and a recognized update phase.
 Use the matching `*_fast` or `*_standard` roles automatically. If no valid
 state exists, use Fast only as the workflow-only plugin compatibility default
 and mention that assumption; never make the user pass a routing flag. Standard
@@ -57,24 +58,32 @@ privacy bounds. Empty arrays replace filler; never repeat the assignment or
 include commands, logs, prompts, secrets, production data, or identifiers.
 Sol independently verifies material claims.
 
-Apply `receipt-policy.v1` after acceptance. Direct routine work gets only a
+Apply `receipt-policy.v2` after acceptance. Direct routine work gets only a
 concise final handoff. Delegated routine work gets a deterministic
-`routine-delegation-record.v1` only when automatic collection is available;
-otherwise attribution stays unknown. Require the full historical-compatible
+`routine-delegation-record.v2` only when automatic collection is available;
+historical v1 records remain a legacy lifetime count and never enter dated
+trends. Otherwise attribution stays unknown. Require the full historical-compatible
 `milestone-receipt.v1` for high-risk/critical, security, release, deployment,
 migration, destructive/external-side-effect, app-task fallback, non-success,
 material-rework, pilot/benchmark/evaluation, or explicit-audit triggers. Never
 make the user construct routing or receipt JSON.
 
 For an accepted delegated routine outcome, record metrics internally from the
-project root with the bundled `scripts/receipt_tool.py close-routine` command.
-Pass exactly one of `--useful` or `--not-useful`, the terminal `--outcome`, and
-one generic `--check pass|fail|skipped` for each bounded acceptance check. Pass
-`--total-tokens` only when whole-task attribution is deterministic. The command
-writes to `.sol-luna/routine-records` by default and generates generic check
-names, so never pass task prose, paths, identifiers, evidence text, or secrets.
-Do not surface the internal command to the user. If the recorder is missing or
-fails, keep routine measurement unknown and finish the accepted user outcome.
+canonical active project root with the bundled `scripts/receipt_tool.py`
+writer. Supply the validated routing-policy version, active profile, returned
+role kind, task class, and benefit code from the admitted routing request.
+Supply exactly one usefulness decision, the terminal outcome, and one generic
+pass/fail/skipped result for each bounded acceptance check. Supply attributable
+total tokens only when whole-task attribution is deterministic. The writer
+derives the UTC date and writes only to `.sol-luna/routine-records`; never pass
+task prose, timestamps, paths, identifiers, evidence text, or secrets. Do not
+surface recorder commands or flags to the user.
+
+"Automatic" means this active orchestration workflow attempts the bounded
+local close after Sol accepts the delegated routine work. It is not a
+guaranteed runtime lifecycle hook. If the project root is unsafe or ambiguous,
+or the recorder is missing or fails, keep routine measurement unknown and
+finish the accepted user outcome.
 
 ## Native transport fallback
 

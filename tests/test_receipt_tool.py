@@ -54,6 +54,20 @@ class ReceiptToolTests(unittest.TestCase):
                 lane["escalation"]["target"] = target.replace("_fast", "_standard")
         return payload
 
+    def _routine(self, **overrides):
+        values = {
+            "routing_policy": "routing-policy.v1.5",
+            "profile": "fast",
+            "role_kind": "tester",
+            "task_class": "substantial_validation",
+            "benefit_code": "parallel_latency",
+            "useful": True,
+            "outcome": "completed",
+            "checks": [{"name": "acceptance-1", "status": "pass"}],
+        }
+        values.update(overrides)
+        return build_routine_record(**values)
+
     def test_valid_dispositions_and_accepted_by_condition(self):
         for name, payload in self.payloads.items():
             body = dict(payload)
@@ -106,20 +120,22 @@ class ReceiptToolTests(unittest.TestCase):
             self.assertTrue(validate_receipt(body)["ok"])
 
     def test_routine_record_is_minimal_strict_private_and_usage_unknown_is_not_zero(self):
-        schema = json.loads((ROOT / "schemas" / "routine-delegation-record.v1.schema.json").read_text())
-        self.assertEqual(set(schema["required"]), {"schema_version", "version", "spawn", "outcome", "checks", "usage"})
-        self.assertEqual(schema["properties"]["version"]["const"], "routine-delegation-record.v1")
-        record = build_routine_record(
-            useful=True,
-            outcome="completed",
-            checks=[{"name": "focused tests", "status": "pass"}],
-        )
+        legacy_schema = json.loads((ROOT / "schemas" / "routine-delegation-record.v1.schema.json").read_text())
+        self.assertEqual(set(legacy_schema["required"]), {"schema_version", "version", "spawn", "outcome", "checks", "usage"})
+        self.assertEqual(legacy_schema["properties"]["version"]["const"], "routine-delegation-record.v1")
+        schema = json.loads((ROOT / "schemas" / "routine-delegation-record.v2.schema.json").read_text())
+        self.assertEqual(schema["properties"]["version"]["const"], "routine-delegation-record.v2")
+        record = self._routine()
+        self.assertEqual(record["schema_version"], 2)
+        self.assertRegex(record["recorded_on"], r"^20[0-9]{2}-[0-9]{2}-[0-9]{2}$")
+        self.assertEqual(record["checks"], [{"name": "acceptance-1", "status": "pass"}])
         self.assertEqual(record["usage"], {"attribution": "unknown", "total_tokens": None})
         self.assertTrue(validate_routine_record(record)["ok"])
-        attributed = build_routine_record(
+        self.assertLess(len(json.dumps(record, separators=(",", ":")).encode()), 2048)
+        attributed = self._routine(
             useful=False,
             outcome="failed",
-            checks=[{"name": "focused tests", "status": "fail"}],
+            checks=[{"name": "acceptance-1", "status": "fail"}],
             total_tokens=0,
         )
         self.assertEqual(attributed["usage"]["total_tokens"], 0)
@@ -129,7 +145,13 @@ class ReceiptToolTests(unittest.TestCase):
             lambda value: value.update(extra=True),
             lambda value: value["usage"].update(total_tokens=0),
             lambda value: value["checks"].append({"name": "x", "status": "unknown"}),
-            lambda value: value["checks"].append({"name": "password=do-not-store", "status": "pass"}),
+            lambda value: value.update(recorded_on="2026-02-30"),
+            lambda value: value["context"].update(task_class="unknown"),
+            lambda value: value["context"].update(benefit_code="unknown"),
+            lambda value: value["context"].update(profile="priority"),
+            lambda value: value["context"].update(role_kind="root"),
+            lambda value: value["context"].update(routing_policy="x" * 200),
+            lambda value: value["checks"].extend({"name": f"acceptance-{index}", "status": "pass"} for index in range(2, 10)),
         ):
             invalid = json.loads(json.dumps(record))
             mutate(invalid)
@@ -137,12 +159,11 @@ class ReceiptToolTests(unittest.TestCase):
 
     def test_routine_record_close_is_private_atomic_and_cli_driven(self):
         with tempfile.TemporaryDirectory() as directory:
-            records = Path(directory) / "routine-records"
-            record = build_routine_record(
-                useful=True,
-                outcome="completed",
-                checks=[{"name": "acceptance-1", "status": "pass"}],
-            )
+            workspace = Path(directory) / "project"
+            workspace.mkdir()
+            (workspace / ".git").mkdir()
+            records = workspace / ".sol-luna" / "routine-records"
+            record = self._routine()
             first = close_routine_record(record, records)
             second = close_routine_record(record, records)
             self.assertTrue(first["ok"])
@@ -154,7 +175,10 @@ class ReceiptToolTests(unittest.TestCase):
             self.assertTrue(all(validate_routine_record(json.loads(path.read_text()))["ok"] for path in outputs))
             self.assertTrue(all("secret" not in path.read_text() for path in outputs))
 
-            cli_records = Path(directory) / "cli-records"
+            cli_workspace = Path(directory) / "cli-project"
+            cli_workspace.mkdir()
+            (cli_workspace / ".git").mkdir()
+            cli_records = cli_workspace / ".sol-luna" / "routine-records"
             completed = subprocess.run(
                 [
                     sys.executable,
@@ -165,8 +189,12 @@ class ReceiptToolTests(unittest.TestCase):
                     "completed",
                     "--check",
                     "pass",
-                    "--records-dir",
-                    str(cli_records),
+                    "--workspace-root", str(cli_workspace),
+                    "--routing-policy", "routing-policy.v1.5",
+                    "--profile", "fast",
+                    "--role-kind", "tester",
+                    "--task-class", "substantial_validation",
+                    "--benefit-code", "parallel_latency",
                 ],
                 cwd=ROOT,
                 text=True,
@@ -182,6 +210,32 @@ class ReceiptToolTests(unittest.TestCase):
             unsafe.symlink_to(records, target_is_directory=True)
             with self.assertRaises(Exception):
                 close_routine_record(record, unsafe)
+
+            wrong_permissions = workspace / ".sol-luna" / "wrong" / ".sol-luna" / "routine-records"
+            wrong_permissions.parent.mkdir(parents=True, mode=0o755)
+            with self.assertRaises(Exception):
+                close_routine_record(record, wrong_permissions)
+
+            for broad in (Path("/"), Path.home(), Path(tempfile.gettempdir())):
+                with self.assertRaises(Exception):
+                    close_routine_record(record, broad / ".sol-luna" / "routine-records")
+
+    def test_historical_routine_v1_remains_valid_but_cannot_be_written_as_new(self):
+        legacy = {
+            "schema_version": 1,
+            "version": "routine-delegation-record.v1",
+            "spawn": {"decision": "delegate", "useful": True},
+            "outcome": "completed",
+            "checks": [{"name": "legacy check", "status": "pass"}],
+            "usage": {"attribution": "unknown", "total_tokens": None},
+        }
+        self.assertTrue(validate_routine_record(legacy)["ok"])
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory) / "project"
+            workspace.mkdir()
+            (workspace / ".git").mkdir()
+            with self.assertRaises(Exception):
+                close_routine_record(legacy, workspace / ".sol-luna" / "routine-records")
 
     def test_close_is_deterministic_idempotent_and_atomic(self):
         with tempfile.TemporaryDirectory() as directory:

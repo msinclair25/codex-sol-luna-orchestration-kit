@@ -26,6 +26,7 @@ MIRRORED_DIRECTORIES = (
 )
 MIRRORED_SCRIPTS = (
     "install.py",
+    "lifecycle.py",
     "pilot_tool.py",
     "receipt_tool.py",
     "routing_policy.py",

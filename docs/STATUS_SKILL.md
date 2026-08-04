@@ -1,80 +1,75 @@
-# Sol/Luna status skill
+# Status skill
 
-The status skill is a read-only, bounded report over validated historical
-`.sol-luna/receipts`, optional `.sol-luna/routine-records`, and attributable
-internal rollout JSONL. Users invoke it conversationally; the commands below
-are maintainer diagnostics from the repository root:
+`$sol-luna-status` is read-only. Its default Markdown is a concise current
+operational report. Users do not need reporter flags.
+
+## Root separation
+
+- `kit_root` supplies bundled scripts, policies, schemas, and immutable
+  evidence.
+- `workspace_root` is the canonical active project containing project-local
+  `.sol-luna` records.
+
+The plugin passes the current trusted project automatically. The reporter does
+not shell out and never substitutes the plugin directory as a workspace.
+Filesystem roots, home, shared temp roots, symlinks, and ambiguous/non-project
+paths are rejected. Without a safe workspace, collection is `unavailable` and
+counts are null—not zero.
+
+Repository-local operation may use the repository for both roots. Maintainer
+diagnostic examples:
 
 ```sh
 python3 .agents/skills/sol-luna-status/scripts/sol_luna_status.py
 python3 .agents/skills/sol-luna-status/scripts/sol_luna_status.py --detail
+python3 .agents/skills/sol-luna-status/scripts/sol_luna_status.py --historical
 python3 .agents/skills/sol-luna-status/scripts/sol_luna_status.py --format json
 ```
 
-The default human report is deliberately short: health, installed version and
-tier, routine metric coverage, delegation effectiveness, and one next action.
-Use `--detail` for the complete evidence, usage, timing, budget, drift, and
-provenance report. Use `--historical` only when explicitly inspecting retired
-experiments. JSON always retains the complete machine-readable report.
+`--workspace-root` accepts exactly one canonical project. Other path flags are
+synthetic/historical maintainer overrides described by `--help`.
 
-Use `--root`, `--receipts-dir`, `--routine-records-dir`, and `--session-root` for a synthetic or
-alternate local fixture. When running a globally installed copy, `--root` is
-required so the skill can resolve the orchestration-kit modules. Add
-`--active-root` and `--active-config` to compare the installed dynamic runtime.
-Normal status invocations automatically reuse the profile in the validated
-install state, then the latest validated receipt profile, with Fast retained
-only as the workflow-only compatibility default. `--luna-tier standard` or
-`--luna-tier fast` is available solely as an explicit diagnostic override.
-M4 is terminal and non-retryable by default. Historical inspection requires
-`--allow-retired-m4-audit` together with `--plan`; add `--pilot-home`,
-`--starts-dir`, or `--as-of` only for the named audit fixture. Audit mode keeps
-the next-slot eligibility false and never authorizes registration or model work.
-An optional positive `--budget` reports 50/75/90% thresholds only when usage
-is attributable.
+## Lifecycle rendering
 
-The detailed and JSON reports contain milestone and full-receipt state, optional routine
-record counts and attributable usage, latest terminal and
-accepted outcomes, session-probe capability, usage, timing, delegation
-quality, budget, drift, freshness, provenance, warnings, and exactly one next
-routing recommendation. The historical M4 section reports the immutable terminal
-retirement and no next slot. Explicit audit mode can report historical plan
-state and counts without making a slot eligible. A missing or invalid
-retirement marker fails closed with no next slot and no model-work
-recommendation. Numeric usage, timing, and budget values remain null and
-explicitly unknown in receipt-only mode. Missing routine records report
-`optional_missing: true` without an invalid-receipt warning. Unattributed or
-absent usage remains null/unknown and never becomes zero.
+Doctor and status share one pure lifecycle decision helper:
 
-Routine collection reports `ready-no-records` on a fresh installation,
-`active` after validated records are observed, `partial` when any record is
-invalid, and `unavailable` only when status cannot establish the collector.
-The short report translates the fresh state to "no delegated work observed
-yet" instead of displaying unrelated historical and unknown fields.
+- workflow-only: plugin version, no installed roles, Fast labeled only as the
+  workflow routing default, optional full setup;
+- not installed: repository diagnostic with no inferred tier;
+- invalid state or managed-runtime drift: Needs attention and fail-closed
+  verification;
+- healthy full role: installed version and actual Fast/Standard tier;
+- package refresh requested: retry without a restart; and
+- package refreshed: restart Codex, start a new task, and continue.
 
-The reporter verifies `receipt-policy.v1` alongside routing drift. Minimal
-records contribute only bounded spawn usefulness, lane outcome, checks, and
-attributable usage. They cannot supply full milestone identity or authorize
-session correlation.
+Lifecycle/update problems override optimization observations.
 
-M10 transport-aware receipts add aggregate counts for eligible native spawn
-failures, bounded Codex app-task fallbacks, completed or failed app tasks,
-unavailable fallbacks, and lanes completed directly by Sol. The report never
-prints the privacy-safe task reference, and a separate app task is not counted
-as a native child session.
+## Current metrics
 
-The scanner is bounded (under 30 seconds in normal operation), redacts paths,
-identifiers, prompts, source, tool payloads, and secrets, and requires explicit
-record schema v1 plus complete token snapshots, lifecycle boundaries, runtime
-labels, and receipt correlation. It falls back to receipt-only status whenever
-any of those local-session checks cannot be proved. It does not start a server
-or use an MCP service, dashboard, database, or network surface. M5 can
-distribute the same local workflow in the optional plugin.
+Routine v2 records are split into the current 30 UTC calendar days and the
+preceding 30 days under deterministic `--as-of`. Routing-policy versions are
+separate cohorts and are never combined. Historical v1 records contribute only
+to `legacy_lifetime_count`; they do not receive dates or enter windows.
 
-Globally installed example:
+`optimization-advisor.v1` requires 10 current records for advice, 10 previous
+records for a trend, and 5 group records. It suggests review below 70%
+usefulness, above 15% failed outcomes, or above 10% failed decided checks.
+Threshold comparisons are strict. Low sample size is the normal message “Not
+enough comparable evidence yet.”
 
-```sh
-python3 ~/.codex/skills/sol-luna-status/scripts/sol_luna_status.py \
-  --root /path/to/codex-sol-luna-orchestration-kit \
-  --active-root ~/.codex \
-  --active-config ~/.codex/config.toml
-```
+Advice is observational and human-review-only. It never changes policy,
+thresholds, tier, or package; promotes nothing; and makes no savings, causal,
+billing, or tier-superiority claim.
+
+## Rendering boundaries
+
+- default: current health, version/mode, 30-day metrics, delegation, trend,
+  and one next action;
+- `--detail`: current installation, workspace metrics, drift, and provenance;
+- `--historical`: retired M4/pilot/benchmark material and its no-retry boundary;
+- JSON: all existing fields plus additive lifecycle, workspace, v2 windows,
+  cohorts, and advisor fields.
+
+The bounded scanner redacts paths, identifiers, prompts, source, commands,
+tool payloads, and secrets. Session-derived usage remains best-effort and
+requires complete attribution. Missing attribution remains unknown.

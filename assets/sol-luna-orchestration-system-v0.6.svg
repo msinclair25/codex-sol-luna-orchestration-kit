@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="440" viewBox="0 0 1200 440" role="img" aria-labelledby="title desc">
+  <title id="title">Sol/Luna Orchestration Kit</title>
+  <desc id="desc">Sol routes verified work to either Fast or Standard Luna roles, then accepts privacy-safe project-local outcomes.</desc>
+  <defs>
+    <linearGradient id="night" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07131f"/>
+      <stop offset="1" stop-color="#102938"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="7" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#41d8ee"/>
+    </marker>
+  </defs>
+  <rect width="1200" height="440" rx="28" fill="url(#night)"/>
+  <path d="M0 342 C210 300 360 406 565 354 C770 302 930 384 1200 326 L1200 440 L0 440Z" fill="#0b202b" opacity=".9"/>
+  <g font-family="ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">
+    <text x="64" y="72" fill="#f6c85f" font-size="18" font-weight="700" letter-spacing="3">SOL / LUNA</text>
+    <text x="64" y="116" fill="#f7fbff" font-size="36" font-weight="750">Guided operations. Verifiable outcomes.</text>
+    <text x="64" y="148" fill="#9db4c3" font-size="18">Fast or Standard routing · project-local metrics · human-approved change</text>
+
+    <g transform="translate(76 205)">
+      <circle cx="86" cy="76" r="68" fill="#172b38" stroke="#f6c85f" stroke-width="3"/>
+      <circle cx="86" cy="76" r="48" fill="#f6c85f" opacity=".12" filter="url(#glow)"/>
+      <text x="86" y="71" fill="#f6c85f" font-size="29" font-weight="800" text-anchor="middle">SOL</text>
+      <text x="86" y="96" fill="#d9e4eb" font-size="13" text-anchor="middle">ROUTE + ACCEPT</text>
+    </g>
+
+    <path d="M244 254 C330 204 372 204 445 225" fill="none" stroke="#41d8ee" stroke-width="3" marker-end="url(#arrow)"/>
+    <path d="M244 310 C330 358 372 357 445 335" fill="none" stroke="#41d8ee" stroke-width="3" marker-end="url(#arrow)"/>
+
+    <g transform="translate(460 188)">
+      <rect width="252" height="82" rx="18" fill="#112e3b" stroke="#41d8ee" stroke-width="2"/>
+      <text x="24" y="35" fill="#41d8ee" font-size="22" font-weight="800">LUNA · FAST</text>
+      <text x="24" y="59" fill="#b6cbd5" font-size="14">lower latency · higher weight</text>
+    </g>
+    <g transform="translate(460 292)">
+      <rect width="252" height="82" rx="18" fill="#112e3b" stroke="#41d8ee" stroke-width="2"/>
+      <text x="24" y="35" fill="#41d8ee" font-size="22" font-weight="800">LUNA · STANDARD</text>
+      <text x="24" y="59" fill="#b6cbd5" font-size="14">normal service · broad fit</text>
+    </g>
+
+    <path d="M724 229 C785 229 793 271 838 271" fill="none" stroke="#63e6a6" stroke-width="3" marker-end="url(#arrow)"/>
+    <path d="M724 333 C785 333 793 291 838 291" fill="none" stroke="#63e6a6" stroke-width="3" marker-end="url(#arrow)"/>
+
+    <g transform="translate(852 207)">
+      <rect width="272" height="148" rx="22" fill="#102d2d" stroke="#63e6a6" stroke-width="3"/>
+      <circle cx="42" cy="43" r="17" fill="#63e6a6" opacity=".18"/>
+      <path d="M33 43 l7 7 l13 -16" fill="none" stroke="#63e6a6" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="72" y="50" fill="#63e6a6" font-size="23" font-weight="800">VERIFIED</text>
+      <text x="26" y="86" fill="#dce9e9" font-size="15">bounded evidence</text>
+      <text x="26" y="110" fill="#dce9e9" font-size="15">project-local trend</text>
+      <text x="26" y="134" fill="#dce9e9" font-size="15">human approval</text>
+    </g>
+  </g>
+</svg>

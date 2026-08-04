@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "routine-delegation-record.v2.schema.json",
+  "title": "Routine delegation record v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "version", "recorded_on", "context", "spawn", "outcome", "checks", "usage"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 2},
+    "version": {"type": "string", "const": "routine-delegation-record.v2"},
+    "recorded_on": {"type": "string", "format": "date", "pattern": "^20[0-9]{2}-[0-9]{2}-[0-9]{2}$"},
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["routing_policy", "profile", "role_kind", "task_class", "benefit_code"],
+      "properties": {
+        "routing_policy": {"type": "string", "maxLength": 32, "pattern": "^routing-policy\\.v[1-9][0-9]*\\.[0-9]+$"},
+        "profile": {"type": "string", "enum": ["fast", "standard"]},
+        "role_kind": {"type": "string", "enum": ["scout", "worker", "critic", "tester", "max"]},
+        "task_class": {
+          "type": "string",
+          "enum": ["explanation_question", "status_reporting", "git_operation", "one_command_diagnostic", "targeted_lookup", "localized_single_file_edit", "formatting_documentation", "straightforward_test_rerun", "overhead_comparable", "broad_mapping", "substantial_implementation", "substantial_validation", "independent_risk_review", "complex_analysis"]
+        },
+        "benefit_code": {"type": "string", "enum": ["parallel_latency", "isolated_large_implementation", "broad_read_only_mapping", "independent_risk_review"]}
+      }
+    },
+    "spawn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "useful"],
+      "properties": {
+        "decision": {"type": "string", "const": "delegate"},
+        "useful": {"type": "boolean"}
+      }
+    },
+    "outcome": {"type": "string", "enum": ["completed", "blocked", "failed"]},
+    "checks": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "status"],
+        "properties": {
+          "name": {"type": "string", "pattern": "^acceptance-[1-8]$"},
+          "status": {"type": "string", "enum": ["pass", "fail", "skipped"]}
+        }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attribution", "total_tokens"],
+      "properties": {
+        "attribution": {"type": "string", "enum": ["attributable", "unknown"]},
+        "total_tokens": {"type": ["integer", "null"], "minimum": 0}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"attribution": {"const": "unknown"}}},
+          "then": {"properties": {"total_tokens": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"attribution": {"const": "attributable"}}},
+          "then": {"properties": {"total_tokens": {"type": "integer", "minimum": 0}}}
+        }
+      ]
+    }
+  }
+}

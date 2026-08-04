@@ -12,6 +12,7 @@ import os
 import re
 import stat
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -36,6 +37,12 @@ MODEL_NAMES = {"gpt-5.6-sol", "gpt-5.6-luna"}
 REASONING_NAMES = {"low", "medium", "high", "xhigh", "max", "ultra"}
 TOKEN_FIELDS = {"input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens", "total_tokens"}
 M4_RETIREMENT_RELATIVE = Path("evidence/m4-v0.2.1-single-pair-01-retired.json")
+ACTIVE_ROUTING_POLICY = "routing-policy.v1.5"
+ACTIVE_RECEIPT_POLICY = "receipt-policy.v2"
+ACTIVE_ROUTINE_RECORD = "routine-delegation-record.v2"
+LEGACY_ROUTINE_RECORD = "routine-delegation-record.v1"
+ADVISOR_VERSION = "optimization-advisor.v1"
+SHARED_TEMP_ROOTS = {Path("/tmp"), Path("/private/tmp"), Path("/var/tmp"), Path(tempfile.gettempdir())}
 
 
 def _module(name: str):
@@ -49,13 +56,13 @@ def _module(name: str):
     return mod
 
 
-usage_report = receipt_tool = routing_policy = verify_bundle = pilot_tool = None
+usage_report = receipt_tool = routing_policy = verify_bundle = pilot_tool = lifecycle = None
 
 
 def _valid_root(path: Path) -> bool:
     return _safe_path(path, directory=True) and all(
         _safe_path(path / "scripts" / name)
-        for name in ("usage_report.py", "receipt_tool.py", "pilot_tool.py")
+        for name in ("usage_report.py", "receipt_tool.py", "pilot_tool.py", "lifecycle.py")
     )
 
 
@@ -88,13 +95,14 @@ def _resolve_root(explicit: Optional[str]) -> Path:
 
 
 def _load_modules(root: Path) -> None:
-    global usage_report, receipt_tool, routing_policy, verify_bundle, pilot_tool, MODULE_ROOT
+    global usage_report, receipt_tool, routing_policy, verify_bundle, pilot_tool, lifecycle, MODULE_ROOT
     MODULE_ROOT = root
     usage_report = _module("usage_report")
     receipt_tool = _module("receipt_tool")
     routing_policy = _module("routing_policy")
     verify_bundle = _module("verify_control_bundle")
     pilot_tool = _module("pilot_tool")
+    lifecycle = _module("lifecycle")
 
 
 def _safe_path(path: Path, *, directory: bool = False) -> bool:
@@ -135,6 +143,92 @@ def _read_json(path: Path, limit: int = MAX_FILE_BYTES) -> Optional[Any]:
         return _strict_loads(data.decode("utf-8"))
     except (OSError, UnicodeError, ValueError, RecursionError, MemoryError):
         return None
+
+
+def _bundle_info(root: Path) -> Dict[str, Any]:
+    manifest = root / ".codex-plugin" / "plugin.json"
+    if not manifest.exists() and not manifest.is_symlink():
+        return {"active": False, "valid": True, "version": None}
+    value = _read_json(manifest, 32 * 1024)
+    valid = (
+        isinstance(value, dict)
+        and value.get("name") == "sol-luna-orchestration-kit"
+        and isinstance(value.get("version"), str)
+        and re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?", value["version"]) is not None
+    )
+    return {
+        "active": valid,
+        "valid": valid,
+        "version": value.get("version") if valid else None,
+    }
+
+
+def _source_kit_version(root: Path) -> Optional[str]:
+    path = root / "scripts" / "install.py"
+    if not _safe_path(path):
+        return None
+    try:
+        data = path.read_bytes()
+        if len(data) > MAX_FILE_BYTES:
+            return None
+        match = re.search(rb'^KIT_VERSION = "([0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?)"$', data, re.MULTILINE)
+        return match.group(1).decode("ascii") if match else None
+    except (OSError, UnicodeError, ValueError, MemoryError):
+        return None
+
+
+def _safe_workspace_candidate(candidate: Path) -> Optional[Path]:
+    try:
+        if not candidate.is_absolute():
+            candidate = candidate.absolute()
+        if not _safe_path(candidate, directory=True):
+            return None
+        resolved = candidate.resolve(strict=True)
+        broad = {Path("/").resolve(), Path.home().resolve()}
+        broad.update(path.resolve() for path in SHARED_TEMP_ROOTS)
+        if resolved in broad or resolved.parent == resolved:
+            return None
+        git_marker = resolved / ".git"
+        metadata_marker = resolved / ".sol-luna"
+        git_ok = (
+            (git_marker.is_file() or git_marker.is_dir())
+            and not git_marker.is_symlink()
+        )
+        metadata_ok = (
+            metadata_marker.is_dir()
+            and not metadata_marker.is_symlink()
+            and stat.S_IMODE(metadata_marker.stat().st_mode) == 0o700
+        )
+        if not git_ok and not metadata_ok:
+            return None
+        return resolved
+    except (OSError, RuntimeError, ValueError):
+        return None
+
+
+def _resolve_workspace_root(explicit: Optional[str], kit_root: Path) -> Tuple[Optional[Path], str]:
+    """Resolve one canonical project root without scanning unrelated projects."""
+
+    if explicit:
+        candidate = _safe_workspace_candidate(Path(explicit).expanduser())
+        return (candidate, "explicit" if candidate is not None else "unsafe-or-ambiguous")
+    bases = [Path.cwd()]
+    if not _bundle_info(kit_root)["active"]:
+        bases.append(kit_root)
+    seen: set[Path] = set()
+    for base in bases:
+        for candidate in (base, *base.parents):
+            try:
+                key = candidate.absolute()
+            except (OSError, RuntimeError):
+                continue
+            if key in seen:
+                continue
+            seen.add(key)
+            resolved = _safe_workspace_candidate(candidate)
+            if resolved is not None:
+                return resolved, "active-project"
+    return None, "unavailable"
 
 
 def _install_state_info(codex_home: Path) -> Optional[Dict[str, Any]]:
@@ -548,23 +642,31 @@ def _valid_receipts(receipts_dir: Path) -> List[Dict[str, Any]]:
     return sorted(out, key=lambda x: (x.get("closed_at", ""), x.get("milestone_id", "")))
 
 
-def _routine_records(records_dir: Path) -> Tuple[List[Dict[str, Any]], int]:
-    """Read optional routine records; a missing directory is valid absence."""
+def _routine_records(
+    records_dir: Optional[Path],
+) -> Tuple[List[Dict[str, Any]], int, int]:
+    """Read v2 trend records and count v1 only as legacy lifetime history."""
 
+    if records_dir is None:
+        return [], 0, 0
     try:
         if not records_dir.exists() and not records_dir.is_symlink():
-            return [], 0
+            return [], 0, 0
         if not _safe_path(records_dir, directory=True):
-            return [], 1
+            return [], 0, 1
         if stat.S_IMODE(records_dir.stat().st_mode) != 0o700:
-            return [], 1
+            return [], 0, 1
     except OSError:
-        return [], 1
+        return [], 0, 1
     records: List[Dict[str, Any]] = []
+    legacy = 0
     invalid = 0
     try:
         for path in sorted(records_dir.iterdir()):
-            if path.suffix != ".json" or not _safe_path(path):
+            if path.suffix != ".json":
+                continue
+            if not _safe_path(path):
+                invalid += 1
                 continue
             try:
                 if stat.S_IMODE(path.stat().st_mode) != 0o600:
@@ -578,41 +680,237 @@ def _routine_records(records_dir: Path) -> Tuple[List[Dict[str, Any]], int]:
                 result = receipt_tool.validate_routine_record(value)
             except Exception:
                 result = {"ok": False}
-            if result.get("ok"):
+            if not result.get("ok") or not isinstance(value, dict):
+                invalid += 1
+            elif value.get("version") == LEGACY_ROUTINE_RECORD:
+                legacy += 1
+            elif value.get("version") == ACTIVE_ROUTINE_RECORD:
                 records.append(value)
             else:
                 invalid += 1
     except (OSError, RuntimeError):
-        return [], invalid
-    return records, invalid
+        return [], legacy, invalid + 1
+    return records, legacy, invalid
 
 
-def _routine_summary(records: List[Dict[str, Any]], invalid: int) -> Dict[str, Any]:
+def _record_stats(records: List[Dict[str, Any]]) -> Dict[str, Any]:
+    checks = [check for record in records for check in record["checks"]]
     attributed = [
         record["usage"]["total_tokens"]
         for record in records
         if record.get("usage", {}).get("attribution") == "attributable"
     ]
-    complete = bool(records) and len(attributed) == len(records)
     useful = sum(int(record["spawn"]["useful"]) for record in records)
-    checks = [check for record in records for check in record["checks"]]
+    failed = sum(int(record["outcome"] == "failed") for record in records)
+    check_pass = sum(int(check["status"] == "pass") for check in checks)
+    check_fail = sum(int(check["status"] == "fail") for check in checks)
+    check_decided = check_pass + check_fail
+    complete_usage = bool(records) and len(attributed) == len(records)
     return {
-        "version": "routine-delegation-record.v1",
-        "collection": "partial" if invalid else ("active" if records else "ready-no-records"),
         "observed": len(records),
-        "invalid": invalid,
-        "optional_missing": not records and invalid == 0,
         "completed": sum(int(record["outcome"] == "completed") for record in records),
         "blocked": sum(int(record["outcome"] == "blocked") for record in records),
-        "failed": sum(int(record["outcome"] == "failed") for record in records),
+        "failed": failed,
+        "failure_rate": failed / len(records) if records else None,
         "useful": useful,
         "spawn_precision": useful / len(records) if records else None,
-        "check_pass": sum(int(check["status"] == "pass") for check in checks),
-        "check_fail": sum(int(check["status"] == "fail") for check in checks),
+        "check_pass": check_pass,
+        "check_fail": check_fail,
         "check_skipped": sum(int(check["status"] == "skipped") for check in checks),
-        "usage_attribution": "attributable" if complete else "unknown",
-        "total_tokens": sum(attributed) if complete else None,
+        "check_failure_rate": check_fail / check_decided if check_decided else None,
+        "usage_attribution": "attributable" if complete_usage else "unknown",
+        "total_tokens": sum(attributed) if complete_usage else None,
     }
+
+
+def _advisor_rules(root: Path) -> Optional[Dict[str, Any]]:
+    value = _read_json(root / "config" / "optimization-advisor.v1.json", 16 * 1024)
+    expected = {
+        "schema_version": 1,
+        "version": ADVISOR_VERSION,
+        "status": "observational-human-review-only",
+        "windows": {"current_days": 30, "previous_days": 30},
+        "minimum_samples": {"current": 10, "previous": 10, "group": 5},
+        "review_thresholds": {
+            "usefulness_below": 0.7,
+            "failure_rate_above": 0.15,
+            "check_failure_rate_above": 0.1,
+        },
+        "recommendation_codes": [
+            "insufficient_evidence",
+            "no_issue_detected",
+            "review_spawn_precision",
+            "review_failure_rate",
+            "review_check_failures",
+        ],
+        "automatic_policy_change": False,
+        "prohibited_claims": [
+            "causal", "cost_savings", "latency_savings", "quality_savings",
+            "tier_superiority", "token_savings",
+        ],
+    }
+    return value if value == expected else None
+
+
+def _as_of_date(value: Optional[str]) -> Optional[dt.date]:
+    if value is None:
+        return dt.datetime.now(dt.timezone.utc).date()
+    try:
+        if re.fullmatch(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}", value):
+            return dt.date.fromisoformat(value)
+        parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            return None
+        return parsed.astimezone(dt.timezone.utc).date()
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _review_codes(records: List[Dict[str, Any]], rules: Dict[str, Any]) -> List[str]:
+    stats = _record_stats(records)
+    thresholds = rules["review_thresholds"]
+    codes: List[str] = []
+    if stats["spawn_precision"] is not None and stats["spawn_precision"] < thresholds["usefulness_below"]:
+        codes.append("review_spawn_precision")
+    if stats["failure_rate"] is not None and stats["failure_rate"] > thresholds["failure_rate_above"]:
+        codes.append("review_failure_rate")
+    if stats["check_failure_rate"] is not None and stats["check_failure_rate"] > thresholds["check_failure_rate_above"]:
+        codes.append("review_check_failures")
+    return codes
+
+
+def _evaluate_advisor(
+    current: List[Dict[str, Any]],
+    previous: List[Dict[str, Any]],
+    rules: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    base = {
+        "version": ADVISOR_VERSION,
+        "status": "unavailable",
+        "primary_code": "insufficient_evidence",
+        "recommendation_codes": ["insufficient_evidence"],
+        "message": "Not enough comparable evidence yet.",
+        "trend": "unavailable",
+        "findings": [],
+        "automatic_policy_change": False,
+        "human_approval_required": True,
+    }
+    if rules is None:
+        return base
+    minimum = rules["minimum_samples"]
+    if len(current) < minimum["current"]:
+        return {**base, "status": "insufficient-evidence", "trend": "insufficient-current-evidence"}
+    findings: List[Dict[str, Any]] = []
+    codes = _review_codes(current, rules)
+    for code in codes:
+        findings.append({"scope": "overall", "code": code})
+    for dimension in ("role_kind", "task_class", "benefit_code"):
+        values = sorted({record["context"][dimension] for record in current})
+        for value in values:
+            group = [record for record in current if record["context"][dimension] == value]
+            if len(group) < minimum["group"]:
+                continue
+            for code in _review_codes(group, rules):
+                findings.append({"scope": dimension, "value": value, "records": len(group), "code": code})
+    unique_codes = [
+        code for code in rules["recommendation_codes"]
+        if code in {finding["code"] for finding in findings}
+    ]
+    if not unique_codes:
+        unique_codes = ["no_issue_detected"]
+    comparable = len(previous) >= minimum["previous"]
+    return {
+        **base,
+        "status": "review-suggested" if findings else "no-issue-detected",
+        "primary_code": unique_codes[0],
+        "recommendation_codes": unique_codes,
+        "message": (
+            "Human review suggested; observations do not authorize a policy change."
+            if findings
+            else "No issue detected; no policy change suggested."
+        ),
+        "trend": "comparable-observational-windows" if comparable else "insufficient-comparable-prior-evidence",
+        "findings": findings[:8],
+    }
+
+
+def _routine_summary(
+    records: List[Dict[str, Any]],
+    legacy: int,
+    invalid: int,
+    *,
+    workspace_available: bool,
+    as_of: Optional[dt.date],
+    rules: Optional[Dict[str, Any]],
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    if not workspace_available or as_of is None:
+        summary = {
+            "version": ACTIVE_ROUTINE_RECORD,
+            "collection": "unavailable",
+            "observed": None,
+            "invalid": invalid,
+            "optional_missing": None,
+            "v2_lifetime_count": None,
+            "legacy_lifetime_count": None,
+            "routing_policy_cohort": ACTIVE_ROUTING_POLICY,
+            **{key: None for key in (
+                "completed", "blocked", "failed", "failure_rate", "useful", "spawn_precision",
+                "check_pass", "check_fail", "check_skipped", "check_failure_rate", "total_tokens",
+            )},
+            "usage_attribution": "unknown",
+            "current_window": None,
+            "previous_window": None,
+            "cohorts": [],
+        }
+        return summary, _evaluate_advisor([], [], None)
+    current_start = as_of - dt.timedelta(days=29)
+    previous_end = current_start - dt.timedelta(days=1)
+    previous_start = previous_end - dt.timedelta(days=29)
+    dated: List[Tuple[Dict[str, Any], dt.date]] = []
+    for record in records:
+        try:
+            dated.append((record, dt.date.fromisoformat(record["recorded_on"])))
+        except (KeyError, TypeError, ValueError, OverflowError):
+            invalid += 1
+    current = [
+        record for record, day in dated
+        if record["context"]["routing_policy"] == ACTIVE_ROUTING_POLICY and current_start <= day <= as_of
+    ]
+    previous = [
+        record for record, day in dated
+        if record["context"]["routing_policy"] == ACTIVE_ROUTING_POLICY and previous_start <= day <= previous_end
+    ]
+    stats = _record_stats(current)
+    cohort_counts = Counter(record["context"]["routing_policy"] for record, _ in dated)
+    collection = "partial" if invalid else ("active" if records or legacy else "ready-no-records")
+    summary = {
+        "version": ACTIVE_ROUTINE_RECORD,
+        "collection": collection,
+        "observed": len(records),
+        "invalid": invalid,
+        "optional_missing": not records and legacy == 0 and invalid == 0,
+        "v2_lifetime_count": len(records),
+        "legacy_lifetime_count": legacy,
+        "routing_policy_cohort": ACTIVE_ROUTING_POLICY,
+        **stats,
+        "current_window": {
+            "days": 30,
+            "start": current_start.isoformat(),
+            "end": as_of.isoformat(),
+            **stats,
+        },
+        "previous_window": {
+            "days": 30,
+            "start": previous_start.isoformat(),
+            "end": previous_end.isoformat(),
+            **_record_stats(previous),
+        },
+        "cohorts": [
+            {"routing_policy": policy, "lifetime_records": count}
+            for policy, count in sorted(cohort_counts.items())
+        ],
+    }
+    return summary, _evaluate_advisor(current, previous, rules)
 
 
 def _empty_receipt_summary() -> Dict[str, Any]:
@@ -889,7 +1187,7 @@ def _recommendation(
         if state == "in-progress":
             return "direct Sol: close pending M4 evidence before the next predeclared slot"
     if receipt is None:
-        return "direct Sol: no formal receipt is required unless receipt-policy.v1 selects the full tier"
+        return "direct Sol: no formal receipt is required unless receipt-policy.v2 selects the full tier"
     if receipt.get("disposition") in {"rejected", "abandoned"} or quality.get("check_fail_count") or quality.get("open_risk_count"):
         return "direct Sol: terminal quality evidence requires remediation"
     if not attributed:
@@ -900,12 +1198,42 @@ def _recommendation(
 def _report(args: argparse.Namespace) -> Dict[str, Any]:
     root = _resolve_root(args.root)
     _load_modules(root)
-    receipts_dir = Path(args.receipts_dir).expanduser() if args.receipts_dir else root / ".sol-luna" / "receipts"
-    routine_records_dir = Path(args.routine_records_dir).expanduser() if args.routine_records_dir else root / ".sol-luna" / "routine-records"
+    bundle = _bundle_info(root)
+    workspace_root, workspace_reason = _resolve_workspace_root(args.workspace_root, root)
+    receipts_dir = (
+        Path(args.receipts_dir).expanduser()
+        if args.receipts_dir
+        else (workspace_root / ".sol-luna" / "receipts" if workspace_root is not None else None)
+    )
+    routine_records_dir: Optional[Path] = None
+    routine_path_safe = workspace_root is not None
+    if workspace_root is not None:
+        expected_records_dir = workspace_root / ".sol-luna" / "routine-records"
+        if args.routine_records_dir:
+            candidate_records_dir = Path(args.routine_records_dir).expanduser()
+            try:
+                routine_path_safe = (
+                    candidate_records_dir.resolve(strict=False)
+                    == expected_records_dir.resolve(strict=False)
+                )
+            except (OSError, RuntimeError):
+                routine_path_safe = False
+            if routine_path_safe:
+                routine_records_dir = candidate_records_dir
+        else:
+            routine_records_dir = expected_records_dir
     session_root = Path(args.session_root).expanduser() if args.session_root else Path.home() / ".codex" / "sessions"
-    receipts = _valid_receipts(receipts_dir)
-    routine_records, invalid_routine_records = _routine_records(routine_records_dir)
-    routine_summary = _routine_summary(routine_records, invalid_routine_records)
+    receipts = _valid_receipts(receipts_dir) if receipts_dir is not None else []
+    routine_records, legacy_routine_records, invalid_routine_records = _routine_records(routine_records_dir)
+    advisor_rules = _advisor_rules(root)
+    routine_summary, advisor_summary = _routine_summary(
+        routine_records,
+        legacy_routine_records,
+        invalid_routine_records,
+        workspace_available=workspace_root is not None and routine_path_safe,
+        as_of=_as_of_date(args.as_of),
+        rules=advisor_rules,
+    )
     latest = receipts[-1] if receipts else None
     profile_root = Path(args.active_root).expanduser() if args.active_root else Path.home() / ".codex"
     install_state_path = profile_root / INSTALL_STATE_NAME
@@ -913,7 +1241,7 @@ def _report(args: argparse.Namespace) -> Dict[str, Any]:
     install_info = _install_state_info(profile_root)
     luna_tier, luna_tier_provenance = _select_luna_profile(args.luna_tier, profile_root, latest)
     receipt_summary = _empty_receipt_summary()
-    if _safe_path(receipts_dir, directory=True):
+    if receipts_dir is not None and _safe_path(receipts_dir, directory=True):
         try:
             candidate_summary = receipt_tool.summarize(receipts_dir)
             if isinstance(candidate_summary, dict):
@@ -990,6 +1318,12 @@ def _report(args: argparse.Namespace) -> Dict[str, Any]:
         warnings.append("invalid_receipts_observed")
     if invalid_routine_records:
         warnings.append("invalid_routine_records_observed")
+    if workspace_root is None or not routine_path_safe:
+        warnings.append("workspace_metrics_unavailable")
+    if _as_of_date(args.as_of) is None:
+        warnings.append("metrics_as_of_invalid")
+    if advisor_rules is None:
+        warnings.append("optimization_advisor_unavailable")
     if install_state_present and install_info is None:
         warnings.append("install_state_invalid")
 
@@ -1066,8 +1400,17 @@ def _report(args: argparse.Namespace) -> Dict[str, Any]:
         if args.pilot_home
         else Path.home() / ".codex"
     )
-    active_path = Path(args.active_root).expanduser() if args.active_root else (active_default if _safe_path(active_default, directory=True) else None)
-    config_path = Path(args.active_config).expanduser() if args.active_config else (active_default / "config.toml" if _safe_path(active_default / "config.toml") else None)
+    should_check_runtime = install_info is not None and install_info["update_phase"] == "ready"
+    active_path = (
+        Path(args.active_root).expanduser()
+        if should_check_runtime and args.active_root
+        else (active_default if should_check_runtime and _safe_path(active_default, directory=True) else None)
+    )
+    config_path = (
+        Path(args.active_config).expanduser()
+        if active_path is not None and args.active_config
+        else (active_path / "config.toml" if active_path is not None and _safe_path(active_path / "config.toml") else None)
+    )
     if active_path is not None and config_path is None:
         active_path = None
         warnings.append("active_runtime_not_checked")
@@ -1207,23 +1550,76 @@ def _report(args: argparse.Namespace) -> Dict[str, Any]:
     pilot_is_retired = bool(pilot_summary and pilot_summary.get("state") == "retired-non-retryable")
     pilot_retirement_blocked = bool(pilot_summary and pilot_summary.get("state") == "retirement-evidence-unavailable")
     latest_is_current = latest is not None and pilot_is_retired
+    available_version = bundle["version"] or _source_kit_version(root)
+    verification_state = "not-checked"
+    if install_info is not None and install_info["update_phase"] != "ready":
+        verification_state = "deferred"
+    elif install_info is not None and drift.get("active_runtime") is True:
+        verification_state = "passed"
+    elif install_info is not None and drift.get("active_runtime") is False:
+        verification_state = "failed"
+    lifecycle_decision = lifecycle.decide(
+        bundle_active=bundle["active"],
+        bundle_version=available_version,
+        install_state=(
+            "invalid" if install_info is None and install_state_present
+            else "absent" if install_info is None
+            else "valid"
+        ),
+        installed_version=install_info["kit_version"] if install_info is not None else None,
+        installed_tier=install_info["tier"] if install_info is not None else None,
+        update_phase=install_info["update_phase"] if install_info is not None else None,
+        verification=verification_state,
+        contract_ok=bool(
+            bundle["valid"]
+            and drift.get("routing_contract")
+            and drift.get("receipt_policy")
+            and advisor_rules is not None
+        ),
+    )
+    installation_status = {
+        "healthy": "installed",
+        "healthy-unchecked": "installed",
+        "workflow-only": "workflow-only",
+        "not-installed": "not-installed",
+        "update-pending": "update-pending",
+        "roles-update-required": "update-required",
+        "needs-attention": "invalid" if install_info is None else "installed",
+    }[lifecycle_decision["state"]]
     return {
         "schema_version": 1,
         "mode": "session+receipts" if usage["status"] == "estimated" else ("minimal-records" if routine_records and latest is None else "receipt-only"),
         "installation": {
-            "status": (
-                "invalid"
-                if install_info is None and install_state_present
-                else "not-installed"
-                if install_info is None
-                else "update-pending"
-                if install_info["update_phase"] != "ready"
-                else "installed"
-            ),
-            "kit_version": install_info["kit_version"] if install_info is not None else None,
-            "update_phase": install_info["update_phase"] if install_info is not None else None,
+            "status": installation_status,
+            "mode": lifecycle_decision["mode"],
+            "kit_version": lifecycle_decision["version"],
+            "bundle_version": available_version,
+            "installed_version": install_info["kit_version"] if install_info is not None else None,
+            "update_phase": lifecycle_decision["update_phase"],
         },
-        "luna_profile": {"tier": luna_tier, "provenance": luna_tier_provenance},
+        "lifecycle": lifecycle_decision,
+        "luna_profile": {
+            "tier": (
+                lifecycle_decision["installed_tier"]
+                if lifecycle_decision["installed_tier"] is not None
+                else lifecycle_decision["workflow_default_tier"]
+            ),
+            "provenance": (
+                "install-state"
+                if lifecycle_decision["installed_tier"] is not None
+                else "workflow-routing-default"
+                if lifecycle_decision["workflow_default_tier"] is not None
+                else "not-inferred"
+            ),
+            "installed": lifecycle_decision["installed_tier"] is not None,
+            "workflow_default": lifecycle_decision["workflow_default_tier"],
+        },
+        "workspace": {
+            "status": "available" if workspace_root is not None and routine_path_safe else "unavailable",
+            "reason": workspace_reason if routine_path_safe else "unsafe-or-ambiguous",
+            "project_local": True,
+            "bounded": True,
+        },
         "milestone": {
             "id": latest.get("milestone_id") if latest_is_current else (pilot_summary.get("plan_id") if pilot_summary else (latest.get("milestone_id") if latest else None)),
             "state": latest.get("disposition") if latest_is_current else (pilot_summary.get("state") if pilot_summary else (latest.get("disposition") if latest else "unknown")),
@@ -1231,6 +1627,7 @@ def _report(args: argparse.Namespace) -> Dict[str, Any]:
         },
         "receipts": {key: receipt_summary.get(key) for key in receipt_keys},
         "routine_records": routine_summary,
+        "optimization_advisor": advisor_summary,
         "pilot": pilot_summary,
         "latest_terminal": latest_terminal,
         "latest_accepted_outcome": latest_accepted,
@@ -1258,14 +1655,28 @@ def _report(args: argparse.Namespace) -> Dict[str, Any]:
 
 
 def _parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Report bounded privacy-safe Sol/Luna status")
-    p.add_argument("--root"); p.add_argument("--receipts-dir"); p.add_argument("--routine-records-dir"); p.add_argument("--session-root"); p.add_argument("--active-root"); p.add_argument("--active-config")
-    p.add_argument("--plan"); p.add_argument("--starts-dir"); p.add_argument("--pilot-home"); p.add_argument("--as-of")
-    p.add_argument("--allow-retired-m4-audit", action="store_true")
-    p.add_argument("--detail", action="store_true")
-    p.add_argument("--historical", action="store_true")
-    p.add_argument("--luna-tier", choices=("fast", "standard"))
-    p.add_argument("--budget", type=float); p.add_argument("--format", choices=("markdown", "json"), default="markdown")
+    p = argparse.ArgumentParser(
+        description="Report concise, project-local, privacy-safe Sol/Luna status.",
+        epilog="Normal users invoke the Sol/Luna status skill; path and audit options are maintainer diagnostics.",
+    )
+    p.add_argument("--root", help="maintainer: kit/plugin root containing immutable policy assets")
+    p.add_argument("--workspace-root", help="maintainer: canonical active project root; never scans other projects")
+    p.add_argument("--receipts-dir", help="maintainer: historical full-receipt diagnostic override")
+    p.add_argument("--routine-records-dir", help="maintainer: must equal WORKSPACE_ROOT/.sol-luna/routine-records")
+    p.add_argument("--session-root", help="maintainer: bounded local session diagnostic root")
+    p.add_argument("--active-root", help="maintainer: installed Codex root to verify")
+    p.add_argument("--active-config", help="maintainer: installed config to verify without printing it")
+    p.add_argument("--plan", help="maintainer: retired M4 audit plan")
+    p.add_argument("--starts-dir", help="maintainer: retired M4 audit registry")
+    p.add_argument("--pilot-home", help="maintainer: retired M4 audit environment")
+    p.add_argument("--as-of", help="deterministic UTC date/time for bounded windows and historical audits")
+    p.add_argument("--allow-retired-m4-audit", action="store_true", help="maintainer: audit frozen M4 inputs; never launches work")
+    rendering = p.add_mutually_exclusive_group()
+    rendering.add_argument("--detail", action="store_true", help="show current install, project metrics, drift, and provenance")
+    rendering.add_argument("--historical", action="store_true", help="show retired pilot and benchmark history")
+    p.add_argument("--luna-tier", choices=("fast", "standard"), help="maintainer: explicit historical/diagnostic profile override")
+    p.add_argument("--budget", type=float, help="maintainer: optional attributable weighted-usage threshold")
+    p.add_argument("--format", choices=("markdown", "json"), default="markdown", help="human Markdown or additive stable JSON")
     return p
 
 
@@ -1281,44 +1692,58 @@ def _display(value: Any) -> str:
 
 def _summary_markdown(report: Dict[str, Any]) -> str:
     installation = report.get("installation", {})
-    drift = report.get("drift", {})
+    lifecycle_state = report.get("lifecycle", {})
     routine = report.get("routine_records", {})
-    tier = report.get("luna_profile", {}).get("tier")
+    advisor = report.get("optimization_advisor", {})
     invalid = int(routine.get("invalid") or 0) + int(report.get("receipts", {}).get("invalid_receipts") or 0)
-    if installation.get("status") == "update-pending":
-        health = "Update pending"
-        next_action = "Restart Codex, then ask Sol/Luna setup to finish the update."
-    elif installation.get("status") == "invalid" or invalid or drift.get("errors") or drift.get("active_runtime") is False:
+    health = str(lifecycle_state.get("health") or "Needs attention")
+    if invalid and not lifecycle_state.get("lifecycle_problem"):
         health = "Needs attention"
-        next_action = "Ask Sol/Luna setup to verify the installation and explain the drift."
-    elif installation.get("status") == "not-installed":
-        health = "Setup incomplete"
-        next_action = "Ask Sol/Luna setup to complete installation."
+        next_action = "Review invalid project-local records before using metrics; no policy change is authorized."
+    elif lifecycle_state.get("lifecycle_problem") or lifecycle_state.get("state") in {"workflow-only", "not-installed"}:
+        next_action = str(lifecycle_state.get("next_message") or "Ask Sol/Luna setup to verify.")
+    elif advisor.get("status") == "review-suggested":
+        next_action = "No lifecycle action needed; review observations before any human-approved policy change."
     else:
-        health = "Healthy" if drift.get("active_runtime") is True else "Healthy; runtime not checked"
-        next_action = "No action needed."
-    observed = int(routine.get("observed") or 0)
+        next_action = "No lifecycle action needed; no policy change suggested."
+    window = routine.get("current_window") if isinstance(routine.get("current_window"), dict) else None
+    observed = window.get("observed") if window else None
     collection = routine.get("collection") or "unavailable"
-    if observed:
-        metrics = f"{collection}; {observed} delegated task{'s' if observed != 1 else ''} observed"
-        precision = routine.get("spawn_precision")
-        effectiveness = (
-            f"{float(precision) * 100:.0f}% useful; checks {int(routine.get('check_pass') or 0)} pass / {int(routine.get('check_fail') or 0)} fail"
-            if isinstance(precision, (int, float)) and not isinstance(precision, bool)
-            else "Usefulness unknown"
-        )
+    if collection == "unavailable" or observed is None:
+        metrics = "Unavailable; no safe active project was resolved"
+        effectiveness = "Unavailable; missing measurement remains unknown"
+    elif observed:
+        metrics = f"{observed} delegated outcome{'s' if observed != 1 else ''} in the last 30 days"
+        useful = int(window.get("useful") or 0)
+        failed = int(window.get("failed") or 0)
+        effectiveness = f"{useful}/{observed} accepted as useful · {failed} failed"
     else:
-        metrics = "Ready; no delegated work observed yet" if collection == "ready-no-records" else str(collection)
-        effectiveness = "No delegated outcomes to evaluate yet"
-    version = installation.get("kit_version") or "unknown"
-    tier_label = str(tier).title() if tier else "Unknown tier"
+        metrics = "Ready; no dated delegated outcomes in the last 30 days"
+        effectiveness = "No current outcomes to evaluate yet"
+    trend_state = advisor.get("trend")
+    if trend_state in {"insufficient-current-evidence", "insufficient-comparable-prior-evidence"}:
+        trend = "Not enough comparable evidence yet."
+    elif trend_state == "comparable-observational-windows":
+        trend = "Comparable policy-cohort windows available for human review"
+    else:
+        trend = "Unavailable"
+    mode = lifecycle_state.get("mode")
+    if mode == "workflow-only":
+        version_line = f"{installation.get('bundle_version') or 'unknown'} · Workflow-only · Fast workflow routing default"
+    elif mode == "not-installed":
+        version_line = f"{installation.get('bundle_version') or 'repository'} · No installed tier"
+    else:
+        tier = lifecycle_state.get("installed_tier")
+        tier_label = str(tier).title() if tier else "No installed tier"
+        version_line = f"{installation.get('installed_version') or installation.get('kit_version') or 'unknown'} · {tier_label}"
     return "\n".join([
         "# Sol/Luna status",
         "",
         f"- Health: {health}",
-        f"- Version: {version} · {tier_label}",
+        f"- Version: {version_line}",
         f"- Metrics: {metrics}",
         f"- Delegation: {effectiveness}",
+        f"- Trend: {trend}",
         f"- Next: {next_action}",
         "",
         "Use `--detail` for evidence, usage, drift, and provenance details.",
@@ -1326,7 +1751,56 @@ def _summary_markdown(report: Dict[str, Any]) -> str:
     ])
 
 
-def _markdown(report: Dict[str, Any]) -> str:
+def _detail_markdown(report: Dict[str, Any]) -> str:
+    installation = report.get("installation", {})
+    lifecycle_state = report.get("lifecycle", {})
+    workspace = report.get("workspace", {})
+    routine = report.get("routine_records", {})
+    current = routine.get("current_window") or {}
+    previous = routine.get("previous_window") or {}
+    advisor = report.get("optimization_advisor", {})
+    receipts = report.get("receipts", {})
+    usage = report.get("usage", {})
+    drift = report.get("drift", {})
+    lines = [
+        "# Sol/Luna current detail",
+        "",
+        "## Installation",
+        "",
+        f"- Mode/health: {_display(lifecycle_state.get('mode'))} / {_display(lifecycle_state.get('health'))}",
+        f"- Bundle/installed version: {_display(installation.get('bundle_version'))} / {_display(installation.get('installed_version'))}",
+        f"- Installed tier: {_display(lifecycle_state.get('installed_tier'))}; workflow routing default: {_display(lifecycle_state.get('workflow_default_tier'))}",
+        f"- Update phase/verification: {_display(lifecycle_state.get('update_phase'))} / {_display(lifecycle_state.get('verification'))}",
+        f"- Next lifecycle action: {_display(lifecycle_state.get('next_message'))}",
+        "",
+        "## Current project metrics",
+        "",
+        f"- Collection: {_display(routine.get('collection'))}; workspace: {_display(workspace.get('status'))}",
+        f"- Active cohort: {_display(routine.get('routing_policy_cohort'))}",
+        f"- Current window: {_display(current.get('start'))} through {_display(current.get('end'))}; outcomes: {_display(current.get('observed'))}",
+        f"- Useful/failed: {_display(current.get('useful'))} / {_display(current.get('failed'))}; usefulness rate: {_display(current.get('spawn_precision'))}",
+        f"- Checks pass/fail/skipped: {_display(current.get('check_pass'))} / {_display(current.get('check_fail'))} / {_display(current.get('check_skipped'))}",
+        f"- Previous comparable window outcomes: {_display(previous.get('observed'))}; trend: {_display(advisor.get('trend'))}",
+        f"- Historical v1 lifetime count only: {_display(routine.get('legacy_lifetime_count'))}",
+        f"- Advisor: {_display(advisor.get('primary_code'))}; automatic policy change: no; human approval required: yes",
+        "",
+        "## Current receipts and usage",
+        "",
+        f"- Full receipts observed/invalid: {_display(receipts.get('receipts_observed'))} / {_display(receipts.get('invalid_receipts'))}",
+        f"- Session usage coverage/status: {_display(usage.get('coverage'))} / {_display(usage.get('status'))}",
+        f"- Attributable total tokens: {_display(usage.get('observed_total_tokens'))}; billed usage: unknown",
+        "",
+        "## Current drift and provenance",
+        "",
+        f"- Routing/receipt/runtime: {_display(drift.get('routing_contract'))} / {_display(drift.get('receipt_policy'))} / {_display(drift.get('active_runtime'))}",
+        f"- Privacy: {_display(report.get('provenance', {}).get('privacy'))}; bounded: yes; project-local: yes",
+        f"- Warnings: {', '.join(report.get('warnings', [])) if report.get('warnings') else 'none'}",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _legacy_full_markdown(report: Dict[str, Any]) -> str:
     milestone = report["milestone"]
     receipts = report["receipts"]
     routine_records = report.get("routine_records", {})
@@ -1362,12 +1836,13 @@ def _markdown(report: Dict[str, Any]) -> str:
         f"- Routine check pass/fail/skipped: {_display(routine_records.get('check_pass'))} / {_display(routine_records.get('check_fail'))} / {_display(routine_records.get('check_skipped'))}; spawn precision: {_display(routine_records.get('spawn_precision'))}",
         f"- Routine attributable usage: {_display(routine_records.get('total_tokens'))} ({_display(routine_records.get('usage_attribution'))})",
         "",
-        "## M4 pilot",
+        "## Retired M4 pilot",
         "",
         f"- State: {_display(pilot.get('state'))}; plan: {_display(pilot.get('plan_id'))}",
         f"- Registered/terminal/pending/overdue: {_display(pilot.get('registered_count'))} / {_display(pilot.get('terminal_count'))} / {_display(pilot.get('pending_count'))} / {_display(pilot.get('overdue_count'))}",
         f"- Next slot: {_display((pilot.get('next_slot') or {}).get('slot_id'))}; comparison: {_display((pilot.get('comparison') or {}).get('status'))}",
         f"- Automatic promotion: no; checkpoint disposition: {_display((pilot.get('comparison') or {}).get('promotion_status'))}",
+        "- Boundary: retired and non-retryable; no model work or automatic promotion is authorized.",
         "",
         "## Session capability probe",
         "",
@@ -1436,15 +1911,40 @@ def _markdown(report: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _historical_markdown(report: Dict[str, Any]) -> str:
+    """Render only retired research material and its no-retry boundary."""
+
+    pilot = report.get("pilot") or {}
+    comparison = pilot.get("comparison") or {}
+    receipts = report.get("receipts") or {}
+    lines = [
+        "# Sol/Luna historical research",
+        "",
+        "## Retired M4 pilot",
+        "",
+        f"- State: {_display(pilot.get('state'))}; plan: {_display(pilot.get('plan_id'))}",
+        f"- Registered/terminal/pending/overdue: {_display(pilot.get('registered_count'))} / {_display(pilot.get('terminal_count'))} / {_display(pilot.get('pending_count'))} / {_display(pilot.get('overdue_count'))}",
+        f"- Receipt coverage: {_display(receipts.get('receipt_coverage'))} ({_display(receipts.get('receipt_coverage_reason'))})",
+        f"- Comparison: {_display(comparison.get('status'))}; automatic promotion: no",
+        "- Boundary: retired and non-retryable; no registration, model work, retry, or automatic promotion is authorized.",
+        "- The interrupted control arm and unstarted dynamic arm remain historical evidence only.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
 def _failure_report() -> Dict[str, Any]:
     return {
         "schema_version": 1,
         "mode": "receipt-only",
-        "installation": {"status": "unknown", "kit_version": None, "update_phase": None},
-        "luna_profile": {"tier": None, "provenance": "unknown"},
+        "installation": {"status": "unknown", "mode": "invalid", "kit_version": None, "bundle_version": None, "installed_version": None, "update_phase": None},
+        "lifecycle": {"state": "needs-attention", "mode": "invalid", "health": "Needs attention", "installed_tier": None, "workflow_default_tier": None, "version": None, "update_phase": None, "verification": "failed", "next_action": "review-drift", "next_message": "Ask Sol/Luna setup to verify the installation and explain the drift.", "lifecycle_problem": True},
+        "luna_profile": {"tier": None, "provenance": "unknown", "installed": False, "workflow_default": None},
+        "workspace": {"status": "unavailable", "reason": "status-report-failed", "project_local": True, "bounded": True},
         "milestone": {"id": None, "state": "unknown", "scope": "unregistered"},
         "receipts": _empty_receipt_summary(),
-        "routine_records": {"version": "routine-delegation-record.v1", "collection": "unavailable", "observed": 0, "invalid": 0, "optional_missing": True, "completed": 0, "blocked": 0, "failed": 0, "useful": 0, "spawn_precision": None, "check_pass": 0, "check_fail": 0, "check_skipped": 0, "usage_attribution": "unknown", "total_tokens": None},
+        "routine_records": {"version": ACTIVE_ROUTINE_RECORD, "collection": "unavailable", "observed": None, "invalid": 0, "optional_missing": None, "v2_lifetime_count": None, "legacy_lifetime_count": None, "routing_policy_cohort": ACTIVE_ROUTING_POLICY, "completed": None, "blocked": None, "failed": None, "failure_rate": None, "useful": None, "spawn_precision": None, "check_pass": None, "check_fail": None, "check_skipped": None, "check_failure_rate": None, "usage_attribution": "unknown", "total_tokens": None, "current_window": None, "previous_window": None, "cohorts": []},
+        "optimization_advisor": {"version": ADVISOR_VERSION, "status": "unavailable", "primary_code": "insufficient_evidence", "recommendation_codes": ["insufficient_evidence"], "message": "Not enough comparable evidence yet.", "trend": "unavailable", "findings": [], "automatic_policy_change": False, "human_approval_required": True},
         "pilot": {"ok": False, "schema_version": 1, "plan_id": None, "state": "blocked", "registered_count": None, "terminal_count": None, "pending_count": None, "overdue_count": None, "receipt_coverage": "unknown", "receipt_coverage_reason": "status_report_failed", "receipt_coverage_fraction": None, "next_slot": None, "next_slot_eligible": False, "latest_terminal_closed_at": None, "kill_criteria_triggered": [], "comparison": {"status": "unknown", "automatic_promotion": False, "promotion_status": "blocked-or-unknown"}, "environment": None, "errors": ["status_report_failed"]},
         "latest_terminal": None,
         "latest_accepted_outcome": None,
@@ -1473,11 +1973,23 @@ def main(argv: Optional[List[str]] = None) -> int:
         if args.format == "json":
             print(json.dumps(report, sort_keys=True, separators=(",", ":")))
         else:
-            print(_markdown(report) if args.detail or args.historical else _summary_markdown(report), end="")
+            if args.detail:
+                print(_detail_markdown(report), end="")
+            elif args.historical:
+                print(_historical_markdown(report), end="")
+            else:
+                print(_summary_markdown(report), end="")
         return 0
     except Exception:
         report = _failure_report()
-        print(json.dumps(report, sort_keys=True, separators=(",", ":")) if args.format == "json" else _markdown(report), end="\n" if args.format == "json" else "")
+        if args.format == "json":
+            print(json.dumps(report, sort_keys=True, separators=(",", ":")), end="\n")
+        elif args.historical:
+            print(_historical_markdown(report), end="")
+        elif args.detail:
+            print(_detail_markdown(report), end="")
+        else:
+            print(_summary_markdown(report), end="")
         return 0
 
 

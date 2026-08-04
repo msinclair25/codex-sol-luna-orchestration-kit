@@ -1,118 +1,63 @@
 # Tiered receipts
 
-`config/receipt-policy.v1.json` selects one of three persistence tiers:
+Active `receipt-policy.v2` selects persistence after Sol accepts an outcome:
 
-- routine direct Sol work: no persisted formal receipt, only a concise
-  user-facing handoff with outcome, validation, unresolved risk, and delivery;
-- delegated routine or accepted substantial work: a deterministic
-  `routine-delegation-record.v1` only when automatic collection is available;
-  otherwise measurement stays unknown; and
-- full `milestone-receipt.v1` for high-risk/critical work, security, releases,
-  deployments, migrations, destructive/external side effects, Codex app-task
-  fallback, failure/block/abandonment, material rework, pilots, benchmarks,
-  evaluations, or an explicit audit request.
+- direct routine work: concise handoff only;
+- accepted delegated routine work: `routine-delegation-record.v2` when the
+  active workflow can close it automatically, otherwise unknown; and
+- high-risk/critical, security, release, deployment, migration, destructive,
+  external-side-effect, app-task fallback, non-success, material-rework,
+  pilot/benchmark/evaluation, or explicit-audit work: unchanged
+  `milestone-receipt.v1`.
 
-Missing optional routine records are valid absence, not receipt errors. Absent
-attribution never means zero usage. `milestone-receipt.v1` remains unchanged:
-historical files validate under their original semantics and are never
-reinterpreted as minimal records.
+Receipt policy v1 and routine record v1 remain immutable. Historical v1 routine
+records validate, but status uses them only for a labeled lifetime count.
 
-The minimal record has exact keys `schema_version`, `version`, `spawn`,
-`outcome`, `checks`, and `usage`. It contains no project, milestone, task,
-thread, prompt, scope, command, or log fields; it is bounded to about 2 KB.
-The tool builds it deterministically from lane outcome/check/attribution data
-instead of making Sol author a large JSON payload.
+## Routine record v2
 
-When the plugin orchestration skill accepts delegated routine work, it invokes
-the bundled `close-routine` recorder internally. The recorder accepts only a
-useful/not-useful flag, a closed outcome, up to eight generic check results,
-and optional deterministically attributable total tokens. It atomically writes
-mode `0600` records in a mode `0700` directory. Random local filenames prevent
-collisions but are never printed or included in status; record content contains
-no task identifier or free-form text. Recorder failure leaves measurement
-unknown and never blocks the accepted user outcome.
+The target stays under about 2 KB and has exactly:
 
-Full M2 receipts are local, unsigned audit artifacts. The tool is not an
-orchestrator, does not launch roles, and does not send or restore data. Python
-3.11+ is required.
-
-## Maintainer diagnostics
-
-End users install/update and request status conversationally through the setup
-and status skills. They do not run Python or construct routing/receipt JSON.
-The following commands are maintainer diagnostics:
-
-```sh
-python3 scripts/receipt_tool.py close --input receipt-input.json
-python3 scripts/receipt_tool.py close-routine --useful --outcome completed --check pass
-python3 scripts/receipt_tool.py validate --receipts-dir .sol-luna/receipts
-python3 scripts/receipt_tool.py summarize --receipts-dir .sol-luna/receipts --format json
+```text
+schema_version, version, recorded_on, context, spawn, outcome, checks, usage
 ```
 
-`close` accepts a strict JSON close payload matching
-`schemas/milestone-receipt.v1.schema.json` minus `receipt_id`. It derives
-`mr1-<sha256>` from canonical sorted JSON plus a newline, validates the full
-receipt, and atomically writes mode `0600` files under a mode `0700` receipts
-directory. Repeating an identical close is idempotent; a different byte value
-with the same ID is a collision. Symlinked inputs, directories, and output
-paths fail closed.
+The writer derives UTC `recorded_on`; callers cannot supply it. Context contains
+only routing-policy version, Fast/Standard profile, role kind, and closed
+routing task/benefit enums. Spawn records delegate/useful, outcome is completed,
+blocked, or failed, checks are at most eight generic `acceptance-N` items, and
+usage is attributable total tokens or unknown/null.
 
-The validator rejects duplicate JSON keys, nonfinite numbers, oversized or
-deep input, unknown keys, invalid timestamps/hashes/enums, negative counts,
-oversized arrays, credential-like values, and privacy-sensitive keys such as
-prompts, messages, source code, file contents, tool payloads, raw traces,
-secrets, credentials, and private keys. Ordinary fields are bounded codes,
-hashes, timestamps, booleans, integers, or safe references; no unrestricted
-summary text is accepted.
+It never stores exact timestamps, paths, project names, task/thread IDs,
+prompts, sources, commands, tool payloads, evidence prose, credentials,
+customer data, or production logs. Strict validators reject missing/extra
+keys, invalid dates/enums, sensitive/long values, oversized arrays/payloads,
+duplicate JSON keys, unsafe paths, symlinks, and incorrect modes.
 
-`delegated_lanes`, `acceptance_checks`, and `usage` are bounded structured
-records. The exact five role hashes select either the Fast or Standard
-profile; mixed hash families are rejected, and every lane role, tier, and
-role-targeted escalation must match that selected profile. Existing Fast
-receipts remain valid. A Max lane in either profile requires one exact reason code:
-`genuine_ambiguity`, `cross_cutting_risk`, `failed_high_attempt`, or
-`high_impact_adversarial_review`. `accepted_by` is `sol` only for accepted
-receipts and must be null otherwise.
+The internal orchestration writer resolves only
+`WORKSPACE_ROOT/.sol-luna/routine-records`, requires a real project marker, and
+writes directory mode `0700` and file mode `0600`. Random filenames prevent
+collisions and are never reported. Recorder absence/failure is non-blocking.
+Users never author recorder flags or JSON.
 
-M10 adds an optional `transport` object to each delegated lane while retaining
-compatibility with existing v1 receipts. It records the requested native Luna
-transport, the transport actually used (`native_luna_subagent`,
-`codex_app_task`, or `sol`), one closed native-failure code, explicit fallback
-authorization, zero or one app-task attempt, its bounded outcome, and a
-privacy-safe `ct1-<sha256>` task reference only when a visible task was
-created. An authorized but unavailable app-task path consumes its sole attempt
-and records `fallback_attempts: 1` with `fallback_outcome: unavailable`.
-Cross-field rules reject task fallback without authorization, more
-than one attempt, raw task identifiers, ineligible errors such as timeouts, or
-claims that a Codex app task ran as a native Luna child.
+“Automatic” means the active orchestration workflow attempts this close after
+Sol accepts delegated routine work. It is not a guaranteed runtime hook.
 
-`summarize` reports accepted outcome count as an observed numerator. The
-north-star `verified_outcomes_per_weighted_usage` value is computed only within
-an exact `(project_id, family, size_risk_band, bundle_version, policy_hash,
-rate_card_hash)` cohort, where `bundle_version` comes from
-`repository.bundle_version`, `policy_hash` from `repository.hashes.policy`, and
-`rate_card_hash` from `repository.hashes.rate_card`. These three identifiers are
-included in every deterministic per-cohort row. A complete summary with
-multiple cohorts reports those rows but leaves the single top-level value null
-with `status: "unknown"` and reason
-`multiple_incomparable_cohorts`; incomparable denominators are never added.
-Incomplete or unknown usage keeps totals null and reports unknown provenance and
-reason. The M2 summarizer has no independent denominator, so its coverage stays
-`unknown` with reason `no_start_registry`. During M4,
-`scripts/pilot_tool.py status` and the Sol/Luna status skill replace that field
-with coverage derived from the frozen registered-start ledger. A receipt counts
-only when its project, workload base commit, milestone/task IDs, start time,
-family, risk band, policy hashes, and exact unique acceptance-check set match
-the registered start. Future or post-deadline terminal timestamps fail closed.
+## Full historical receipts
 
-The JSON Schema expresses cross-field conditions such as disposition,
-accepted-by, usage coverage, Max-lane reasons, and escalation consistency. The
-Python tool remains authoritative for invariants Draft 2020-12 cannot express
-reliably here, including canonical receipt IDs, timestamp ordering, duplicate
-lane IDs, retry/attempt relationships, filesystem safety, and exact receipt
-permissions.
+`milestone-receipt.v1` remains an unsigned local audit artifact. Its strict
+canonical ID, role/profile consistency, transport block, checks, risks, and
+usage cohort rules are unchanged. Missing full-workflow attribution remains
+unknown. Hashes are drift evidence tied to Git and review, not signatures.
 
-Receipt IDs and SHA-256 fields are local audit/drift signals anchored by Git
-history and human review, not cryptographic authenticity. Coordinated edits to
-the payload and receipt remain an accepted limitation until an automation
-workflow requires signing.
+## Maintainer validation
+
+```sh
+python3 scripts/receipt_tool.py --help
+python3 scripts/receipt_tool.py validate --receipts-dir .sol-luna/receipts
+python3 scripts/receipt_tool.py summarize --receipts-dir .sol-luna/receipts --format json
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_receipt_tool -v
+```
+
+The routine writer subcommand is an internal workflow surface, not an end-user
+interface, so its routing context flags are intentionally absent from user
+documentation.

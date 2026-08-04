@@ -27,9 +27,9 @@ except ImportError:  # pragma: no cover - supported Python versions include it.
 
 
 SCHEMA_VERSION = 1
-POLICY_VERSION = "routing-policy.v1.4"
+POLICY_VERSION = "routing-policy.v1.5"
 DEFAULT_ROOT = Path(__file__).resolve().parents[1]
-POLICY_RELATIVE = "config/routing-policy.v1.4.json"
+POLICY_RELATIVE = "config/routing-policy.v1.5.json"
 POLICY_AGENTS_RELATIVE = "AGENTS.override.md"
 AGENTS_RELATIVE = "AGENTS.md"
 MANAGED_AGENTS_START = "# >>> sol-luna-orchestration-kit managed block >>>\n"
@@ -373,7 +373,7 @@ PROFILE_SPECS: Dict[str, Dict[str, Any]] = {
         "roles": ROLE_DEFINITIONS,
     },
     "standard": {
-        "policy_relative": "config/routing-policy.standard.v1.4.json",
+        "policy_relative": "config/routing-policy.standard.v1.5.json",
         "agents_relative": "profiles/standard/AGENTS.override.md",
         "snippet_relative": "profiles/standard/config-snippet.toml",
         "roles": STANDARD_ROLE_DEFINITIONS,
