@@ -13,13 +13,11 @@ multi-agent work into a disciplined team workflow. Sol owns the requirements,
 architecture, integration, and final decision. Five specialized Luna roles take
 on substantial, bounded work only when it passes a deny-by-default routing gate.
 
-V0.6.1 is the current source version and is ready for cross-platform testing.
+V0.6.1 is the current release and is ready for cross-platform testing.
 It includes guided setup and updates, Fast/Standard Luna profiles,
 conflict-safe managed configuration, drift checks, resumable operations,
 privacy-safe project metrics that can reveal usage-efficiency signals without
-pretending to prove savings, and first-class native Windows support. The latest
-tagged release remains [V0.6.0](https://github.com/msinclair25/codex-sol-luna-orchestration-kit/releases/tag/v0.6.0)
-until the V0.6.1 release gate is complete.
+pretending to prove savings, and first-class native Windows support.
 
 ## Quick Start
 
