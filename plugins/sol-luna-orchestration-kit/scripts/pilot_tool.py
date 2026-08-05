@@ -15,9 +15,7 @@ import json
 import math
 import os
 import re
-import stat
 import sys
-import tempfile
 import unicodedata
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
@@ -28,6 +26,11 @@ try:
     import tomllib
 except ImportError:  # pragma: no cover
     tomllib = None  # type: ignore[assignment]
+
+try:
+    import platform_fs
+except ImportError:  # pragma: no cover - package import in tests
+    from scripts import platform_fs  # type: ignore[no-redef]
 
 try:
     from scripts import receipt_tool
@@ -135,7 +138,7 @@ def _has_symlink(path: Path) -> bool:
         parts = path.parts[1:] if path.is_absolute() else path.parts
         for part in parts:
             current /= part
-            if current.is_symlink() and current not in {Path("/tmp"), Path("/var")}:
+            if platform_fs.is_link_like(current) and not platform_fs.allowed_system_link(current):
                 return True
         return False
     except (OSError, RuntimeError):
@@ -178,7 +181,7 @@ def _root(value: Path | str, *, must_exist: bool = True) -> Path:
     if not path.is_absolute():
         path = Path.cwd() / path
     path = Path(os.path.abspath(path))
-    if len(path.parts) < 3 or path.is_symlink() or _has_symlink(path):
+    if len(path.parts) < 3 or platform_fs.is_link_like(path) or _has_symlink(path):
         raise PilotError("unsafe_root")
     if must_exist and not path.is_dir():
         raise PilotError("root_missing")
@@ -234,7 +237,7 @@ def _file(root: Path, relative: str, limit: int = MAX_ARTIFACT_BYTES) -> Tuple[P
         path.resolve().relative_to(root.resolve())
     except (OSError, RuntimeError, ValueError) as exc:
         raise PilotError("unsafe_source_path") from exc
-    if path.is_symlink() or _has_symlink(path) or not path.is_file():
+    if platform_fs.is_link_like(path) or _has_symlink(path) or not path.is_file():
         raise PilotError("source_missing")
     try:
         data = path.read_bytes()
@@ -246,10 +249,10 @@ def _file(root: Path, relative: str, limit: int = MAX_ARTIFACT_BYTES) -> Tuple[P
 
 
 def _read_json_file(path: Path, *, require_mode: Optional[int] = None) -> Tuple[Any, bytes]:
-    if path.is_symlink() or _has_symlink(path) or not path.is_file():
+    if platform_fs.is_link_like(path) or _has_symlink(path) or not path.is_file():
         raise PilotError("unsafe_json_path")
     try:
-        if require_mode is not None and stat.S_IMODE(path.stat().st_mode) != require_mode:
+        if require_mode is not None and not platform_fs.mode_matches(path, require_mode):
             raise PilotError("unsafe_permissions")
         raw = path.read_bytes()
         if len(raw) > MAX_JSON_BYTES:
@@ -266,48 +269,25 @@ def _ensure_directory(path: Path) -> None:
     current = Path(path.anchor)
     for part in path.parts[1:]:
         current /= part
-        if current.exists() or current.is_symlink():
-            if (current.is_symlink() and current not in {Path("/tmp"), Path("/var")}) or not current.is_dir():
+        if current.exists() or platform_fs.is_link_like(current):
+            if (
+                platform_fs.is_link_like(current)
+                and not platform_fs.allowed_system_link(current)
+            ) or not current.is_dir():
                 raise PilotError("unsafe_directory")
             continue
         current.mkdir(mode=0o700)
-    os.chmod(path, 0o700)
+    platform_fs.set_mode(path, 0o700)
 
 
 def _atomic_write(path: Path, data: bytes) -> None:
-    if path.exists() or path.is_symlink():
+    if path.exists() or platform_fs.is_link_like(path):
         raise PilotError("destination_exists")
     _ensure_directory(path.parent)
-    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
-    linked = False
     try:
-        os.fchmod(fd, 0o600)
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(data)
-            handle.flush()
-            os.fsync(handle.fileno())
-        try:
-            os.link(temporary, path, follow_symlinks=False)
-            linked = True
-        except FileExistsError as exc:
-            raise PilotError("destination_exists") from exc
-        os.unlink(temporary)
-        directory_fd = os.open(str(path.parent), os.O_RDONLY)
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
-    except Exception:
-        if linked:
-            try:
-                path.unlink()
-            except OSError:
-                pass
-        try:
-            os.unlink(temporary)
-        except OSError:
-            pass
-        raise
+        platform_fs.atomic_create(path, data)
+    except FileExistsError as exc:
+        raise PilotError("destination_exists") from exc
 
 
 def _validate_policy(arm: str, policy: Any, repo: Path) -> None:
@@ -542,10 +522,10 @@ def setup_environments(
     planned: List[Tuple[Path, bytes, str]] = []
     for arm, writes in writes_by_arm.items():
         for path, data in writes.items():
-            if path.exists() or path.is_symlink():
-                if path.is_symlink() or not path.is_file() or _has_symlink(path):
+            if path.exists() or platform_fs.is_link_like(path):
+                if platform_fs.is_link_like(path) or not path.is_file() or _has_symlink(path):
                     raise PilotError("environment_destination_unsafe")
-                if path.read_bytes() != data or stat.S_IMODE(path.stat().st_mode) != 0o600:
+                if path.read_bytes() != data or not platform_fs.mode_matches(path, 0o600):
                     raise PilotError("environment_conflict")
             else:
                 planned.append((path, data, arm))
@@ -609,7 +589,7 @@ def verify_environments(plan_path: Path | str, repo_root: Path | str, pilot_home
         matches = 0
         for path, data in writes.items():
             try:
-                if path.is_file() and not path.is_symlink() and not _has_symlink(path) and stat.S_IMODE(path.stat().st_mode) == 0o600 and path.read_bytes() == data:
+                if path.is_file() and not platform_fs.is_link_like(path) and not _has_symlink(path) and platform_fs.mode_matches(path, 0o600) and path.read_bytes() == data:
                     matches += 1
                 else:
                     errors.append("environment_drift")
@@ -660,7 +640,7 @@ def _validate_start(value: Any, plan: Dict[str, Any], plan_hash: str) -> Dict[st
 def _load_starts(starts_dir: Path, plan: Dict[str, Any], plan_hash: str) -> List[Dict[str, Any]]:
     if not starts_dir.exists():
         return []
-    if starts_dir.is_symlink() or _has_symlink(starts_dir) or not starts_dir.is_dir() or stat.S_IMODE(starts_dir.stat().st_mode) != 0o700:
+    if platform_fs.is_link_like(starts_dir) or _has_symlink(starts_dir) or not starts_dir.is_dir() or not platform_fs.mode_matches(starts_dir, 0o700):
         raise PilotError("starts_directory_unsafe")
     starts: List[Dict[str, Any]] = []
     for path in sorted(starts_dir.iterdir(), key=lambda item: item.name):
@@ -767,7 +747,7 @@ def register_start(
 def _load_receipts(receipts_dir: Path) -> Tuple[List[Dict[str, Any]], int]:
     if not receipts_dir.exists():
         return [], 0
-    if receipts_dir.is_symlink() or _has_symlink(receipts_dir) or not receipts_dir.is_dir() or stat.S_IMODE(receipts_dir.stat().st_mode) != 0o700:
+    if platform_fs.is_link_like(receipts_dir) or _has_symlink(receipts_dir) or not receipts_dir.is_dir() or not platform_fs.mode_matches(receipts_dir, 0o700):
         raise PilotError("receipts_directory_unsafe")
     receipts: List[Dict[str, Any]] = []
     invalid = 0

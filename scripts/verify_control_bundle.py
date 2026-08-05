@@ -15,6 +15,7 @@ import datetime as _datetime
 import hashlib
 import json
 import math
+import os
 import re
 import sys
 from pathlib import Path, PurePosixPath
@@ -24,6 +25,11 @@ try:  # Python 3.11+; this repository's supported runtime has it in stdlib.
     import tomllib
 except ImportError:  # pragma: no cover - retained for a clear verifier error.
     tomllib = None  # type: ignore[assignment]
+
+try:
+    import platform_fs
+except ImportError:  # pragma: no cover - package import in tests
+    from scripts import platform_fs  # type: ignore[no-redef]
 
 
 SCHEMA_VERSION = 1
@@ -194,9 +200,9 @@ def _safe_file(root: Path, relative: str) -> Optional[Path]:
     try:
         for part in relative.split("/"):
             current = current / part
-            if current.is_symlink():
+            if platform_fs.is_link_like(current):
                 return None
-        if not candidate.is_file() or candidate.is_symlink():
+        if not candidate.is_file() or platform_fs.is_link_like(candidate):
             return None
         candidate.resolve().relative_to(root.resolve())
     except (OSError, RuntimeError, ValueError):
@@ -363,20 +369,26 @@ def _manifest_entries(manifest: Dict[str, Any], report: Dict[str, Any]) -> Optio
 def _unexpected_files(files_root: Path, expected: Set[str]) -> int:
     count = 0
     try:
-        if not files_root.is_dir() or files_root.is_symlink():
+        if not files_root.is_dir() or not platform_fs.is_link_safe_beneath(files_root, files_root):
             return 1
-        for path in files_root.rglob("*"):
-            if path.is_symlink():
-                count += 1
-                continue
-            if path.is_file():
-                try:
-                    relative = path.relative_to(files_root).as_posix()
-                except ValueError:
+        pending = [files_root]
+        while pending:
+            directory = pending.pop()
+            for entry in os.scandir(directory):
+                path = Path(entry.path)
+                if platform_fs.is_link_like(path):
                     count += 1
                     continue
-                if relative not in expected:
-                    count += 1
+                if entry.is_dir(follow_symlinks=False):
+                    pending.append(path)
+                elif entry.is_file(follow_symlinks=False):
+                    try:
+                        relative = path.relative_to(files_root).as_posix()
+                    except ValueError:
+                        count += 1
+                        continue
+                    if relative not in expected:
+                        count += 1
     except OSError:
         return max(1, count)
     return count
@@ -387,11 +399,11 @@ def verify(bundle: Path, active_root: Optional[Path] = None) -> Dict[str, Any]:
 
     report = _empty_report()
     bundle = Path(bundle)
-    if bundle.is_symlink() or not bundle.is_dir():
+    if platform_fs.is_link_like(bundle) or not bundle.is_dir():
         report["errors"].append("bundle_root_unreadable")
         return report
     manifest_path = bundle / "manifest.json"
-    if manifest_path.is_symlink() or not manifest_path.is_file():
+    if platform_fs.is_link_like(manifest_path) or not manifest_path.is_file():
         report["errors"].append("manifest_unreadable")
         return report
     manifest, parsed = _read_json(manifest_path)
@@ -475,7 +487,7 @@ def verify(bundle: Path, active_root: Optional[Path] = None) -> Dict[str, Any]:
     if active_root is not None:
         report["active_root_checked"] = True
         active_root = Path(active_root)
-        if not active_root.is_dir() or active_root.is_symlink():
+        if not active_root.is_dir() or platform_fs.is_link_like(active_root):
             report["errors"].append("active_root_unreadable")
             report["active_root_match"] = False
         else:

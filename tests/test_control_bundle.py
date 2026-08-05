@@ -171,6 +171,21 @@ class ControlBundleTests(unittest.TestCase):
             self.assertFalse(manifest_report["ok"])
             self.assertIn("manifest_unreadable", manifest_report["errors"])
 
+    @unittest.skipIf(os.name == "nt", "covered by the native Windows junction integration test")
+    def test_nested_symlink_is_counted_without_traversing_outside_bundle(self):
+        temporary, copy = self._copy_bundle()
+        try:
+            outside = Path(temporary.name) / "outside"
+            outside.mkdir()
+            (outside / "borrowed.txt").write_text("outside", encoding="utf-8")
+            (copy / "files" / "nested-link").symlink_to(outside, target_is_directory=True)
+            report = verify(copy)
+        finally:
+            temporary.cleanup()
+        self.assertFalse(report["ok"])
+        self.assertEqual(report["mismatches"]["unexpected_files"], 1)
+        self.assertIn("unexpected_bundle_file", report["errors"])
+
     def test_manifest_json_is_bounded_strict_and_fail_closed(self):
         for raw in (
             '{"schema_version":1,"schema_version":1}',

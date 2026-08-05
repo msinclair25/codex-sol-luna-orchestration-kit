@@ -16,6 +16,8 @@ repository map so the README can stay operational.
 - V0.6.0: guided settings/lifecycle operations, routing v1.5, receipt policy v2,
   dated routine record v2, safe kit/workspace separation, policy-cohort windows,
   and observational advisor v1.
+- V0.6.1: native Windows filesystem portability, reparse-point safety,
+  PowerShell quick setup, and Windows CI across Python 3.11–3.13.
 
 ## Retired M4 boundary
 

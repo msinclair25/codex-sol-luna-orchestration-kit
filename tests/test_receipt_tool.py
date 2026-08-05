@@ -170,8 +170,9 @@ class ReceiptToolTests(unittest.TestCase):
             self.assertTrue(second["ok"])
             outputs = sorted(records.glob("*.json"))
             self.assertEqual(len(outputs), 2)
-            self.assertEqual(stat.S_IMODE(records.stat().st_mode), 0o700)
-            self.assertTrue(all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in outputs))
+            if os.name != "nt":
+                self.assertEqual(stat.S_IMODE(records.stat().st_mode), 0o700)
+                self.assertTrue(all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in outputs))
             self.assertTrue(all(validate_routine_record(json.loads(path.read_text()))["ok"] for path in outputs))
             self.assertTrue(all("secret" not in path.read_text() for path in outputs))
 
@@ -213,8 +214,11 @@ class ReceiptToolTests(unittest.TestCase):
 
             wrong_permissions = workspace / ".sol-luna" / "wrong" / ".sol-luna" / "routine-records"
             wrong_permissions.parent.mkdir(parents=True, mode=0o755)
-            with self.assertRaises(Exception):
-                close_routine_record(record, wrong_permissions)
+            if os.name == "nt":
+                self.assertTrue(close_routine_record(record, wrong_permissions)["ok"])
+            else:
+                with self.assertRaises(Exception):
+                    close_routine_record(record, wrong_permissions)
 
             for broad in (Path("/"), Path.home(), Path(tempfile.gettempdir())):
                 with self.assertRaises(Exception):
@@ -246,8 +250,9 @@ class ReceiptToolTests(unittest.TestCase):
             self.assertFalse(first["idempotent"])
             self.assertTrue(second["idempotent"])
             output = receipts / (first["receipt_id"] + ".json")
-            self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o600)
-            self.assertEqual(stat.S_IMODE(receipts.stat().st_mode), 0o700)
+            if os.name != "nt":
+                self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o600)
+                self.assertEqual(stat.S_IMODE(receipts.stat().st_mode), 0o700)
             altered = dict(self.payloads["accepted"])
             altered["closed_at"] = "2026-08-02T10:06:00Z"
             self.assertNotEqual(close_receipt(altered, receipts)["receipt_id"], first["receipt_id"])
@@ -259,9 +264,10 @@ class ReceiptToolTests(unittest.TestCase):
             with self.assertRaises(Exception):
                 close_receipt(self.payloads["accepted"], collision_dir)
 
-            os.chmod(output, 0o644)
-            with self.assertRaises(Exception):
-                close_receipt(self.payloads["accepted"], receipts)
+            if os.name != "nt":
+                os.chmod(output, 0o644)
+                with self.assertRaises(Exception):
+                    close_receipt(self.payloads["accepted"], receipts)
 
     def test_malformed_enum_types_fail_closed_without_traceback(self):
         malformed = json.loads(json.dumps(self.payloads["accepted"]))

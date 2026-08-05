@@ -9,6 +9,9 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
+if os.name == "nt":
+    raise unittest.SkipTest("retired M4 benchmark runner requires POSIX process and resource controls")
+
 from benchmark.m4_single_pair import oracle
 from scripts import run_m4_benchmark
 from scripts import pilot_tool
@@ -569,6 +572,7 @@ class M4BenchmarkTests(unittest.TestCase):
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 args = sys.argv[1:]
@@ -583,6 +587,9 @@ last = Path(args[args.index("--output-last-message") + 1])
 last.write_text("completed")
 home = Path(os.environ["CODEX_HOME"])
 control = "control" in home.parts
+if control:
+    # Keep the directional latency assertion deterministic on busy CI hosts.
+    time.sleep(0.05)
 sessions = home / "sessions" / "2026" / "08" / "03"
 sessions.mkdir(parents=True, exist_ok=True)
 

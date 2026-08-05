@@ -176,7 +176,8 @@ class PilotToolTests(unittest.TestCase):
         self.assertEqual({arm: row["matches"] for arm, row in verified["arms"].items()}, {"all-max-control": 8, "dynamic-v0.2.1": 8})
         for path in pilot_home.rglob("*"):
             if path.is_file():
-                self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+                if os.name != "nt":
+                    self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
                 self.assertNotIn(path.name, {"auth.json", "credentials.json"})
         self.assertFalse(any(path.name in {"sessions", "skills"} for path in pilot_home.rglob("*")))
         repeated = pilot_tool.setup_environments(plan, repo, pilot_home, apply=True)
@@ -205,10 +206,11 @@ class PilotToolTests(unittest.TestCase):
         pilot_home = base / "pilot"
         pilot_tool.setup_environments(plan, repo, pilot_home, apply=True)
         config = pilot_home / "dynamic" / ".codex" / "config.toml"
-        config.chmod(0o644)
-        with self.assertRaisesRegex(pilot_tool.PilotError, "environment_conflict"):
-            pilot_tool.setup_environments(plan, repo, pilot_home, apply=True)
-        config.chmod(0o600)
+        if os.name != "nt":
+            config.chmod(0o644)
+            with self.assertRaisesRegex(pilot_tool.PilotError, "environment_conflict"):
+                pilot_tool.setup_environments(plan, repo, pilot_home, apply=True)
+            config.chmod(0o600)
         role = pilot_home / "dynamic" / ".codex" / "agents" / "luna_scout_fast.toml"
         role.unlink()
         os.symlink(ROOT / "agents" / "luna_scout_fast.toml", role)
@@ -230,8 +232,9 @@ class PilotToolTests(unittest.TestCase):
             pilot_tool.register_start(plan_path, repo, pilot_home, starts, "m4-02", "milestone-02", "task-02", "2026-08-02T20:48:00Z")
         with self.assertRaisesRegex(pilot_tool.PilotError, "start_time"):
             pilot_tool.register_start(plan_path, repo, pilot_home, starts, "m4-02", "milestone-02", "task-02", "2099-01-01T00:00:00Z")
-        self.assertEqual(stat.S_IMODE(starts.stat().st_mode), 0o700)
-        self.assertEqual(stat.S_IMODE((starts / "m4-01.json").stat().st_mode), 0o600)
+        if os.name != "nt":
+            self.assertEqual(stat.S_IMODE(starts.stat().st_mode), 0o700)
+            self.assertEqual(stat.S_IMODE((starts / "m4-01.json").stat().st_mode), 0o600)
         start_schema = json.loads((ROOT / "schemas" / "pilot-start.v1.schema.json").read_text())
         self.assertEqual(set(start_schema["required"]), set(json.loads((starts / "m4-01.json").read_text())))
         renamed = starts / "renamed.json"

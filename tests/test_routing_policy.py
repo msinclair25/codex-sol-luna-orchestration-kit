@@ -1,4 +1,5 @@
 import hashlib
+import io
 import json
 import os
 import shutil
@@ -6,8 +7,10 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
+from scripts import routing_policy
 from scripts.routing_policy import (
     APP_TASK_TRANSPORT,
     DEFAULT_ROOT,
@@ -688,15 +691,24 @@ class RoutingPolicyTests(unittest.TestCase):
             "[" * 10000 + "]" * 10000,
             "x" * (64 * 1024 + 1),
         ):
-            completed = subprocess.run(
-                [sys.executable, "scripts/routing_policy.py", "route", "--format", "json", "--request", raw],
-                cwd=ROOT,
-                env=environment,
-                text=True,
-                capture_output=True,
-            )
-            self.assertNotEqual(completed.returncode, 0)
-            result = json.loads(completed.stdout)
+            if os.name == "nt" and len(raw) > 8000:
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    returncode = routing_policy.main(
+                        ["route", "--format", "json", "--request", raw]
+                    )
+                result = json.loads(output.getvalue())
+                self.assertNotEqual(returncode, 0)
+            else:
+                completed = subprocess.run(
+                    [sys.executable, "scripts/routing_policy.py", "route", "--format", "json", "--request", raw],
+                    cwd=ROOT,
+                    env=environment,
+                    text=True,
+                    capture_output=True,
+                )
+                self.assertNotEqual(completed.returncode, 0)
+                result = json.loads(completed.stdout)
             self.assertFalse(result["ok"])
             self.assertEqual(result["route"], "sol")
 

@@ -93,8 +93,9 @@ class InstallerTests(unittest.TestCase):
 
         install.install(ROOT, self.codex, self.home, apply=True, with_usage=False)
 
-        self.assertEqual(stat.S_IMODE(agents.stat().st_mode), 0o755)
-        self.assertEqual(stat.S_IMODE(config.stat().st_mode), 0o644)
+        if os.name != "nt":
+            self.assertEqual(stat.S_IMODE(agents.stat().st_mode), 0o755)
+            self.assertEqual(stat.S_IMODE(config.stat().st_mode), 0o644)
 
     def test_optional_usage_installs_pointer_and_resolves_kit_root(self):
         plan = install.install(ROOT, self.codex, self.home, apply=True, with_usage=True)
@@ -514,7 +515,7 @@ class InstallerTests(unittest.TestCase):
         self.assertTrue(verify_active_root(self.codex, ROOT, self.codex / "config.toml", "standard")["ok"])
         self.assertEqual(
             json.loads((self.codex / install.INSTALL_STATE_NAME).read_text())["kit_version"],
-            "0.6.0",
+            "0.6.1",
         )
 
         switched = install.install(
@@ -605,7 +606,7 @@ class InstallerTests(unittest.TestCase):
         )
         self.assertTrue(updated["verification"]["ok"])
         ready = json.loads(state_path.read_text())
-        self.assertEqual(ready["kit_version"], "0.6.0")
+        self.assertEqual(ready["kit_version"], "0.6.1")
         self.assertEqual(ready["update_phase"], "ready")
         self.assertEqual(install.doctor(ROOT, self.codex)["health"], "healthy")
 
@@ -633,7 +634,7 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(workflow["mode"], "workflow-only")
         self.assertIsNone(workflow["luna_tier"])
         self.assertEqual(workflow["workflow_default_tier"], "fast")
-        self.assertEqual(workflow["kit_version"], "0.6.0")
+        self.assertEqual(workflow["kit_version"], "0.6.1")
 
         malformed_plugin = self.base / "malformed-plugin"
         shutil.copytree(

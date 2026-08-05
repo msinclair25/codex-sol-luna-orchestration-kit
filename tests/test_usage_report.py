@@ -12,6 +12,15 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 
 class UsageReportTests(unittest.TestCase):
+    def _analyze_records(self, records):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "session.jsonl"
+            path.write_text(
+                "".join(json.dumps(record) + "\n" for record in records),
+                encoding="utf-8",
+            )
+            return analyze([str(path)])
+
     def test_root_and_fork_usage_settings_and_boundaries(self):
         report = analyze([str(FIXTURES)])
 
@@ -157,11 +166,7 @@ class UsageReportTests(unittest.TestCase):
                 },
             },
         ]
-        with tempfile.NamedTemporaryFile("w", suffix=".jsonl") as handle:
-            for record in records:
-                handle.write(json.dumps(record) + "\n")
-            handle.flush()
-            report = analyze([handle.name])
+        report = self._analyze_records(records)
         self.assertEqual(report["groups"][0]["role"], "luna_worker_fast")
         self.assertEqual(report["groups"][0]["tokens"]["total"], 12)
 
@@ -191,11 +196,7 @@ class UsageReportTests(unittest.TestCase):
                 "payload": {"type": "task_started", "turn_id": "still-running", "started_at": 1002},
             },
         ]
-        with tempfile.NamedTemporaryFile("w", suffix=".jsonl") as handle:
-            for record in records:
-                handle.write(json.dumps(record) + "\n")
-            handle.flush()
-            report = analyze([handle.name])
+        report = self._analyze_records(records)
         self.assertEqual(report["runs"], 1)
         self.assertEqual(report["completed"], 0)
         self.assertEqual(report["incomplete"], 1)
@@ -228,11 +229,7 @@ class UsageReportTests(unittest.TestCase):
                 },
             },
         ]
-        with tempfile.NamedTemporaryFile("w", suffix=".jsonl") as handle:
-            for record in records:
-                handle.write(json.dumps(record) + "\n")
-            handle.flush()
-            report = analyze([handle.name])
+        report = self._analyze_records(records)
         self.assertEqual(report["token_usage_runs"], 0)
         self.assertEqual(report["groups"][0]["tokens"]["total"], 0)
         self.assertTrue(any("safe child baseline" in item for item in report["warnings"]))
@@ -268,11 +265,7 @@ class UsageReportTests(unittest.TestCase):
                 },
             },
         ]
-        with tempfile.NamedTemporaryFile("w", suffix=".jsonl") as handle:
-            for record in records:
-                handle.write(json.dumps(record) + "\n")
-            handle.flush()
-            report = analyze([handle.name])
+        report = self._analyze_records(records)
         self.assertEqual(report["token_usage_runs"], 0)
         self.assertEqual(report["overall"]["tokens"]["total"], 0)
 
@@ -293,11 +286,7 @@ class UsageReportTests(unittest.TestCase):
                 "payload": {"type": {"not": "hashable"}, "call_id": "private-call-id"},
             },
         ]
-        with tempfile.NamedTemporaryFile("w", suffix=".jsonl") as handle:
-            for record in records:
-                handle.write(json.dumps(record) + "\n")
-            handle.flush()
-            report = analyze([handle.name])
+        report = self._analyze_records(records)
         self.assertEqual(report["runs"], 1)
         self.assertEqual(report["overall"]["tool_calls"], 0)
 
@@ -313,11 +302,7 @@ class UsageReportTests(unittest.TestCase):
                 "payload": {"type": "task_started", "turn_id": "turn", "started_at": 1000},
             },
         ]
-        with tempfile.NamedTemporaryFile("w", suffix=".jsonl") as handle:
-            for record in records:
-                handle.write(json.dumps(record) + "\n")
-            handle.flush()
-            report = analyze([handle.name])
+        report = self._analyze_records(records)
         self.assertEqual(report["token_usage_runs"], 0)
         self.assertEqual(report["groups"][0]["token_usage_runs"], 0)
 

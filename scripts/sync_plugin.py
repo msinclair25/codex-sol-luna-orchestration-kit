@@ -9,9 +9,13 @@ import json
 import os
 import re
 import stat
-import tempfile
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence, Tuple
+
+try:
+    import platform_fs
+except ImportError:  # pragma: no cover - package import in tests
+    from scripts import platform_fs  # type: ignore[no-redef]
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / "plugins" / "sol-luna-orchestration-kit"
@@ -27,11 +31,14 @@ MIRRORED_DIRECTORIES = (
 MIRRORED_SCRIPTS = (
     "install.py",
     "lifecycle.py",
+    "platform_fs.py",
     "pilot_tool.py",
     "receipt_tool.py",
     "routing_policy.py",
+    "setup.py",
     "usage_report.py",
     "verify_control_bundle.py",
+    "windows_setup.ps1",
 )
 MIRRORED_SKILLS = ("sol-luna-setup", "sol-luna-status")
 STATUS_ASSETS = (
@@ -49,9 +56,29 @@ class SyncError(RuntimeError):
 
 
 def _files(root: Path) -> Iterable[Path]:
-    for path in sorted(root.rglob("*")):
-        if path.is_file() and not path.is_symlink() and "__pycache__" not in path.parts:
-            yield path
+    if not root.is_dir() or not platform_fs.is_link_safe_beneath(root, ROOT):
+        raise SyncError("source_invalid")
+
+    def visit(directory: Path) -> Iterable[Path]:
+        try:
+            entries = sorted(os.scandir(directory), key=lambda entry: entry.name)
+        except OSError as exc:
+            raise SyncError("source_invalid") from exc
+        for entry in entries:
+            path = Path(entry.path)
+            if entry.name == "__pycache__":
+                continue
+            if platform_fs.is_link_like(path):
+                raise SyncError("source_invalid")
+            try:
+                if entry.is_dir(follow_symlinks=False):
+                    yield from visit(path)
+                elif entry.is_file(follow_symlinks=False):
+                    yield path
+            except OSError as exc:
+                raise SyncError("source_invalid") from exc
+
+    yield from visit(root)
 
 
 def mirror_pairs() -> List[Tuple[Path, Path]]:
@@ -77,24 +104,17 @@ def mirror_pairs() -> List[Tuple[Path, Path]]:
 def _atomic_write(path: Path, data: bytes, mode: int) -> None:
     if mode not in {0o600, 0o644, 0o700, 0o755}:
         raise SyncError("mode_invalid")
-    if path.is_symlink():
+    boundary = PLUGIN if platform_fs.is_link_safe_beneath(path, PLUGIN) else ROOT
+    if not platform_fs.is_link_safe_beneath(path, boundary):
         raise SyncError("symlink_destination")
     path.parent.mkdir(parents=True, exist_ok=True)
-    if path.parent.is_symlink():
+    if not platform_fs.is_link_safe_beneath(path, boundary):
         raise SyncError("symlink_destination")
-    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
     try:
-        os.fchmod(fd, mode)
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(data)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, path)
-    except Exception:
-        try:
-            os.unlink(temporary)
-        except OSError:
-            pass
+        platform_fs.atomic_replace(path, data, mode=mode)
+    except OSError as exc:
+        if str(exc) == "link_destination":
+            raise SyncError("symlink_destination") from exc
         raise
 
 
@@ -123,7 +143,11 @@ def _plugin_manifest() -> bytes:
 
 
 def synchronize(*, apply: bool) -> Dict[str, object]:
-    if ROOT.is_symlink() or PLUGIN.is_symlink() or not PLUGIN.is_dir():
+    if (
+        not platform_fs.is_link_safe_beneath(ROOT, ROOT)
+        or not platform_fs.is_link_safe_beneath(PLUGIN, ROOT)
+        or not PLUGIN.is_dir()
+    ):
         raise SyncError("root_invalid")
     expected = mirror_pairs()
     generated = {
@@ -134,24 +158,24 @@ def synchronize(*, apply: bool) -> Dict[str, object]:
     mismatches: List[str] = []
     writes: List[Tuple[Path, bytes, int]] = []
     for source, destination in expected:
-        if not source.is_file() or source.is_symlink():
+        if not source.is_file() or not platform_fs.is_link_safe_beneath(source, ROOT):
             raise SyncError("source_invalid")
         data = source.read_bytes()
-        mode = stat.S_IMODE(source.stat().st_mode)
+        mode = 0o644 if platform_fs.IS_WINDOWS else stat.S_IMODE(source.stat().st_mode)
         if (
             not destination.is_file()
-            or destination.is_symlink()
+            or platform_fs.is_link_like(destination)
             or destination.read_bytes() != data
-            or stat.S_IMODE(destination.stat().st_mode) != mode
+            or (not platform_fs.IS_WINDOWS and stat.S_IMODE(destination.stat().st_mode) != mode)
         ):
             mismatches.append(destination.relative_to(ROOT).as_posix())
             writes.append((destination, data, mode))
     for destination, (data, mode) in generated.items():
         if (
             not destination.is_file()
-            or destination.is_symlink()
+            or platform_fs.is_link_like(destination)
             or destination.read_bytes() != data
-            or stat.S_IMODE(destination.stat().st_mode) != mode
+            or (not platform_fs.IS_WINDOWS and stat.S_IMODE(destination.stat().st_mode) != mode)
         ):
             mismatches.append(destination.relative_to(ROOT).as_posix())
             writes.append((destination, data, mode))

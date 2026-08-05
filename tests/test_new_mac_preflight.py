@@ -5,6 +5,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+if os.name == "nt":
+    raise unittest.SkipTest("fresh-host preflight is intentionally macOS-only")
+
 from scripts import new_mac_preflight
 
 

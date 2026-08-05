@@ -102,7 +102,7 @@ class M5PluginTests(unittest.TestCase):
     def test_manifest_and_default_hook_discovery_are_valid(self):
         manifest = json.loads((PLUGIN / ".codex-plugin" / "plugin.json").read_text())
         self.assertEqual(manifest["name"], PLUGIN.name)
-        self.assertEqual(manifest["version"], "0.6.0")
+        self.assertEqual(manifest["version"], "0.6.1")
         self.assertEqual(manifest["skills"], "./skills/")
         self.assertNotIn("hooks", manifest)
         self.assertIsInstance(manifest["interface"]["defaultPrompt"], list)
@@ -161,7 +161,7 @@ class M5PluginTests(unittest.TestCase):
             for source in sorted((ROOT / directory).rglob("*")):
                 if source.is_file() and "__pycache__" not in source.parts:
                     direct_pairs.append((source, PLUGIN / source.relative_to(ROOT)))
-        for name in ("install.py", "lifecycle.py", "pilot_tool.py", "receipt_tool.py", "routing_policy.py", "usage_report.py", "verify_control_bundle.py"):
+        for name in ("install.py", "lifecycle.py", "pilot_tool.py", "platform_fs.py", "receipt_tool.py", "routing_policy.py", "setup.py", "usage_report.py", "verify_control_bundle.py", "windows_setup.ps1"):
             direct_pairs.append((ROOT / "scripts" / name, PLUGIN / "scripts" / name))
         for skill_name in ("sol-luna-setup", "sol-luna-status"):
             canonical_skill = ROOT / ".agents" / "skills" / skill_name
@@ -192,7 +192,7 @@ class M5PluginTests(unittest.TestCase):
         report = json.loads(result.stdout)
         self.assertTrue(report["ok"])
         self.assertEqual(report["mismatches"], [])
-        self.assertEqual(report["version"], "0.6.0")
+        self.assertEqual(report["version"], "0.6.1")
 
     def test_bundled_setup_installer_applies_standard_profile(self):
         previous_dont_write_bytecode = sys.dont_write_bytecode
@@ -427,7 +427,8 @@ class M5PluginTests(unittest.TestCase):
                 "sol-luna-guard:project_ownership_path_unsafe",
             )
 
-        self.assertEqual(_deny_code(_run_guard(_event(cwd=Path("/")))), "sol-luna-guard:cwd_too_broad")
+        broad_root = Path(Path.cwd().anchor) if os.name == "nt" else Path("/")
+        self.assertEqual(_deny_code(_run_guard(_event(cwd=broad_root))), "sol-luna-guard:cwd_too_broad")
 
     def test_bundled_policy_drift_fails_closed(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -463,8 +464,8 @@ class M5PluginTests(unittest.TestCase):
             self.assertIn(phrase, text)
 
     def test_primary_onboarding_is_one_prompt_and_one_final_restart(self):
-        readme = (ROOT / "README.md").read_text()
-        installing = (ROOT / "docs" / "INSTALLING_AND_UPDATING.md").read_text()
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        installing = (ROOT / "docs" / "INSTALLING_AND_UPDATING.md").read_text(encoding="utf-8")
         for text in (readme, installing):
             compact = " ".join(text.split())
             self.assertIn("Install and fully configure the Sol/Luna Orchestration Kit", text)
@@ -488,7 +489,9 @@ class M5PluginTests(unittest.TestCase):
         self.assertIn("Not enough comparable evidence yet.", readme)
         self.assertIn("Workflow-only alternative", readme)
         self.assertIn("Technical history", readme)
-        visual = (ROOT / "assets" / "sol-luna-orchestration-system-v0.6.svg").read_text()
+        visual = (ROOT / "assets" / "sol-luna-orchestration-system-v0.6.svg").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("LUNA · FAST", visual)
         self.assertIn("LUNA · STANDARD", visual)
         self.assertIn("#f6c85f", visual)

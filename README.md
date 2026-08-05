@@ -13,11 +13,11 @@ multi-agent work into a disciplined team workflow. Sol owns the requirements,
 architecture, integration, and final decision. Five specialized Luna roles take
 on substantial, bounded work only when it passes a deny-by-default routing gate.
 
-[V0.6.0](https://github.com/msinclair25/codex-sol-luna-orchestration-kit/releases/tag/v0.6.0)
-is ready for real-project testing. It includes guided setup and updates,
-Fast/Standard Luna profiles, conflict-safe managed configuration, drift checks,
-resumable operations, and privacy-safe project metrics that can reveal
-usage-efficiency signals without pretending to prove savings.
+V0.6.1 is the current release and is ready for cross-platform testing.
+It includes guided setup and updates, Fast/Standard Luna profiles,
+conflict-safe managed configuration, drift checks, resumable operations,
+privacy-safe project metrics that can reveal usage-efficiency signals without
+pretending to prove savings, and first-class native Windows support.
 
 ## Quick Start
 
@@ -30,7 +30,9 @@ Choose a Luna tier before setup:
 
 Requirements: a current Codex build with plugin support; custom-agent support
 for the full-role profile; and Python 3.11 or newer for setup and verification.
-Fast access is optional—the Standard profile uses normal service.
+Fast access is optional—the Standard profile uses normal service. Native
+Windows 11, macOS, Linux, and WSL2 are supported; recent Windows 10 is best
+effort because Codex itself has a less reliable Windows 10 baseline.
 
 Paste this six-line prompt into one Codex task. Replace `Fast` with `Standard`
 if preferred:
@@ -48,6 +50,46 @@ The setup skill verifies the installed source, previews every managed change,
 preserves unrelated settings, creates a recovery receipt, applies the selected
 profile transactionally, and verifies the result. Restart only when it reports
 a verified changed install.
+
+### One-command direct checkout
+
+The checkout also has one guarded setup command. It previews internally, stops
+on conflicts, applies transactionally, and verifies before requesting one Codex
+restart:
+
+```sh
+# macOS or Linux
+python3 scripts/setup.py --tier fast
+```
+
+```powershell
+# Windows
+py -3 scripts\setup.py --tier fast
+```
+
+Use `standard` instead of `fast` when preferred. Add `--preview-only` for a
+non-mutating preview, `--update` to preserve and refresh the installed tier, or
+`--doctor` for a read-only health check. The command is standard-library-only
+and never installs Python or approves a conflict automatically.
+
+### Native Windows
+
+The same conversational setup prompt works in Codex on Windows—no WSL or Unix
+shell is required. The bundled hook uses the Windows `py -3` launcher, setup
+resolves Python automatically, and the installer, status, receipts, and local
+usage metrics use Windows-safe filesystem operations.
+
+PowerShell users can alternatively let the wrapper find `py`, `python`, or
+`python3` automatically:
+
+```powershell
+pwsh -NoProfile -File .\scripts\windows_setup.ps1 -Tier fast
+```
+
+Use `-Tier standard`, `-Update`, or `-PreviewOnly` as needed. An update with no
+`-Tier` keeps the installed tier. Python 3.11+ must already be installed; the
+wrapper does not install a runtime silently. See the
+[Windows setup details](docs/INSTALLING_AND_UPDATING.md#native-windows).
 
 ### Workflow-only alternative
 
@@ -81,7 +123,7 @@ offers the full role profile as an optional upgrade.
   attributable token trends for the active project—without hosted telemetry or
   a scan of every workspace.
 
-## Help test V0.6.0
+## Help test V0.6.1
 
 The release is finished; the next job is learning how it behaves across more
 real codebases, Codex configurations, and workloads. A useful test session can
@@ -96,7 +138,7 @@ be as simple as:
 5. Return to status after several delegated outcomes to inspect project-local
    usage and usefulness signals.
 
-Use the [V0.6 tester guide](CONTRIBUTING.md#test-v060), then
+Use the [V0.6.1 tester guide](CONTRIBUTING.md#test-v061), then
 [open a structured tester feedback report](https://github.com/msinclair25/codex-sol-luna-orchestration-kit/issues/new?template=tester-feedback.yml)
 with your Codex version, operating system, selected tier, install mode, what you
 expected, and what happened. Sanitized status output is helpful. Never include
@@ -145,7 +187,7 @@ ownership rules, and transport boundary.
 
 ## Project-local usage and outcome metrics
 
-V0.6.0 ships the complete project-local metrics layer for attributable Sol/Luna
+V0.6.1 ships the complete project-local metrics layer for attributable Sol/Luna
 work. The default status stays compact; `--detail` adds installation, metrics,
 drift, and provenance detail.
 
@@ -153,7 +195,7 @@ Healthy full install:
 
 ```text
 Health: Healthy
-Version: 0.6.0 · Fast
+Version: 0.6.1 · Fast
 Metrics: 12 delegated outcomes in the last 30 days
 Delegation: 9/12 accepted as useful · 1 failed
 Trend: Not enough comparable evidence yet.
@@ -200,12 +242,18 @@ and a small versioned install-state record. It never adds a global default
 subagent model. Unrelated instructions and config stay untouched; existing
 conflicts stop the install unless you separately approve the named replacement.
 
-The installer uses strict JSON, previewed mode-preserving atomic writes,
-recoverable backups, source hashes, active-root verification, and fail-closed
-path, symlink, permission, state, and drift checks. It installs no dependencies
-or services and performs no commit, push, deployment, migration, or destructive
-cleanup. Test direct-checkout procedures only in isolated homes and workspaces,
-never against live `~/.codex`.
+The installer uses strict JSON, previewed atomic writes, recoverable backups,
+source hashes, active-root verification, and fail-closed path, link, state, and
+drift checks. Unix preserves and validates POSIX modes. Native Windows rejects
+symlinks, junctions, and other reparse points while using the account's normal
+Windows ACL inheritance instead of pretending POSIX mode bits are ACLs. Run it
+from a Windows account whose profile and project directories are already
+private: the kit does not rewrite or audit custom Windows DACLs, and replacing
+a managed file can replace a file-specific DACL with the parent directory's
+inherited ACL. It
+installs no dependencies or services and performs no commit, push, deployment,
+migration, or destructive cleanup. Test direct-checkout procedures only in
+isolated homes and workspaces, never against a live Codex home.
 
 Detailed diagnostics, updates, conflict handling, tier switching, and recovery
 live in [Installing and updating](docs/INSTALLING_AND_UPDATING.md).
@@ -228,10 +276,12 @@ human review instead of being guessed or silently rewritten.
 
 ## Release confidence
 
-V0.6.0 passed 196 automated tests, Fast and Standard routing-policy validation,
-canonical/plugin parity checks, release-archive verification, and an isolated
-public marketplace install. The release archive and source tag point to the
-same verified commit.
+The V0.6.1 release gate runs the complete suite on Windows, macOS, and Linux
+with Python 3.11 through 3.14. Every OS exercises a direct-checkout setup in an
+isolated home. Windows additionally exercises the PowerShell wrapper and native
+reparse-point behavior. The integration coverage includes full install, state-
+tracked updates, tier preservation and switching, Doctor, receipts and routine
+metrics, status reporting, plugin synchronization, and bundled hooks.
 
 Maintainers can reproduce the repository checks from the project root:
 

@@ -153,6 +153,7 @@ class SolLunaStatusTests(unittest.TestCase):
     def _run(self, base, receipts, sessions, *extra, script=SCRIPT):
         environment = dict(os.environ)
         environment["HOME"] = str(base / "home")
+        environment["USERPROFILE"] = str(base / "home")
         environment["PYTHONDONTWRITEBYTECODE"] = "1"
         return subprocess.run(
             [sys.executable, str(script), "--root", str(ROOT), "--workspace-root", str(base), "--receipts-dir", str(receipts), "--session-root", str(sessions), *extra],
@@ -312,10 +313,16 @@ class SolLunaStatusTests(unittest.TestCase):
             "--routine-records-dir",
             str(unsafe_records),
         )
-        self.assertEqual(report["routine_records"]["optional_missing"], False)
-        self.assertEqual(report["routine_records"]["invalid"], 1)
-        self.assertEqual(report["routine_records"]["collection"], "partial")
-        self.assertIn("invalid_routine_records_observed", report["warnings"])
+        if os.name == "nt":
+            self.assertEqual(report["routine_records"]["optional_missing"], True)
+            self.assertEqual(report["routine_records"]["invalid"], 0)
+            self.assertEqual(report["routine_records"]["collection"], "ready-no-records")
+            self.assertNotIn("invalid_routine_records_observed", report["warnings"])
+        else:
+            self.assertEqual(report["routine_records"]["optional_missing"], False)
+            self.assertEqual(report["routine_records"]["invalid"], 1)
+            self.assertEqual(report["routine_records"]["collection"], "partial")
+            self.assertIn("invalid_routine_records_observed", report["warnings"])
 
         records = metadata / "routine-records"
         unsafe_records.rmdir()
@@ -502,7 +509,7 @@ class SolLunaStatusTests(unittest.TestCase):
             healthy = self._run(base, receipts, sessions)
             self.assertEqual(healthy.returncode, 0, healthy.stderr)
             self.assertIn("Health: Healthy", healthy.stdout)
-            self.assertIn("Version: 0.6.0 · Fast", healthy.stdout)
+            self.assertIn("Version: 0.6.1 · Fast", healthy.stdout)
             self.assertIn("Metrics: Ready; no dated delegated outcomes", healthy.stdout)
             self.assertIn("Next: No lifecycle action needed; no policy change suggested.", healthy.stdout)
 
@@ -549,7 +556,7 @@ class SolLunaStatusTests(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
             self.assertIn("Health: Workflow-only", completed.stdout)
-            self.assertIn("Version: 0.6.0 · Workflow-only · Fast workflow routing default", completed.stdout)
+            self.assertIn("Version: 0.6.1 · Workflow-only · Fast workflow routing default", completed.stdout)
             self.assertIn("1 delegated outcome in the last 30 days", completed.stdout)
             self.assertIn("Full roles are not installed", completed.stdout)
 
@@ -714,7 +721,7 @@ class SolLunaStatusTests(unittest.TestCase):
                 base, base / "receipts", sessions,
                 "--routine-records-dir", str(records), "--as-of", "2026-08-04",
             )
-            self.assertEqual(report["routine_records"]["invalid"], 2)
+            self.assertEqual(report["routine_records"]["invalid"], 1 if os.name == "nt" else 2)
             self.assertEqual(report["routine_records"]["collection"], "partial")
             self.assertNotIn(str(base), rendered)
 

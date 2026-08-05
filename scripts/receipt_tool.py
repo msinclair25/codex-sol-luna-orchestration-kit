@@ -11,15 +11,18 @@ import argparse
 import hashlib
 import json
 import math
-import os
 import re
 import secrets
 import stat
 import sys
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+
+try:
+    import platform_fs
+except ImportError:  # pragma: no cover - package import in tests
+    from scripts import platform_fs  # type: ignore[no-redef]
 
 
 SCHEMA_VERSION = 1
@@ -168,12 +171,11 @@ def _enum(value: Any, choices: set[str]) -> bool:
 
 
 def _path_has_symlink_component(path: Path) -> bool:
-    allowed_system_aliases = {Path("/tmp"), Path("/var")}
     try:
         current = Path(path.anchor) if path.is_absolute() else Path(".")
         for part in path.parts[1:] if path.is_absolute() else path.parts:
             current = current / part
-            if current.is_symlink() and current not in allowed_system_aliases:
+            if platform_fs.is_link_like(current) and not platform_fs.allowed_system_link(current):
                 return True
     except (OSError, RuntimeError):
         return True
@@ -708,35 +710,17 @@ def close_routine_record(record: Any, records_dir: Path) -> Dict[str, Any]:
     target: Optional[Path] = None
     for _ in range(8):
         candidate = target_dir / ("routine-" + secrets.token_hex(16) + ".json")
-        if not candidate.exists() and not candidate.is_symlink():
+        if not candidate.exists() and not platform_fs.is_link_like(candidate):
             target = candidate
             break
     if target is None:
         raise ReceiptError("routine_record_name_unavailable")
-    fd, temporary = tempfile.mkstemp(prefix=".routine-", suffix=".tmp", dir=str(target_dir))
+    assert target is not None
     try:
-        os.fchmod(fd, 0o600)
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(data)
-            handle.flush()
-            os.fsync(handle.fileno())
-        try:
-            os.link(temporary, target, follow_symlinks=False)
-        except FileExistsError as exc:
-            raise ReceiptError("routine_record_collision") from exc
-        os.unlink(temporary)
-        directory_fd = os.open(str(target_dir), os.O_RDONLY)
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
-    except (OSError, ReceiptError) as exc:
-        try:
-            os.unlink(temporary)
-        except OSError:
-            pass
-        if isinstance(exc, ReceiptError):
-            raise
+        platform_fs.atomic_create(target, data)
+    except FileExistsError as exc:
+        raise ReceiptError("routine_record_collision") from exc
+    except OSError as exc:
         raise ReceiptError("routine_record_write_failed") from exc
     return {"ok": True, "recorded": True, "version": ROUTINE_RECORD_VERSION}
 
@@ -752,24 +736,26 @@ def _safe_routine_dir(path: Path) -> Path:
         broad = {
             Path("/").resolve(),
             Path.home().resolve(),
-            Path(tempfile.gettempdir()).resolve(),
-            Path("/tmp").resolve(),
-            Path("/private/tmp").resolve(),
-            Path("/var/tmp").resolve(),
         }
-        if project.resolve() in broad or _path_has_symlink_component(project):
+        broad.update(platform_fs.shared_temp_roots())
+        resolved_project = project.resolve()
+        if (
+            resolved_project in broad
+            or resolved_project.parent == resolved_project
+            or _path_has_symlink_component(project)
+        ):
             raise ReceiptError("unsafe_routine_records_dir")
-        if not project.is_dir() or project.is_symlink():
+        if not project.is_dir() or platform_fs.is_link_like(project):
             raise ReceiptError("unsafe_routine_records_dir")
         project_marker = project / ".git"
         metadata = project / ".sol-luna"
         if not metadata.exists():
-            if not project_marker.exists() or project_marker.is_symlink():
+            if not project_marker.exists() or platform_fs.is_link_like(project_marker):
                 raise ReceiptError("ambiguous_workspace_root")
             metadata.mkdir(mode=0o700, exist_ok=False)
-        if metadata.is_symlink() or not metadata.is_dir():
+        if platform_fs.is_link_like(metadata) or not metadata.is_dir():
             raise ReceiptError("unsafe_routine_records_dir")
-        if stat.S_IMODE(metadata.stat().st_mode) != 0o700:
+        if not platform_fs.mode_matches(metadata, 0o700):
             raise ReceiptError("routine_metadata_permissions")
     except ReceiptError:
         raise
@@ -781,15 +767,15 @@ def _safe_routine_dir(path: Path) -> Path:
 def _safe_dir(path: Path, *, create: bool = False) -> Path:
     if _path_has_symlink_component(path):
         raise ReceiptError("unsafe_receipts_dir")
-    if path.exists() and (path.is_symlink() or not path.is_dir()):
+    if path.exists() and (platform_fs.is_link_like(path) or not path.is_dir()):
         raise ReceiptError("unsafe_receipts_dir")
     if not path.exists():
         if not create:
             raise ReceiptError("receipts_dir_missing")
         path.mkdir(mode=0o700, parents=True, exist_ok=False)
-    if path.is_symlink() or not path.is_dir():
+    if platform_fs.is_link_like(path) or not path.is_dir():
         raise ReceiptError("unsafe_receipts_dir")
-    if stat.S_IMODE(path.stat().st_mode) != 0o700:
+    if not platform_fs.mode_matches(path, 0o700):
         raise ReceiptError("receipts_dir_permissions")
     return path
 
@@ -825,45 +811,28 @@ def close_receipt(payload: Any, receipts_dir: Path) -> Dict[str, Any]:
     target_dir = _safe_dir(receipts_dir, create=True)
     target = target_dir / (receipt_id + ".json")
     data = _canonical(receipt)
-    if target.exists() or target.is_symlink():
+    if target.exists() or platform_fs.is_link_like(target):
         try:
             target_stat = target.lstat()
         except OSError as exc:
             raise ReceiptError("unsafe_receipt_path") from exc
-        if not stat.S_ISREG(target_stat.st_mode) or stat.S_ISLNK(target_stat.st_mode):
+        if (
+            not stat.S_ISREG(target_stat.st_mode)
+            or stat.S_ISLNK(target_stat.st_mode)
+            or platform_fs.is_link_like(target)
+        ):
             raise ReceiptError("unsafe_receipt_path")
-        if stat.S_IMODE(target_stat.st_mode) != 0o600:
+        if not platform_fs.mode_from_stat(target_stat, 0o600):
             raise ReceiptError("receipt_permissions")
         existing = _receipt_file(target)
         if existing == data:
             return {"ok": True, "receipt_id": receipt_id, "idempotent": True}
         raise ReceiptError("receipt_collision")
-    fd, temporary = tempfile.mkstemp(prefix=".receipt-", suffix=".tmp", dir=str(target_dir))
     try:
-        os.fchmod(fd, 0o600)
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(data)
-            handle.flush()
-            os.fsync(handle.fileno())
-        if target.exists() or target.is_symlink():
-            raise ReceiptError("receipt_collision")
-        try:
-            os.link(temporary, target, follow_symlinks=False)
-        except FileExistsError as exc:
-            raise ReceiptError("receipt_collision") from exc
-        os.unlink(temporary)
-        directory_fd = os.open(str(target_dir), os.O_RDONLY)
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
-    except (OSError, ReceiptError) as exc:
-        try:
-            os.unlink(temporary)
-        except OSError:
-            pass
-        if isinstance(exc, ReceiptError):
-            raise
+        platform_fs.atomic_create(target, data)
+    except FileExistsError as exc:
+        raise ReceiptError("receipt_collision") from exc
+    except OSError as exc:
         raise ReceiptError("receipt_write_failed") from exc
     return {"ok": True, "receipt_id": receipt_id, "idempotent": False}
 

@@ -25,6 +25,11 @@ try:
 except ImportError:  # pragma: no cover - supported Python versions include it.
     tomllib = None  # type: ignore[assignment]
 
+try:
+    import platform_fs
+except ImportError:  # pragma: no cover - package import in tests
+    from scripts import platform_fs  # type: ignore[no-redef]
+
 
 SCHEMA_VERSION = 1
 POLICY_VERSION = "routing-policy.v1.5"
@@ -581,9 +586,9 @@ def _safe_path(root: Path, relative: str) -> Optional[Path]:
         current = root
         for part in relative.split("/"):
             current = current / part
-            if current.is_symlink():
+            if platform_fs.is_link_like(current):
                 return None
-        if not candidate.is_file() or candidate.is_symlink():
+        if not candidate.is_file() or platform_fs.is_link_like(candidate):
             return None
         candidate.resolve().relative_to(root)
     except (OSError, RuntimeError, ValueError):
@@ -675,8 +680,8 @@ def _agents_match(actual: Optional[Path], repository: Optional[Path]) -> Tuple[b
 def _active_agents_path(root: Path) -> Optional[Path]:
     """Resolve Codex's effective global instruction file safely."""
     override_candidate = root / AGENTS_OVERRIDE_RELATIVE
-    if override_candidate.exists() or override_candidate.is_symlink():
-        if override_candidate.is_symlink() or not override_candidate.is_file():
+    if override_candidate.exists() or platform_fs.is_link_like(override_candidate):
+        if platform_fs.is_link_like(override_candidate) or not override_candidate.is_file():
             return None
         override = _safe_path(root, AGENTS_OVERRIDE_RELATIVE)
         if override is None:
@@ -935,7 +940,7 @@ def _validate_role_file(path: Optional[Path], expected: Mapping[str, Any]) -> bo
 def _validate_active_config(path: Optional[Path]) -> bool:
     """Check only the non-sensitive installed keys owned by this kit."""
 
-    if path is None or tomllib is None or path.is_symlink() or not path.is_file():
+    if path is None or tomllib is None or platform_fs.is_link_like(path) or not path.is_file():
         return False
     try:
         with path.open("rb") as handle:
@@ -998,7 +1003,7 @@ def verify_contract(root: Path | str = DEFAULT_ROOT, profile: str = "fast") -> D
     except (TypeError, ValueError):
         report["errors"] = ["runtime_root_unreadable"]
         return report
-    if root_path.is_symlink() or not root_path.is_dir():
+    if platform_fs.is_link_like(root_path) or not root_path.is_dir():
         report["errors"] = ["runtime_root_unreadable"]
         return report
     policy_path = _safe_path(root_path, spec["policy_relative"])
@@ -1096,7 +1101,7 @@ def verify_active_root(
     except (TypeError, ValueError):
         report["errors"] = ["active_root_unreadable"]
         return report
-    if active_path.is_symlink() or not active_path.is_dir():
+    if platform_fs.is_link_like(active_path) or not active_path.is_dir():
         report["errors"] = ["active_root_unreadable"]
         return report
     contract, parsed = _read_json(_safe_path(repository_path, spec["policy_relative"]))
@@ -1149,7 +1154,7 @@ def _ownership_path_is_safe(root: Path, relative: str) -> bool:
         current = resolved_root
         for index, part in enumerate(relative.split("/")):
             current = current / part
-            if current.is_symlink():
+            if platform_fs.is_link_like(current):
                 return False
             if index < len(relative.split("/")) - 1 and current.exists() and not current.is_dir():
                 return False

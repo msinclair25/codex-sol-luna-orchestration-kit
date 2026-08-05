@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   validate:
-    name: Python 3.11 · ${{ matrix.os }}
+    name: Python ${{ matrix.python-version }} · ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
@@ -24,6 +24,11 @@ jobs:
         os:
           - ubuntu-latest
           - macos-latest
+        python-version:
+          - "3.11"
+          - "3.12"
+          - "3.13"
+          - "3.14"
 
     steps:
       - name: Check out repository
@@ -32,7 +37,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
 
       - name: Verify Fast routing policy
         env:
@@ -53,6 +58,65 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: python3 -m unittest discover -s tests -v
+
+      - name: Exercise setup and Doctor in an isolated home
+        run: |
+          SolLunaTestHome="$RUNNER_TEMP/sol-luna-direct-home"
+          mkdir -p "$SolLunaTestHome"
+          python3 scripts/setup.py --tier fast --usage without-usage --home "$SolLunaTestHome" --codex-home "$SolLunaTestHome/.codex"
+          python3 scripts/setup.py --doctor --home "$SolLunaTestHome" --codex-home "$SolLunaTestHome/.codex"
+
+      - name: Check patch formatting
+        run: git diff --check
+
+  windows:
+    name: Native Windows · Python ${{ matrix.python-version }}
+    runs-on: windows-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.11"
+          - "3.12"
+          - "3.13"
+          - "3.14"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Verify routing contracts
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          python scripts/routing_policy.py verify --profile fast --format json
+          python scripts/routing_policy.py verify --profile standard --format json
+
+      - name: Check canonical and plugin parity
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python scripts/sync_plugin.py
+
+      - name: Run repository tests natively on Windows
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python -m unittest discover -s tests -v
+
+      - name: Exercise PowerShell setup, tier-preserving update, and Doctor
+        shell: pwsh
+        run: |
+          $TestHome = Join-Path $env:RUNNER_TEMP "sol-luna-windows-home"
+          New-Item -ItemType Directory -Force -Path $TestHome | Out-Null
+          $TestCodexHome = Join-Path $TestHome ".codex"
+          ./scripts/windows_setup.ps1 -Tier standard -Usage without-usage -CodexHome $TestCodexHome -HomePath $TestHome
+          ./scripts/windows_setup.ps1 -Update -CodexHome $TestCodexHome -HomePath $TestHome
+          python scripts/setup.py --doctor --home $TestHome --codex-home $TestCodexHome
 
       - name: Check patch formatting
         run: git diff --check
