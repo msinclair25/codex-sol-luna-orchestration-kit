@@ -27,7 +27,9 @@ endpoints and authorization headers as secrets.
 
 ## Reporting a concern
 
-Use a GitHub issue for configuration-safety concerns that contain no sensitive
-information. Do not paste credentials, tokens, private repository content, or
-other secrets into a public issue. Revoke any exposed credential immediately
-through its provider.
+Report vulnerabilities through
+[GitHub private vulnerability reporting](https://github.com/msinclair25/codex-sol-luna-orchestration-kit/security/advisories/new).
+Use a public bug report only for configuration-safety concerns that contain no
+sensitive information. Do not paste credentials, tokens, private repository
+content, identifying paths, or other secrets into an issue. Revoke any exposed
+credential immediately through its provider.
