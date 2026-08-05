@@ -170,8 +170,9 @@ class ReceiptToolTests(unittest.TestCase):
             self.assertTrue(second["ok"])
             outputs = sorted(records.glob("*.json"))
             self.assertEqual(len(outputs), 2)
-            self.assertEqual(stat.S_IMODE(records.stat().st_mode), 0o700)
-            self.assertTrue(all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in outputs))
+            if os.name != "nt":
+                self.assertEqual(stat.S_IMODE(records.stat().st_mode), 0o700)
+                self.assertTrue(all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in outputs))
             self.assertTrue(all(validate_routine_record(json.loads(path.read_text()))["ok"] for path in outputs))
             self.assertTrue(all("secret" not in path.read_text() for path in outputs))
 
@@ -246,8 +247,9 @@ class ReceiptToolTests(unittest.TestCase):
             self.assertFalse(first["idempotent"])
             self.assertTrue(second["idempotent"])
             output = receipts / (first["receipt_id"] + ".json")
-            self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o600)
-            self.assertEqual(stat.S_IMODE(receipts.stat().st_mode), 0o700)
+            if os.name != "nt":
+                self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o600)
+                self.assertEqual(stat.S_IMODE(receipts.stat().st_mode), 0o700)
             altered = dict(self.payloads["accepted"])
             altered["closed_at"] = "2026-08-02T10:06:00Z"
             self.assertNotEqual(close_receipt(altered, receipts)["receipt_id"], first["receipt_id"])

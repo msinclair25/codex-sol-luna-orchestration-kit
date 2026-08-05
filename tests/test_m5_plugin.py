@@ -427,7 +427,8 @@ class M5PluginTests(unittest.TestCase):
                 "sol-luna-guard:project_ownership_path_unsafe",
             )
 
-        self.assertEqual(_deny_code(_run_guard(_event(cwd=Path("/")))), "sol-luna-guard:cwd_too_broad")
+        broad_root = Path(Path.cwd().anchor) if os.name == "nt" else Path("/")
+        self.assertEqual(_deny_code(_run_guard(_event(cwd=broad_root))), "sol-luna-guard:cwd_too_broad")
 
     def test_bundled_policy_drift_fails_closed(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -463,8 +464,8 @@ class M5PluginTests(unittest.TestCase):
             self.assertIn(phrase, text)
 
     def test_primary_onboarding_is_one_prompt_and_one_final_restart(self):
-        readme = (ROOT / "README.md").read_text()
-        installing = (ROOT / "docs" / "INSTALLING_AND_UPDATING.md").read_text()
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        installing = (ROOT / "docs" / "INSTALLING_AND_UPDATING.md").read_text(encoding="utf-8")
         for text in (readme, installing):
             compact = " ".join(text.split())
             self.assertIn("Install and fully configure the Sol/Luna Orchestration Kit", text)

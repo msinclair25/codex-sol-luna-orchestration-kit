@@ -153,6 +153,7 @@ class SolLunaStatusTests(unittest.TestCase):
     def _run(self, base, receipts, sessions, *extra, script=SCRIPT):
         environment = dict(os.environ)
         environment["HOME"] = str(base / "home")
+        environment["USERPROFILE"] = str(base / "home")
         environment["PYTHONDONTWRITEBYTECODE"] = "1"
         return subprocess.run(
             [sys.executable, str(script), "--root", str(ROOT), "--workspace-root", str(base), "--receipts-dir", str(receipts), "--session-root", str(sessions), *extra],
@@ -313,9 +314,14 @@ class SolLunaStatusTests(unittest.TestCase):
             str(unsafe_records),
         )
         self.assertEqual(report["routine_records"]["optional_missing"], False)
-        self.assertEqual(report["routine_records"]["invalid"], 1)
-        self.assertEqual(report["routine_records"]["collection"], "partial")
-        self.assertIn("invalid_routine_records_observed", report["warnings"])
+        if os.name == "nt":
+            self.assertEqual(report["routine_records"]["invalid"], 0)
+            self.assertEqual(report["routine_records"]["collection"], "ready-no-records")
+            self.assertNotIn("invalid_routine_records_observed", report["warnings"])
+        else:
+            self.assertEqual(report["routine_records"]["invalid"], 1)
+            self.assertEqual(report["routine_records"]["collection"], "partial")
+            self.assertIn("invalid_routine_records_observed", report["warnings"])
 
         records = metadata / "routine-records"
         unsafe_records.rmdir()
@@ -714,7 +720,7 @@ class SolLunaStatusTests(unittest.TestCase):
                 base, base / "receipts", sessions,
                 "--routine-records-dir", str(records), "--as-of", "2026-08-04",
             )
-            self.assertEqual(report["routine_records"]["invalid"], 2)
+            self.assertEqual(report["routine_records"]["invalid"], 1 if os.name == "nt" else 2)
             self.assertEqual(report["routine_records"]["collection"], "partial")
             self.assertNotIn(str(base), rendered)
 

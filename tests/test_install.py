@@ -93,8 +93,9 @@ class InstallerTests(unittest.TestCase):
 
         install.install(ROOT, self.codex, self.home, apply=True, with_usage=False)
 
-        self.assertEqual(stat.S_IMODE(agents.stat().st_mode), 0o755)
-        self.assertEqual(stat.S_IMODE(config.stat().st_mode), 0o644)
+        if os.name != "nt":
+            self.assertEqual(stat.S_IMODE(agents.stat().st_mode), 0o755)
+            self.assertEqual(stat.S_IMODE(config.stat().st_mode), 0o644)
 
     def test_optional_usage_installs_pointer_and_resolves_kit_root(self):
         plan = install.install(ROOT, self.codex, self.home, apply=True, with_usage=True)
