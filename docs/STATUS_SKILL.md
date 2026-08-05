@@ -12,9 +12,9 @@ operational report. Users do not need reporter flags.
 
 The plugin passes the current trusted project automatically. The reporter does
 not shell out and never substitutes the plugin directory as a workspace.
-Filesystem roots, home, shared temp roots, symlinks, and ambiguous/non-project
-paths are rejected. Without a safe workspace, collection is `unavailable` and
-counts are null—not zero.
+Filesystem roots, home, shared temp roots, symlinks, Windows junctions and other
+reparse points, and ambiguous/non-project paths are rejected. Without a safe
+workspace, collection is `unavailable` and counts are null—not zero.
 
 Repository-local operation may use the repository for both roots. Maintainer
 diagnostic examples:
@@ -25,6 +25,8 @@ python3 .agents/skills/sol-luna-status/scripts/sol_luna_status.py --detail
 python3 .agents/skills/sol-luna-status/scripts/sol_luna_status.py --historical
 python3 .agents/skills/sol-luna-status/scripts/sol_luna_status.py --format json
 ```
+
+Native Windows maintainers use the same flags with `py -3` and backslash paths.
 
 `--workspace-root` accepts exactly one canonical project. Other path flags are
 synthetic/historical maintainer overrides described by `--help`.

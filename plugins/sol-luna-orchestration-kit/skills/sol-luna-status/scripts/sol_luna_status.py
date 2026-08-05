@@ -42,12 +42,41 @@ ACTIVE_RECEIPT_POLICY = "receipt-policy.v2"
 ACTIVE_ROUTINE_RECORD = "routine-delegation-record.v2"
 LEGACY_ROUTINE_RECORD = "routine-delegation-record.v1"
 ADVISOR_VERSION = "optimization-advisor.v1"
-SHARED_TEMP_ROOTS = {Path("/tmp"), Path("/private/tmp"), Path("/var/tmp"), Path(tempfile.gettempdir())}
+
+
+def _local_link_like(path: Any) -> bool:
+    try:
+        if path.is_symlink():
+            return True
+        info = path.lstat() if hasattr(path, "lstat") else path.stat(follow_symlinks=False)
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    attributes = getattr(info, "st_file_attributes", 0)
+    return bool(
+        getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+        and attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    )
+
+
+def _local_allowed_system_link(path: Path) -> bool:
+    return os.name != "nt" and path in {Path("/tmp"), Path("/var")}
+
+
+def _local_mode_matches(path: Path, expected: int) -> bool:
+    return os.name == "nt" or stat.S_IMODE(path.stat(follow_symlinks=False).st_mode) == expected
+
+
+SHARED_TEMP_ROOTS = {Path(tempfile.gettempdir())}
+if os.name != "nt":
+    SHARED_TEMP_ROOTS.update({Path("/tmp"), Path("/private/tmp"), Path("/var/tmp")})
 
 
 def _module(name: str):
     path = MODULE_ROOT / "scripts" / (name + ".py")
-    spec = importlib.util.spec_from_file_location("sol_luna_status_" + name, path)
+    module_name = "platform_fs" if name == "platform_fs" else "sol_luna_status_" + name
+    spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
         raise ImportError(name)
     mod = importlib.util.module_from_spec(spec)
@@ -56,13 +85,13 @@ def _module(name: str):
     return mod
 
 
-usage_report = receipt_tool = routing_policy = verify_bundle = pilot_tool = lifecycle = None
+platform_fs = usage_report = receipt_tool = routing_policy = verify_bundle = pilot_tool = lifecycle = None
 
 
 def _valid_root(path: Path) -> bool:
     return _safe_path(path, directory=True) and all(
         _safe_path(path / "scripts" / name)
-        for name in ("usage_report.py", "receipt_tool.py", "pilot_tool.py", "lifecycle.py")
+        for name in ("platform_fs.py", "usage_report.py", "receipt_tool.py", "pilot_tool.py", "lifecycle.py")
     )
 
 
@@ -73,7 +102,7 @@ def _resolve_root(explicit: Optional[str]) -> Path:
             raise RuntimeError("role_kit_root_invalid")
         return candidate.resolve()
     pointer = SCRIPT_DIR.parent / KIT_POINTER_NAME
-    if pointer.is_file() and not pointer.is_symlink():
+    if pointer.is_file() and not _local_link_like(pointer):
         try:
             raw = pointer.read_text(encoding="utf-8")
             if len(raw.encode("utf-8")) > 4096 or "\x00" in raw:
@@ -82,7 +111,7 @@ def _resolve_root(explicit: Optional[str]) -> Path:
             if not value or "\n" in value or "\r" in value:
                 raise RuntimeError("role_kit_root_pointer_invalid")
             candidate = Path(value).expanduser()
-            if not candidate.is_absolute() or candidate.is_symlink() or not _valid_root(candidate):
+            if not candidate.is_absolute() or _local_link_like(candidate) or not _valid_root(candidate):
                 raise RuntimeError("role_kit_root_pointer_invalid")
             return candidate.resolve()
         except (OSError, UnicodeError):
@@ -95,8 +124,9 @@ def _resolve_root(explicit: Optional[str]) -> Path:
 
 
 def _load_modules(root: Path) -> None:
-    global usage_report, receipt_tool, routing_policy, verify_bundle, pilot_tool, lifecycle, MODULE_ROOT
+    global platform_fs, usage_report, receipt_tool, routing_policy, verify_bundle, pilot_tool, lifecycle, MODULE_ROOT
     MODULE_ROOT = root
+    platform_fs = _module("platform_fs")
     usage_report = _module("usage_report")
     receipt_tool = _module("receipt_tool")
     routing_policy = _module("routing_policy")
@@ -110,9 +140,9 @@ def _safe_path(path: Path, *, directory: bool = False) -> bool:
         current = Path(path.anchor) if path.is_absolute() else Path(".")
         for part in path.parts[1:] if path.is_absolute() else path.parts:
             current = current / part
-            if current.is_symlink() and current not in {Path("/tmp"), Path("/var")}:
+            if _local_link_like(current) and not _local_allowed_system_link(current):
                 return False
-        return not path.is_symlink() and (path.is_dir() if directory else path.is_file())
+        return not _local_link_like(path) and (path.is_dir() if directory else path.is_file())
     except (OSError, RuntimeError):
         return False
 
@@ -147,7 +177,7 @@ def _read_json(path: Path, limit: int = MAX_FILE_BYTES) -> Optional[Any]:
 
 def _bundle_info(root: Path) -> Dict[str, Any]:
     manifest = root / ".codex-plugin" / "plugin.json"
-    if not manifest.exists() and not manifest.is_symlink():
+    if not manifest.exists() and not _local_link_like(manifest):
         return {"active": False, "valid": True, "version": None}
     value = _read_json(manifest, 32 * 1024)
     valid = (
@@ -192,12 +222,12 @@ def _safe_workspace_candidate(candidate: Path) -> Optional[Path]:
         metadata_marker = resolved / ".sol-luna"
         git_ok = (
             (git_marker.is_file() or git_marker.is_dir())
-            and not git_marker.is_symlink()
+            and not _local_link_like(git_marker)
         )
         metadata_ok = (
             metadata_marker.is_dir()
-            and not metadata_marker.is_symlink()
-            and stat.S_IMODE(metadata_marker.stat().st_mode) == 0o700
+            and not _local_link_like(metadata_marker)
+            and _local_mode_matches(metadata_marker, 0o700)
         )
         if not git_ok and not metadata_ok:
             return None
@@ -528,7 +558,7 @@ def _scan_sessions(root: Path) -> Tuple[List[Path], Dict[str, Any], List[str]]:
                     if entries_seen > MAX_ENTRIES or time.monotonic() - start > MAX_SECONDS:
                         warnings.append("session_scan_bounded"); fatal = True; break
                     p = Path(entry.path)
-                    if entry.is_symlink():
+                    if _local_link_like(entry):
                         warnings.append("unsafe_session_path"); fatal = True; continue
                     if entry.is_dir(follow_symlinks=False): stack.append(p)
                     elif entry.is_file(follow_symlinks=False) and p.suffix == ".jsonl": candidates.append(p)
@@ -616,7 +646,7 @@ def _valid_receipts(receipts_dir: Path) -> List[Dict[str, Any]]:
     if not _safe_path(receipts_dir, directory=True):
         return []
     try:
-        if stat.S_IMODE(receipts_dir.stat().st_mode) != 0o700:
+        if not _local_mode_matches(receipts_dir, 0o700):
             return []
     except OSError:
         return []
@@ -626,7 +656,7 @@ def _valid_receipts(receipts_dir: Path) -> List[Dict[str, Any]]:
             if p.suffix != ".json" or not _safe_path(p):
                 continue
             try:
-                if stat.S_IMODE(p.stat().st_mode) != 0o600:
+                if not _local_mode_matches(p, 0o600):
                     continue
             except OSError:
                 continue
@@ -650,11 +680,11 @@ def _routine_records(
     if records_dir is None:
         return [], 0, 0
     try:
-        if not records_dir.exists() and not records_dir.is_symlink():
+        if not records_dir.exists() and not _local_link_like(records_dir):
             return [], 0, 0
         if not _safe_path(records_dir, directory=True):
             return [], 0, 1
-        if stat.S_IMODE(records_dir.stat().st_mode) != 0o700:
+        if not _local_mode_matches(records_dir, 0o700):
             return [], 0, 1
     except OSError:
         return [], 0, 1
@@ -669,7 +699,7 @@ def _routine_records(
                 invalid += 1
                 continue
             try:
-                if stat.S_IMODE(path.stat().st_mode) != 0o600:
+                if not _local_mode_matches(path, 0o600):
                     invalid += 1
                     continue
             except OSError:
@@ -1237,7 +1267,7 @@ def _report(args: argparse.Namespace) -> Dict[str, Any]:
     latest = receipts[-1] if receipts else None
     profile_root = Path(args.active_root).expanduser() if args.active_root else Path.home() / ".codex"
     install_state_path = profile_root / INSTALL_STATE_NAME
-    install_state_present = install_state_path.exists() or install_state_path.is_symlink()
+    install_state_present = install_state_path.exists() or _local_link_like(install_state_path)
     install_info = _install_state_info(profile_root)
     luna_tier, luna_tier_provenance = _select_luna_profile(args.luna_tier, profile_root, latest)
     receipt_summary = _empty_receipt_summary()

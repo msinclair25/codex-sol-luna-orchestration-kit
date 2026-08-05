@@ -1,6 +1,6 @@
 {
   "name": "sol-luna-orchestration-kit",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Guided Sol/Luna setup, bounded routing, trustworthy project-local metrics, and spawn guardrails for Codex",
   "author": {
     "name": "msinclair25",

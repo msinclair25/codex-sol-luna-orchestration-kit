@@ -102,7 +102,7 @@ class M5PluginTests(unittest.TestCase):
     def test_manifest_and_default_hook_discovery_are_valid(self):
         manifest = json.loads((PLUGIN / ".codex-plugin" / "plugin.json").read_text())
         self.assertEqual(manifest["name"], PLUGIN.name)
-        self.assertEqual(manifest["version"], "0.6.0")
+        self.assertEqual(manifest["version"], "0.6.1")
         self.assertEqual(manifest["skills"], "./skills/")
         self.assertNotIn("hooks", manifest)
         self.assertIsInstance(manifest["interface"]["defaultPrompt"], list)
@@ -161,7 +161,7 @@ class M5PluginTests(unittest.TestCase):
             for source in sorted((ROOT / directory).rglob("*")):
                 if source.is_file() and "__pycache__" not in source.parts:
                     direct_pairs.append((source, PLUGIN / source.relative_to(ROOT)))
-        for name in ("install.py", "lifecycle.py", "pilot_tool.py", "receipt_tool.py", "routing_policy.py", "usage_report.py", "verify_control_bundle.py"):
+        for name in ("install.py", "lifecycle.py", "pilot_tool.py", "platform_fs.py", "receipt_tool.py", "routing_policy.py", "setup.py", "usage_report.py", "verify_control_bundle.py", "windows_setup.ps1"):
             direct_pairs.append((ROOT / "scripts" / name, PLUGIN / "scripts" / name))
         for skill_name in ("sol-luna-setup", "sol-luna-status"):
             canonical_skill = ROOT / ".agents" / "skills" / skill_name
@@ -192,7 +192,7 @@ class M5PluginTests(unittest.TestCase):
         report = json.loads(result.stdout)
         self.assertTrue(report["ok"])
         self.assertEqual(report["mismatches"], [])
-        self.assertEqual(report["version"], "0.6.0")
+        self.assertEqual(report["version"], "0.6.1")
 
     def test_bundled_setup_installer_applies_standard_profile(self):
         previous_dont_write_bytecode = sys.dont_write_bytecode

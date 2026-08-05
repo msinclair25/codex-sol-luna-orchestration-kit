@@ -13,7 +13,7 @@ body:
     id: kit-version
     attributes:
       label: Kit version
-      placeholder: 0.6.0
+      placeholder: 0.6.1
     validations:
       required: true
 
@@ -22,6 +22,20 @@ body:
     attributes:
       label: Codex environment
       description: Include the Codex version or build, surface, and operating system.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows 11 native
+        - Windows 10 native
+        - Windows through WSL2
+        - macOS
+        - Linux
+        - Other
     validations:
       required: true
 

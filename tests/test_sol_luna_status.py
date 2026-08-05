@@ -502,7 +502,7 @@ class SolLunaStatusTests(unittest.TestCase):
             healthy = self._run(base, receipts, sessions)
             self.assertEqual(healthy.returncode, 0, healthy.stderr)
             self.assertIn("Health: Healthy", healthy.stdout)
-            self.assertIn("Version: 0.6.0 · Fast", healthy.stdout)
+            self.assertIn("Version: 0.6.1 · Fast", healthy.stdout)
             self.assertIn("Metrics: Ready; no dated delegated outcomes", healthy.stdout)
             self.assertIn("Next: No lifecycle action needed; no policy change suggested.", healthy.stdout)
 
@@ -549,7 +549,7 @@ class SolLunaStatusTests(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
             self.assertIn("Health: Workflow-only", completed.stdout)
-            self.assertIn("Version: 0.6.0 · Workflow-only · Fast workflow routing default", completed.stdout)
+            self.assertIn("Version: 0.6.1 · Workflow-only · Fast workflow routing default", completed.stdout)
             self.assertIn("1 delegated outcome in the last 30 days", completed.stdout)
             self.assertIn("Full roles are not installed", completed.stdout)
 

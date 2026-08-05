@@ -11,12 +11,23 @@ From the orchestration-kit repository root, run the repository-local entrypoint:
 python3 .agents/skills/sol-luna-status/scripts/sol_luna_status.py
 ```
 
+On native Windows, use the resolved Python 3.11+ interpreter without POSIX
+environment syntax, for example:
+
+```powershell
+py -3 .agents\skills\sol-luna-status\scripts\sol_luna_status.py
+```
+
 When this skill is loaded from the optional plugin, run the bundled copy and
 point it at the plugin root and the canonical active project root:
 
 ```sh
 python3 "$PLUGIN_ROOT/skills/sol-luna-status/scripts/sol_luna_status.py" --root "$PLUGIN_ROOT" --workspace-root "$WORKSPACE_ROOT"
 ```
+
+The command above is semantic pseudocode for the skill. On Windows, pass the
+resolved plugin and workspace paths as separate process arguments; do not rely
+on `$PLUGIN_ROOT`, Unix quoting, or forward-slash command construction.
 
 Codex supplies `PLUGIN_ROOT` while the plugin is loaded. Resolve
 `WORKSPACE_ROOT` automatically from the current task's one trusted project;

@@ -35,9 +35,14 @@ duplicate JSON keys, unsafe paths, symlinks, and incorrect modes.
 
 The internal orchestration writer resolves only
 `WORKSPACE_ROOT/.sol-luna/routine-records`, requires a real project marker, and
-writes directory mode `0700` and file mode `0600`. Random filenames prevent
-collisions and are never reported. Recorder absence/failure is non-blocking.
-Users never author recorder flags or JSON.
+writes directory mode `0700` and file mode `0600` on Unix. Native Windows uses
+the account's inherited ACLs, rejects symlinks, junctions, and other reparse
+points, and uses atomic no-replace publication without treating emulated POSIX
+bits as ACL evidence. The kit does not tighten or audit custom DACLs, so the
+workspace and account profile must already have the intended Windows access
+policy. Random filenames prevent collisions and are never
+reported. Recorder absence/failure is non-blocking. Users never author recorder
+flags or JSON.
 
 “Automatic” means the active orchestration workflow attempts this close after
 Sol accepts delegated routine work. It is not a guaranteed runtime hook.
@@ -57,6 +62,8 @@ python3 scripts/receipt_tool.py validate --receipts-dir .sol-luna/receipts
 python3 scripts/receipt_tool.py summarize --receipts-dir .sol-luna/receipts --format json
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_receipt_tool -v
 ```
+
+On Windows, use `py -3` in place of `python3`.
 
 The routine writer subcommand is an internal workflow surface, not an end-user
 interface, so its routing context flags are intentionally absent from user

@@ -514,7 +514,7 @@ class InstallerTests(unittest.TestCase):
         self.assertTrue(verify_active_root(self.codex, ROOT, self.codex / "config.toml", "standard")["ok"])
         self.assertEqual(
             json.loads((self.codex / install.INSTALL_STATE_NAME).read_text())["kit_version"],
-            "0.6.0",
+            "0.6.1",
         )
 
         switched = install.install(
@@ -605,7 +605,7 @@ class InstallerTests(unittest.TestCase):
         )
         self.assertTrue(updated["verification"]["ok"])
         ready = json.loads(state_path.read_text())
-        self.assertEqual(ready["kit_version"], "0.6.0")
+        self.assertEqual(ready["kit_version"], "0.6.1")
         self.assertEqual(ready["update_phase"], "ready")
         self.assertEqual(install.doctor(ROOT, self.codex)["health"], "healthy")
 
@@ -633,7 +633,7 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(workflow["mode"], "workflow-only")
         self.assertIsNone(workflow["luna_tier"])
         self.assertEqual(workflow["workflow_default_tier"], "fast")
-        self.assertEqual(workflow["kit_version"], "0.6.0")
+        self.assertEqual(workflow["kit_version"], "0.6.1")
 
         malformed_plugin = self.base / "malformed-plugin"
         shutil.copytree(

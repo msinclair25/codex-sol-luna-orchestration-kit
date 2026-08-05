@@ -3,7 +3,7 @@
 The most valuable contribution right now is a clear, privacy-safe report from a
 real Codex workflow. You do not need to modify code to help.
 
-## Test V0.6.0
+## Test V0.6.1
 
 Use a non-sensitive project or a synthetic fixture. Before testing, confirm:
 
@@ -11,6 +11,14 @@ Use a non-sensitive project or a synthetic fixture. Before testing, confirm:
 - full-role testers also have custom-agent support;
 - Python 3.11 or newer is available to setup and verification scripts; and
 - Fast testers have Fast service access. Standard works without it.
+
+Native Windows testers should use Windows 11 when possible. The conversational
+setup in the README is the preferred path. Direct-checkout testers can run
+`python3 scripts/setup.py --tier fast` on macOS/Linux or
+`py -3 scripts\setup.py --tier fast` on Windows. The PowerShell wrapper
+`pwsh -NoProfile -File .\scripts\windows_setup.ps1 -Tier fast` discovers Python
+automatically and does not require WSL. Please state your OS version and whether
+a Windows run was native or WSL2 in your report.
 
 A focused test session should take one path from installation to evidence:
 
@@ -27,7 +35,7 @@ A focused test session should take one path from installation to evidence:
    usefulness and attributable-token signals.
 
 Then submit the
-[V0.6 tester feedback form](https://github.com/msinclair25/codex-sol-luna-orchestration-kit/issues/new?template=tester-feedback.yml).
+[V0.6.1 tester feedback form](https://github.com/msinclair25/codex-sol-luna-orchestration-kit/issues/new?template=tester-feedback.yml).
 Reports about successes are useful too: they help establish which environments
 and workloads are working.
 

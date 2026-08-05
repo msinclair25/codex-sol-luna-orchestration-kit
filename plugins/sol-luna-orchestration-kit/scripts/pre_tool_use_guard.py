@@ -17,6 +17,8 @@ import unicodedata
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
+import platform_fs
+
 
 MAX_INPUT_BYTES = 64 * 1024
 MAX_TEXT_CHARS = 2000
@@ -113,23 +115,21 @@ def _safe_project_root(raw: Any) -> Path:
         raise GuardError("cwd_invalid")
     try:
         candidate = Path(raw)
-        if not candidate.is_absolute() or candidate.is_symlink() or not candidate.is_dir():
+        if not candidate.is_absolute() or platform_fs.is_link_like(candidate) or not candidate.is_dir():
             raise GuardError("cwd_invalid")
         current = Path(candidate.anchor)
-        allowed_system_aliases = {Path("/tmp"), Path("/var")}
         for part in candidate.parts[1:]:
             current /= part
-            if current.is_symlink() and current not in allowed_system_aliases:
+            if platform_fs.is_link_like(current) and not platform_fs.allowed_system_link(current):
                 raise GuardError("cwd_invalid")
         root = candidate.resolve()
         broad = {
             Path(root.anchor),
             Path.home().resolve(),
-            Path("/tmp").resolve(),
-            Path("/var").resolve(),
-            Path("/private/tmp").resolve(),
-            Path("/private/var").resolve(),
         }
+        broad.update(platform_fs.shared_temp_roots())
+        if not platform_fs.IS_WINDOWS:
+            broad.update({Path("/var").resolve(), Path("/private/var").resolve()})
         if root in broad or len(root.parts) < 3:
             raise GuardError("cwd_too_broad")
         return root
@@ -151,7 +151,7 @@ def _ownership_safe_in_project(root: Path, ownership: Mapping[str, Iterable[str]
                 current = root
                 for part in relative.split("/"):
                     current = current / part
-                    if current.is_symlink():
+                    if platform_fs.is_link_like(current):
                         return False
                 current.resolve(strict=False).relative_to(root)
                 entries.append((lane, relative, current, _normalised_alias(relative)))

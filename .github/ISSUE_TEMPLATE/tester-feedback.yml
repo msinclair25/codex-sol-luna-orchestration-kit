@@ -1,4 +1,4 @@
-name: V0.6 tester feedback
+name: V0.6.1 tester feedback
 description: Share a real-project Sol/Luna test result, including what worked.
 title: "[Tester]: "
 labels:
@@ -7,14 +7,14 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thank you for testing V0.6. Please describe behavior, not private project content. Never include credentials, customer data, private prompts, production logs, or sensitive source code.
+        Thank you for testing V0.6.1. Please describe behavior, not private project content. Never include credentials, customer data, private prompts, production logs, or sensitive source code.
 
   - type: input
     id: kit-version
     attributes:
       label: Kit version
       description: The version reported by Sol/Luna status.
-      placeholder: 0.6.0
+      placeholder: 0.6.1
     validations:
       required: true
 
@@ -46,6 +46,20 @@ body:
       label: Codex environment
       description: Include the Codex version or build, surface, and operating system.
       placeholder: Codex Desktop 1.x on macOS 15.x
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows 11 native
+        - Windows 10 native
+        - Windows through WSL2
+        - macOS
+        - Linux
+        - Other
     validations:
       required: true
 

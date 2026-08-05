@@ -1,6 +1,6 @@
 # Dynamic routing policy
 
-Active V0.6.0 contracts are `config/routing-policy.v1.5.json` for Fast and
+Active V0.6.1 contracts are `config/routing-policy.v1.5.json` for Fast and
 `config/routing-policy.standard.v1.5.json` for Standard. They are descriptive,
 advisory, and fail closed; they never launch agents or edit configuration.
 Routing policy v1.4 and earlier remain immutable historical contracts.

@@ -1,6 +1,6 @@
 # Usage and delegation metrics
 
-V0.6.0 uses bounded local observations. It does not create a hosted dashboard,
+V0.6.1 uses bounded local observations. It does not create a hosted dashboard,
 telemetry server, database, MCP service, daemon, or cross-project index.
 
 ## Project-local routine trends
@@ -69,11 +69,13 @@ observational.
 
 ## Privacy and validation
 
-- routine records are under 2 KB, files `0600`, directory `0700`;
+- routine records are under 2 KB; Unix uses file `0600` and directory `0700`,
+  while Windows uses inherited account ACLs and rejects reparse points (the kit
+  does not tighten or audit custom DACLs);
 - exact timestamps, paths, project/task IDs, prompts, evidence prose, secrets,
   customer data, and production logs are forbidden;
 - workspace roots are canonical, project-marked, and reject broad/temp/home or
-  symlink paths;
+  symlink, junction, and other reparse-point paths;
 - strict JSON rejects duplicate keys and nonfinite/oversized input; and
 - status never treats missing attribution as zero.
 

@@ -38,6 +38,16 @@ restart only after the verified full-role install changes files.
    bundled workspace dependency runtime. Stop with a concise requirement when
    no compatible interpreter exists. Do not install a runtime implicitly.
 
+On native Windows, do not translate the documented command templates into
+POSIX shell syntax. Invoke the resolved interpreter and each argument
+separately, preserve drive-letter and space-containing paths, and use
+`Path.home()` semantics for the default Codex home. The bundled filesystem
+layer handles Windows atomic publication and rejects symlinks, junctions, and
+other reparse points. Do not ask the user to change ACLs or enable Developer
+Mode. If the user explicitly wants a direct-checkout command instead of guided
+setup, offer `pwsh -NoProfile -File .\scripts\windows_setup.ps1 -Tier fast`
+(or `standard`); it still previews and verifies through this installer.
+
 ## Select the operation
 
 - First run the installer's read-only Doctor operation. A plain request such as
@@ -226,7 +236,7 @@ that authorization in the current task.
 ## Uninstall and legacy recovery boundary
 
 Do not automatically uninstall, convert a full install to workflow-only, or
-restore legacy files in V0.6.0. Install-state v2 does not retain the durable
+restore legacy files in V0.6.1. Install-state v2 does not retain the durable
 pre-install baseline needed for lossless restoration. If asked to uninstall,
 inspect the installation read-only, explain this boundary for that installation,
 and point to its existing backup/install receipt and manual recovery procedure.

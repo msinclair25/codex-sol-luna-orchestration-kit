@@ -13,9 +13,7 @@ import importlib.util
 import json
 import os
 import re
-import stat
 import sys
-import tempfile
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -24,6 +22,16 @@ try:
     import tomllib
 except ImportError:  # pragma: no cover
     tomllib = None  # type: ignore[assignment]
+
+_previous_dont_write_bytecode = sys.dont_write_bytecode
+sys.dont_write_bytecode = True
+try:
+    try:
+        import platform_fs
+    except ImportError:  # pragma: no cover - package import in tests
+        from scripts import platform_fs  # type: ignore[no-redef]
+finally:
+    sys.dont_write_bytecode = _previous_dont_write_bytecode
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
@@ -50,7 +58,7 @@ MAX_ASSET_MANIFEST_BYTES = 16 * 1024
 INSTALL_STATE_NAME = ".sol-luna-install-state.json"
 INSTALL_STATE_SCHEMA = 2
 LEGACY_INSTALL_STATE_SCHEMA = 1
-KIT_VERSION = "0.6.0"
+KIT_VERSION = "0.6.1"
 UPDATE_PHASES = {"ready", "package-refresh-requested", "package-refreshed"}
 MAX_INSTALL_STATE_BYTES = 32 * 1024
 MAX_PLUGIN_MANIFEST_BYTES = 32 * 1024
@@ -90,7 +98,7 @@ def _strict_json_object(data: bytes, *, error: str) -> Dict[str, Any]:
 
 
 def _load_install_state(path: Path, *, required: bool) -> Optional[Dict[str, Any]]:
-    if not path.exists() and not path.is_symlink():
+    if not path.exists() and not platform_fs.is_link_like(path):
         if required:
             raise InstallError("update_state_missing")
         return None
@@ -161,14 +169,13 @@ def _safe_ancestors(path: Path) -> bool:
     """Check existing directory components without following user symlinks."""
     try:
         current = Path(path.anchor) if path.is_absolute() else Path(".")
-        allowed_system_aliases = {Path("/tmp"), Path("/var")}
         for part in path.parts[1:] if path.is_absolute() else path.parts:
             current /= part
-            if current.is_symlink() and current not in allowed_system_aliases:
+            if platform_fs.is_link_like(current) and not platform_fs.allowed_system_link(current):
                 return False
             if current.exists() and not current.is_dir():
                 return False
-            if not current.exists() and not current.is_symlink():
+            if not current.exists() and not platform_fs.is_link_like(current):
                 break
         return True
     except (OSError, RuntimeError):
@@ -179,12 +186,11 @@ def _safe_existing(path: Path, *, directory: Optional[bool] = None) -> bool:
     try:
         current = Path(path.anchor) if path.is_absolute() else Path(".")
         parts = path.parts[1:] if path.is_absolute() else path.parts
-        allowed_system_aliases = {Path("/tmp"), Path("/var")}
         for part in parts:
             current /= part
-            if current.is_symlink() and current not in allowed_system_aliases:
+            if platform_fs.is_link_like(current) and not platform_fs.allowed_system_link(current):
                 return False
-        if path.is_symlink():
+        if platform_fs.is_link_like(path):
             return False
         if directory is True:
             return path.is_dir()
@@ -202,7 +208,7 @@ def _root_arg(value: str, *, must_exist: bool = False) -> Path:
     path = Path(os.path.abspath(path))
     if len(path.parts) < 3:
         raise InstallError("unsafe_broad_path")
-    if path.is_symlink() or (must_exist and not path.is_dir()):
+    if platform_fs.is_link_like(path) or (must_exist and not path.is_dir()):
         raise InstallError("unsafe_path")
     if not _safe_ancestors(path):
         raise InstallError("unsafe_path")
@@ -224,7 +230,7 @@ def _bundle_info(repo: Path) -> Dict[str, Any]:
     """Return bounded plugin-manifest state without trusting malformed bundles."""
 
     manifest = repo / ".codex-plugin" / "plugin.json"
-    if not manifest.exists() and not manifest.is_symlink():
+    if not manifest.exists() and not platform_fs.is_link_like(manifest):
         return {"active": False, "valid": True, "version": None}
     try:
         value = _strict_json_object(
@@ -294,40 +300,29 @@ def _ensure_safe_directory(path: Path) -> None:
     if not path.is_absolute():
         raise InstallError("unsafe_directory")
     current = Path(path.anchor)
-    allowed_system_aliases = {Path("/tmp"), Path("/var")}
     for part in path.parts[1:]:
         current /= part
-        if current.exists() or current.is_symlink():
-            if current.is_symlink() and current not in allowed_system_aliases:
+        if current.exists() or platform_fs.is_link_like(current):
+            if platform_fs.is_link_like(current) and not platform_fs.allowed_system_link(current):
                 raise InstallError("symlink_parent")
             if not current.is_dir():
                 raise InstallError("unsafe_directory")
             continue
         current.mkdir()
-        if current.is_symlink() or not current.is_dir():
+        if platform_fs.is_link_like(current) or not current.is_dir():
             raise InstallError("unsafe_directory")
 
 
 def _atomic_write(path: Path, data: bytes) -> None:
     """Write bytes atomically, refusing symlink destinations and parents."""
-    if path.exists() and path.is_symlink():
+    if path.exists() and platform_fs.is_link_like(path):
         raise InstallError("symlink_destination")
-    existing_mode = stat.S_IMODE(path.stat(follow_symlinks=False).st_mode) if path.exists() else None
     _ensure_safe_directory(path.parent)
-    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
     try:
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(data)
-            handle.flush()
-            if existing_mode is not None:
-                os.fchmod(handle.fileno(), existing_mode)
-            os.fsync(handle.fileno())
-        os.replace(temporary, path)
-    except Exception:
-        try:
-            os.unlink(temporary)
-        except OSError:
-            pass
+        platform_fs.atomic_replace(path, data, preserve_existing_mode=True)
+    except OSError as exc:
+        if str(exc) == "link_destination":
+            raise InstallError("symlink_destination") from exc
         raise
 
 
@@ -345,7 +340,7 @@ def _managed_block(repo_agents: bytes) -> bytes:
 def _agents_action(destination: Path, source: bytes, *, refresh: bool) -> Tuple[str, Optional[bytes]]:
     if len(source) > MAX_AGENTS_BYTES:
         raise InstallError("agents_instruction_size_overflow")
-    if destination.exists() or destination.is_symlink():
+    if destination.exists() or platform_fs.is_link_like(destination):
         current = _read(destination, MAX_AGENTS_BYTES)
         if current == source:
             return "identical", None
@@ -387,8 +382,8 @@ def _agents_action(destination: Path, source: bytes, *, refresh: bool) -> Tuple[
 def _active_agents_target(codex_home: Path) -> Path:
     """Codex uses a non-empty override file in preference to AGENTS.md."""
     override = codex_home / "AGENTS.override.md"
-    if override.exists() or override.is_symlink():
-        if override.is_symlink():
+    if override.exists() or platform_fs.is_link_like(override):
+        if platform_fs.is_link_like(override):
             raise InstallError("agents_override_symlink")
         if not override.is_file():
             raise InstallError("agents_override_unsafe")
@@ -612,12 +607,12 @@ def _usage_plan(
         if hashlib.sha256(data).hexdigest() != manifest["assets"][relative]:
             raise InstallError("usage_source_integrity")
         source_files[name] = data
-    if destination.exists() and (destination.is_symlink() or not destination.is_dir()):
+    if destination.exists() and (platform_fs.is_link_like(destination) or not destination.is_dir()):
         raise InstallError("usage_destination_unsafe")
     existing_files: Dict[str, bytes] = {}
     for name in USAGE_SKILL_FILES:
         target = destination.joinpath(*name.split("/"))
-        if target.exists() or target.is_symlink():
+        if target.exists() or platform_fs.is_link_like(target):
             existing_files[name] = _read(target, MAX_CONFIG_BYTES)
     conflicts = [name for name, data in source_files.items() if name in existing_files and existing_files[name] != data]
     unmanaged_conflicts = [
@@ -633,7 +628,7 @@ def _usage_plan(
             writes[target] = data
     pointer = destination / POINTER_NAME
     pointer_data = (str(repo.resolve()) + "\n").encode("utf-8")
-    if pointer.exists() and pointer.is_symlink():
+    if pointer.exists() and platform_fs.is_link_like(pointer):
         raise InstallError("usage_pointer_symlink")
     if pointer.exists() and not pointer.is_file():
         raise InstallError("usage_pointer_unsafe")
@@ -647,7 +642,7 @@ def _usage_plan(
 
 def _load_routing_policy(repo: Path) -> Any:
     path = repo / "scripts" / "routing_policy.py"
-    if path.is_symlink() or not path.is_file():
+    if platform_fs.is_link_like(path) or not path.is_file():
         raise InstallError("routing_verifier_unavailable")
     name = "_sol_luna_installer_routing_policy"
     spec = importlib.util.spec_from_file_location(name, path)
@@ -668,7 +663,7 @@ def _load_routing_policy(repo: Path) -> Any:
 
 def _load_lifecycle(repo: Path) -> Any:
     path = repo / "scripts" / "lifecycle.py"
-    if path.is_symlink() or not path.is_file():
+    if platform_fs.is_link_like(path) or not path.is_file():
         raise InstallError("lifecycle_helper_unavailable")
     name = "_sol_luna_installer_lifecycle"
     spec = importlib.util.spec_from_file_location(name, path)
@@ -721,7 +716,7 @@ def _receipt_target(target: Path, codex_home: Path, home: Path) -> str:
 def _matches_installer_write(path: Path, data: bytes) -> bool:
     """Return whether a target is still the regular file written by us."""
     try:
-        if path.is_symlink() or not path.is_file():
+        if platform_fs.is_link_like(path) or not path.is_file():
             return False
         return path.read_bytes() == data
     except OSError:
@@ -741,7 +736,7 @@ def install(
     luna_tier: str = "fast",
     update: bool = False,
 ) -> Dict[str, Any]:
-    if not repo.is_dir() or repo.is_symlink() or not _safe_existing(repo, directory=True):
+    if not repo.is_dir() or platform_fs.is_link_like(repo) or not _safe_existing(repo, directory=True):
         raise InstallError("repository_root_invalid")
     # Verify the repository's exact checked-in contract before planning writes.
     routing_policy = _load_routing_policy(repo)
@@ -784,7 +779,7 @@ def install(
         source = _read(repo.joinpath(*definition["path"].split("/")), MAX_CONFIG_BYTES)
         selected_role_hashes[name] = _sha256(source)
         target = role_dir / name
-        if target.exists() or target.is_symlink():
+        if target.exists() or platform_fs.is_link_like(target):
             current = _read(target, MAX_CONFIG_BYTES)
             action = "identical" if current == source else "conflict"
             managed_update = update and managed_roles.get(name) == _sha256(current)
@@ -797,7 +792,7 @@ def install(
             action = "create"; writes[target] = source
         plan["roles"].append({"name": name, "action": action})
     agents_target = _active_agents_target(codex_home)
-    if update and (agents_target.exists() or agents_target.is_symlink()):
+    if update and (agents_target.exists() or platform_fs.is_link_like(agents_target)):
         if state is None or _installed_agents_source_hash(agents_target) != state["agents_source_sha256"]:
             raise InstallError("agents_update_state_mismatch")
     agents_action, agents_data = _agents_action(
@@ -853,7 +848,7 @@ def install(
     ]
     plan["guidance"] = [
         "Restart Codex after an applied install so global instructions, config, and roles reload.",
-        f"Verify with: python3 scripts/routing_policy.py active-root --profile {luna_tier} --active-root <CODEX_HOME> --root <KIT_ROOT> --format json",
+        f"Verify with: {'py -3' if platform_fs.IS_WINDOWS else 'python3'} scripts/routing_policy.py active-root --profile {luna_tier} --active-root <CODEX_HOME> --root <KIT_ROOT> --format json",
     ]
     plan["status"] = "dry-run" if not apply else "planned"
     if not apply:
@@ -880,7 +875,7 @@ def install(
     _ensure_safe_directory(backup_root)
     try:
         for path, data in writes.items():
-            if path.is_symlink():
+            if platform_fs.is_link_like(path):
                 raise InstallError("symlink_destination")
             originals[path] = path.read_bytes() if path.exists() else None
             if originals[path] is not None:
@@ -1047,7 +1042,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     parser.add_argument("--repo-root", default=str(REPO_ROOT), help="verified kit/plugin root supplying managed assets")
     parser.add_argument("--codex-home", default=os.environ.get("CODEX_HOME", str(Path.home() / ".codex")), help="isolated Codex configuration root to inspect or update")
-    parser.add_argument("--home", default=os.environ.get("HOME", str(Path.home())), help="bounded home containing the Codex root and recoverable backups")
+    parser.add_argument("--home", default=str(Path.home()), help="bounded home containing the Codex root and recoverable backups")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--apply", action="store_true", help="apply a new full-role install after a clean preview")
     mode.add_argument("--dry-run", action="store_true", help="preview managed changes without writing")
