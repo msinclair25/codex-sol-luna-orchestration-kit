@@ -489,7 +489,9 @@ class M5PluginTests(unittest.TestCase):
         self.assertIn("Not enough comparable evidence yet.", readme)
         self.assertIn("Workflow-only alternative", readme)
         self.assertIn("Technical history", readme)
-        visual = (ROOT / "assets" / "sol-luna-orchestration-system-v0.6.svg").read_text()
+        visual = (ROOT / "assets" / "sol-luna-orchestration-system-v0.6.svg").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("LUNA · FAST", visual)
         self.assertIn("LUNA · STANDARD", visual)
         self.assertIn("#f6c85f", visual)

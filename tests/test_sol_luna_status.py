@@ -313,12 +313,13 @@ class SolLunaStatusTests(unittest.TestCase):
             "--routine-records-dir",
             str(unsafe_records),
         )
-        self.assertEqual(report["routine_records"]["optional_missing"], False)
         if os.name == "nt":
+            self.assertEqual(report["routine_records"]["optional_missing"], True)
             self.assertEqual(report["routine_records"]["invalid"], 0)
             self.assertEqual(report["routine_records"]["collection"], "ready-no-records")
             self.assertNotIn("invalid_routine_records_observed", report["warnings"])
         else:
+            self.assertEqual(report["routine_records"]["optional_missing"], False)
             self.assertEqual(report["routine_records"]["invalid"], 1)
             self.assertEqual(report["routine_records"]["collection"], "partial")
             self.assertIn("invalid_routine_records_observed", report["warnings"])

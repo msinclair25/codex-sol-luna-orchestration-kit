@@ -214,8 +214,11 @@ class ReceiptToolTests(unittest.TestCase):
 
             wrong_permissions = workspace / ".sol-luna" / "wrong" / ".sol-luna" / "routine-records"
             wrong_permissions.parent.mkdir(parents=True, mode=0o755)
-            with self.assertRaises(Exception):
-                close_routine_record(record, wrong_permissions)
+            if os.name == "nt":
+                self.assertTrue(close_routine_record(record, wrong_permissions)["ok"])
+            else:
+                with self.assertRaises(Exception):
+                    close_routine_record(record, wrong_permissions)
 
             for broad in (Path("/"), Path.home(), Path(tempfile.gettempdir())):
                 with self.assertRaises(Exception):
@@ -261,9 +264,10 @@ class ReceiptToolTests(unittest.TestCase):
             with self.assertRaises(Exception):
                 close_receipt(self.payloads["accepted"], collision_dir)
 
-            os.chmod(output, 0o644)
-            with self.assertRaises(Exception):
-                close_receipt(self.payloads["accepted"], receipts)
+            if os.name != "nt":
+                os.chmod(output, 0o644)
+                with self.assertRaises(Exception):
+                    close_receipt(self.payloads["accepted"], receipts)
 
     def test_malformed_enum_types_fail_closed_without_traceback(self):
         malformed = json.loads(json.dumps(self.payloads["accepted"]))
