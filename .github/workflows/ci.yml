@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Python 3.11 · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify Fast routing policy
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 scripts/routing_policy.py verify --profile fast --format json
+
+      - name: Verify Standard routing policy
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 scripts/routing_policy.py verify --profile standard --format json
+
+      - name: Check canonical and plugin parity
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 scripts/sync_plugin.py
+
+      - name: Run repository tests
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Check patch formatting
+        run: git diff --check

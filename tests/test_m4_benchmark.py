@@ -551,10 +551,15 @@ class M4BenchmarkTests(unittest.TestCase):
             mock.Mock(returncode=0, stdout="logged in\n"),
             mock.Mock(returncode=0, stdout="logged in\n"),
         ]
-        with mock.patch.object(run_m4_benchmark.subprocess, "run", side_effect=completed) as run:
-            result = run_m4_benchmark._codex_facts("codex", Path("/private/tmp/pilot"))
+        with tempfile.TemporaryDirectory() as directory:
+            fake_codex = Path(directory) / "codex"
+            fake_codex.write_text("#!/bin/sh\nexit 0\n")
+            fake_codex.chmod(0o700)
+            with mock.patch.object(run_m4_benchmark.subprocess, "run", side_effect=completed) as run:
+                result = run_m4_benchmark._codex_facts(str(fake_codex), Path("/private/tmp/pilot"))
         self.assertTrue(result["sandbox_smoke"])
         smoke_command = run.call_args_list[2].args[0]
+        self.assertEqual(smoke_command[0], str(fake_codex.resolve()))
         self.assertIn(":workspace", smoke_command)
         self.assertIn("--sandbox-state-disable-network", smoke_command)
         self.assertEqual(smoke_command[-1], "/usr/bin/true")
