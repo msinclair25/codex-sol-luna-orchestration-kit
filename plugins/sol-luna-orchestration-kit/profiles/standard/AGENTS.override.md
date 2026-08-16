@@ -224,9 +224,9 @@ Unsupported combinations, malformed requests, unsafe paths, ownership
 conflicts, runtime hash drift, or pre-admission role failures are fail-closed
 conditions: route directly to Sol and report the reason rather than guessing.
 
-Do not add `agents.default_subagent_model` to global configuration. Each role
-pins Luna directly, avoiding launcher conflicts in builds that reject a global
-default.
+Codex Multi-Agent v2 supports cross-model delegation from Sol to Luna. Each
+role pins Luna directly so routing remains explicit and reproducible; a global
+`agents.default_subagent_model` is neither required nor managed by this kit.
 
 ### Safety and integration
 

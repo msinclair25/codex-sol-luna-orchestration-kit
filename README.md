@@ -13,6 +13,10 @@ multi-agent work into a disciplined team workflow. Sol owns the requirements,
 architecture, integration, and final decision. Five specialized Luna roles take
 on substantial, bounded work only when it passes a deny-by-default routing gate.
 
+Codex Multi-Agent v2 officially supports delegating to any supported model,
+including Luna. This kit supplies the selective routing, ownership, validation,
+and receipt layer around that native Sol-to-Luna capability.
+
 V0.6.1 is the current release and is ready for cross-platform testing.
 It includes guided setup and updates, Fast/Standard Luna profiles,
 conflict-safe managed configuration, drift checks, resumable operations,
@@ -28,8 +32,9 @@ Choose a Luna tier before setup:
 | **Fast** | Lower-latency Luna work when Fast is available | Requires Fast availability and uses higher weighted usage |
 | **Standard** | Normal service with broader compatibility | Potentially slower |
 
-Requirements: a current Codex build with plugin support; custom-agent support
-for the full-role profile; and Python 3.11 or newer for setup and verification.
+Requirements: a current Codex build with plugin support and the Multi-Agent v2
+rollout; custom-agent support for the full-role profile; and Python 3.11 or
+newer for setup and verification.
 Fast access is optional—the Standard profile uses normal service. Native
 Windows 11, macOS, Linux, and WSL2 are supported; recent Windows 10 is best
 effort because Codex itself has a less reliable Windows 10 baseline.
@@ -177,7 +182,9 @@ straightforward test reruns stay with Sol.
 
 Both profiles keep Sol on `gpt-5.6-sol`, preserve the user's selected reasoning
 level, and leave Sol's global service tier unset. Standard Luna roles inherit
-normal service; Fast roles pin Fast. Native Luna is the default transport. The
+normal service; Fast roles pin Fast. Every named role pins Luna explicitly, so
+`agents.default_subagent_model` is optional and remains user-owned. Native Luna
+is the default transport. The
 documented Codex app fallback is limited to eligible pre-start transport
 failures and requires explicit authorization for the exact lane and checkout.
 

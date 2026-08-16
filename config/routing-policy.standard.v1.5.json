@@ -9,9 +9,9 @@
   },
   "runtime": {
     "agents_path": "profiles/standard/AGENTS.override.md",
-    "agents_sha256": "5fff871825ef11c8fd8a4edef330b4a9763929e8d271a22440af477d63c4e52a",
+    "agents_sha256": "a6faae67df79a23c40fa661d13c606599e9279f14dbdc7a0716a0e6e043e92b0",
     "config_snippet_path": "profiles/standard/config-snippet.toml",
-    "config_snippet_sha256": "f8174c61565ad47ededa3fefc4dd99be38a8836f3666045072e21766d6443bd7"
+    "config_snippet_sha256": "87960fabee5b7f348cbbb8ede3539b3f1962bd92ebea8cec121fb4b6d6d39b68"
   },
   "roles": {
     "luna_critic_standard": {

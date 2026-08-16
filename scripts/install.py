@@ -290,7 +290,7 @@ def _verify_recorded_active_root(codex_home: Path, state: Dict[str, Any]) -> boo
         if "service_tier" in parsed:
             return False
         agents = parsed.get("agents", {})
-        return isinstance(agents, dict) and "default_subagent_model" not in agents
+        return isinstance(agents, dict)
     except (InstallError, OSError, UnicodeError, ValueError, TypeError, KeyError):
         return False
 
@@ -494,7 +494,7 @@ def _config_merge(source: bytes, existing: Optional[bytes], *, approve_conflicts
                 raise InstallError("config_owned_key_layout_unsupported")
             additions[section].append(f"{key} = {value}\n")
     # These keys are intentionally absent from the kit contract.
-    forbidden = [("", "service_tier"), ("agents", "default_subagent_model")]
+    forbidden = [("", "service_tier")]
     for section, key in forbidden:
         begin, end = (0, root_end) if section == "" else sections.get(section, (None, None))
         parsed_table: Any = parsed if section == "" else parsed.get(section, {})

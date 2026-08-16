@@ -959,7 +959,6 @@ def _validate_active_config(path: Optional[Path]) -> bool:
         and features.get("multi_agent") is True
         and isinstance(agents, dict)
         and agents.get("max_concurrent_threads_per_session") == MAX_LANES
-        and "default_subagent_model" not in agents
     )
 
 
