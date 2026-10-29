@@ -15,6 +15,5 @@ multi_agent = true
 [agents]
 max_concurrent_threads_per_session = 3
 
-# Compatibility note:
-# Do not initially set agents.default_subagent_model. Each custom role pins
-# gpt-5.6-luna directly, avoiding the launcher conflict observed in some builds.
+# Multi-Agent v2 supports cross-model delegation. Each custom role still pins
+# gpt-5.6-luna directly so role routing remains explicit and reproducible.

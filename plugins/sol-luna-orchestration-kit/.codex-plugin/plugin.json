@@ -1,7 +1,7 @@
 {
   "name": "sol-luna-orchestration-kit",
-  "version": "0.6.1",
-  "description": "Guided Sol/Luna setup, bounded routing, trustworthy project-local metrics, and spawn guardrails for Codex",
+  "version": "0.7.0",
+  "description": "Chat-controlled subagent teams: choose models, roles, and concurrency while keeping your selected Codex orchestrator",
   "author": {
     "name": "msinclair25",
     "url": "https://github.com/msinclair25"
@@ -19,8 +19,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Sol Luna Orchestration Kit",
-    "shortDescription": "Set up, recover, inspect, and review bounded local delegation.",
-    "longDescription": "Adds one-restart setup, read-only settings, phase-accurate recovery, deny-by-default Fast and Standard Sol/Luna routing, privacy-safe project-local trend records, conservative human-review advice, one authorized Codex task fallback, concise status, and a PreToolUse spawn guard.",
+    "shortDescription": "Choose your subagent team directly in chat.",
+    "longDescription": "Keep your selected Codex orchestrator. Change subagent models, roles, instructions, and concurrency in chat; save project or personal defaults only when requested. Includes guarded migration, explicit ownership, acceptance checks, bounded local receipts, and a spawn guard on supported hook surfaces.",
     "developerName": "msinclair25",
     "category": "Productivity",
     "capabilities": [
@@ -31,8 +31,8 @@
     ],
     "defaultPrompt": [
       "Set up Sol/Luna in this task and tell me when to restart once.",
-      "Continue or update my Sol/Luna installation.",
-      "Show my settings or concise project-local status; include details only if I ask."
+      "Use GPT-6 Luna subagents for this chat with at most two running at once.",
+      "Show my current team and explain which settings are saved."
     ]
   }
 }

@@ -1,244 +1,84 @@
 ---
 name: sol-luna-setup
-description: Install, update, continue, verify, inspect settings, or switch the full Sol/Luna Codex role configuration from the bundled orchestration plugin. Use when a user asks to set up Sol/Luna, see what it manages, update an installation, recover an interrupted update, repair or verify it, or change Luna subagents between Fast and Standard without manually operating the installer.
+description: Set up, inspect, or change the Codex subagent team through chat, including models, roles, reasoning, concurrency, saved defaults, updates, and migration from the Sol/Luna kit.
 ---
 
-# Sol/Luna setup
+# Chat-controlled team
 
-Operate the bundled transactional installer on the user's behalf. Keep Python
-and installer flags as implementation details unless troubleshooting requires
-them.
+Keep scripts and JSON internal. The user describes the team in normal language.
+The root model is selected in Codex; never change it as part of team setup.
 
-## Finish a same-task bootstrap
+Resolve KIT_ROOT by walking up from this skill to the nearest directory with
+`scripts/team_settings.py` and `scripts/team_install.py`. Use Python 3.11+ and
+absolute paths. Do not install dependencies or silently switch source trees.
+For a fresh Git plugin bootstrap, verify `codex plugin list --json` identifies
+`sol-luna-orchestration-kit@sol-luna` from
+`https://github.com/msinclair25/codex-sol-luna-orchestration-kit`; use its installed
+`source.path`. The same skill works from a direct checkout.
 
-When the user asked Codex to install and fully configure Sol/Luna in one task,
-the plugin skill may not have been loaded when the task began. After the exact
-Git-backed plugin is installed, inspect `codex plugin list --json`, require the
-installed entry `sol-luna-orchestration-kit@sol-luna`, require its marketplace
-source to identify
-`https://github.com/msinclair25/codex-sol-luna-orchestration-kit`, and use only
-that entry's absolute `source.path`. Read this setup skill from that installed
-path, resolve `KIT_ROOT` normally, and complete preview, apply, and verification
-in the current task. Do not require an intermediate restart. Ask for one final
-restart only after the verified full-role install changes files.
+## Inspect and change
 
-## Resolve the kit
+Read effective settings with `team_settings.py show --project PROJECT_ROOT`.
+It resolves personal `CODEX_HOME/sol-luna-team.json`, project
+`PROJECT_ROOT/.codex/sol-luna-team.json`, and the current chat override. Pass that
+override using `--patch JSON`. Resolve PROJECT_ROOT from the current project;
+never choose a different project implicitly.
 
-1. Resolve this `SKILL.md` to an absolute path.
-2. Walk upward through at most four parent directories and select the nearest
-   directory containing `scripts/install.py`, `scripts/routing_policy.py`,
-   `agents/`, and `config/routing-policy.v1.5.json`.
-3. Treat that directory as `KIT_ROOT`. Stop if no such directory exists. Do
-   not download a replacement or use a different checkout silently.
-4. When the root contains `.codex-plugin/plugin.json`, treat the bundled
-   `sol-luna-status` skill as the status provider and do not install a second
-   global copy.
-5. Resolve an absolute Python 3.11-or-newer interpreter path. Prefer the
-   existing `python3`; on Windows, use an available Python 3 launcher or the
-   bundled workspace dependency runtime. Stop with a concise requirement when
-   no compatible interpreter exists. Do not install a runtime implicitly.
+- “Show my team/settings” is read-only. Report model, roles, concurrency, and
+  scope. Describe configured values separately from observed running agents.
+- An ordinary “switch/use/change” request applies to this chat. Keep its patch
+  in the conversation and apply it to subsequent launches; do not write files.
+- “Save for this project” uses `save --scope project --project PROJECT_ROOT`.
+- “Make this my default” uses `save --scope personal`. Include only the requested
+  settings in `--patch`; do not accidentally promote project settings globally.
+- Reset only the requested scope using `reset --scope ...`; a chat reset clears
+  the conversational override. If reset scope is unclear, ask which scope.
 
-On native Windows, do not translate the documented command templates into
-POSIX shell syntax. Invoke the resolved interpreter and each argument
-separately, preserve drive-letter and space-containing paths, and use
-`Path.home()` semantics for the default Codex home. The bundled filesystem
-layer handles Windows atomic publication and rejects symlinks, junctions, and
-other reparse points. Do not ask the user to change ACLs or enable Developer
-Mode. If the user explicitly wants a direct-checkout command instead of guided
-setup, offer `pwsh -NoProfile -File .\scripts\windows_setup.ps1 -Tier fast`
-(or `standard`); it still previews and verifies through this installer.
+Settings are `model` (exact model ID or `inherit`), optional `reasoning`, `roles`
+(a dictionary from role name to instructions and optional model/reasoning), and
+`max_concurrent`. Read current settings before changing roles; `roles` replaces
+the complete role set. Enable/disable/edit roles by preserving all other roles
+and their user instructions. Zero concurrency disables delegation. The actual
+limit is the lower of the user setting and the host's advertised limit.
 
-## Select the operation
+Use the active host's advertised model IDs and supported efforts. A “6.1” request
+is not an exact model; resolve ambiguity with one concise question when needed.
+Never invent a model, silently upgrade, or infer account access from a bundled
+catalog. Explain unavailable selections before saving. For inherit, clear
+model-specific effort and omit both overrides at launch. If catalog support is
+unavailable, state that validation is incomplete rather than promising access.
 
-- First run the installer's read-only Doctor operation. A plain request such as
-  "set me up", "continue", or "finish setup" selects the doctor's single safe
-  next action: offer optional full roles from workflow-only mode, install from
-  repository-only diagnostics, finish a pending roles update, retry a package
-  refresh, review drift, or report healthy. Do not make the user know which
-  phase they are in.
-- For a new installation, use the tier the user named. Default to Fast when no
-  tier was requested. Standard means the `*_standard` roles.
-- When running from a plugin bundle and the user asks to update Sol/Luna, first
-  follow **Update the plugin package** below. A request to "finish updating",
-  "update the roles from this bundle", or "roles only" skips the package step
-  and uses the state-tracked installer update.
-- For a state-tracked role update, omit the tier when the user did not name one
-  so the recorded tier remains active.
-- For a tier switch, run an update and pass the requested Fast or Standard
-  tier explicitly.
-- For verification, run only an update-aware dry-run and the active-root
-  verifier; do not write files. Use the recorded tier when the user did not
-  name one. If no valid install state exists, report that the active profile
-  cannot be inferred safely instead of assuming Fast.
-- For repair, follow the update path. Never broaden repair into conflict
-  approval or replacement of user-edited files.
+After a change, summarize the effective selection and scope in one sentence.
+Saved files have recoverable backups. Settings changes apply to future child
+launches; they do not mutate running children. No restart is needed for a
+conversational override passed to a generic native launch. Never claim that a
+file edit has hot-reloaded a named custom agent or raised a runtime limit.
 
-Run the doctor with the equivalent of:
+## Install or migrate
 
-```text
-PYTHON KIT_ROOT/scripts/install.py --repo-root KIT_ROOT --doctor
-```
+Run `team_install.py` first as a preview, then with `--apply` for a requested
+install/update. It adds model-neutral root guidance and preserves root config.
+For recognized old installs it verifies hashes, backs up managed files, and
+removes stale pins from compatibility roles. User-edited legacy files stop the
+migration; report the exact conflict and preserve them. Never run the old
+fixed-model installer to resolve a V0.7 conflict.
 
-Summarize only its health, active tier, verification, and next action. The user
-does not need to see the internal state schema or installer command.
+An existing GPT-5.6 Luna selection is retained during migration unless the user
+requests another model. Existing root config is left unchanged because old
+install state did not record its original value. Explain that the user can now
+choose the root normally in Codex. A changed guidance/role install may need a
+new chat or reload; report this separately from immediate chat settings changes.
+Verify by rerunning the preview and requiring an empty changes list.
 
-Keep interrupted phases distinct. When the package refresh was requested but
-did not finish, say: "The package refresh did not finish. Ask Sol/Luna setup to
-retry the update; no restart is needed yet." When the package was refreshed,
-say: "Restart Codex, begin a new task, and ask Sol/Luna setup to continue."
+## Plugin package updates
 
-## Read-only settings overview
+For an explicit package update, inspect `codex plugin marketplace list --json`
+and `codex plugin list --json`. Require the exact repository and plugin identity
+above before running `codex plugin marketplace upgrade sol-luna` followed by
+`codex plugin add sol-luna-orchestration-kit@sol-luna`. Stop on failure; do not
+replace sources or unrelated plugins. After replacement, reload Codex to load
+the new skill, then continue setup from its verified installed path. Saved team
+preferences stay outside the plugin cache and survive replacement.
 
-Treat "Show my settings", "What does Sol/Luna manage?", and "What can I
-change?" as read-only requests. Run Doctor and the bundled status provider,
-then report only:
-
-- workflow-only or full-role mode;
-- plugin/bundle version and installed role version when present;
-- Fast or Standard only when actually installed; identify Fast separately as
-  the workflow routing default in workflow-only mode;
-- update phase and verification health;
-- managed surface categories: instructions, owned configuration keys, and five
-  role definitions;
-- current project metric collection as active, ready, partial, or unavailable;
-- available conversational actions: install full roles, use Fast, use
-  Standard, update, continue, verify, or show status.
-
-Do not print internal hashes, state schemas, raw paths, installer commands, or
-maintainer flags. A settings request never writes files, refreshes a package,
-switches a tier, or repairs drift.
-
-## Update the plugin package
-
-Apply this section only when `KIT_ROOT/.codex-plugin/plugin.json` exists and
-the user requested a general Sol/Luna update rather than a roles-only update.
-
-1. Resolve the absolute `codex` executable and verify that the manifest name
-   is `sol-luna-orchestration-kit` and its
-   repository is
-   `https://github.com/msinclair25/codex-sol-luna-orchestration-kit`. Stop on a
-   mismatch.
-2. Inspect `codex plugin marketplace list --json` and `codex plugin list
-   --json`. In the marketplace result, require the entry with `name` equal to
-   `sol-luna` to include `marketplaceSource` identifying the same GitHub
-   repository. In the plugin result's `installed` entries, require
-   `name = sol-luna-orchestration-kit` and `marketplaceName = sol-luna`, with
-   matching source provenance when supplied. Stop when provenance is missing,
-   ambiguous, local, or different; do not repair or replace marketplace
-   configuration implicitly.
-3. When the doctor reports a full state-tracked installation, run the bundled
-   installer with `--mark-update-pending` before replacing the package. Stop if
-   the resumable marker cannot be written. This preserves the active tier and
-   lets the refreshed setup skill determine whether to retry the package or
-   finish the roles after restart. When the doctor reports workflow-only
-   `setup-required`, skip the marker because no global roles need resuming.
-4. Treat the direct update request as authorization to refresh this one
-   marketplace and reinstall this one plugin. Run these operations
-   sequentially, never as a combined shell expression:
-
-   ```text
-   codex plugin marketplace upgrade sol-luna
-   codex plugin add sol-luna-orchestration-kit@sol-luna
-   ```
-
-5. Stop if either operation fails. Do not switch to another marketplace,
-   repository, plugin name, or installation method.
-6. For a full installation after both package commands succeed, inspect the
-   newly installed entry again, verify the same provenance, and run only its
-   state-only `install.py --mark-package-refreshed` operation. Do not apply or
-   verify global roles from the replaced snapshot. Stop if this completion
-   marker cannot be written; it distinguishes a successful package refresh
-   from an interrupted one after restart.
-7. After success, do not run the role installer from the now-replaced plugin
-   snapshot in the same task. For a full installation, tell the user to
-   restart Codex and invoke setup normally; the new skill will detect and
-   finish the pending update:
-
-   ```text
-   $sol-luna-setup Continue.
-   ```
-
-   For workflow-only mode, tell the user only to restart Codex; there are no
-   global roles to finish.
-
-When the skill runs from a repository checkout rather than a plugin bundle,
-skip package self-update and use the state-tracked role update directly.
-
-## Preview safely
-
-Use absolute interpreter and kit paths in tool calls. Do not rely on the
-current working directory. `PYTHON` below means the resolved interpreter. For
-a new install, run the equivalent of:
-
-```text
-PYTHON KIT_ROOT/scripts/install.py --repo-root KIT_ROOT --dry-run --without-usage --luna-tier TIER
-```
-
-For an update or tier switch, run the equivalent of:
-
-```text
-PYTHON KIT_ROOT/scripts/install.py --repo-root KIT_ROOT --dry-run --update --without-usage [--luna-tier TIER]
-```
-
-Summarize the selected tier, managed changes, and any conflict in plain
-language. Do not make the user read raw JSON or type the command themselves.
-
-If update state is missing, explain that this is a pre-state installation,
-preview a normal install, and ask before converting it into a state-tracked
-installation. Do not add conflict approvals automatically.
-
-## Apply the requested change
-
-A direct request to install, update, or switch tiers authorizes the ordinary
-managed writes shown by a clean preview. Request tool-level filesystem
-approval when the environment requires it. Then run the matching apply action:
-
-```text
-PYTHON KIT_ROOT/scripts/install.py --repo-root KIT_ROOT --apply --without-usage --luna-tier TIER
-PYTHON KIT_ROOT/scripts/install.py --repo-root KIT_ROOT --update --without-usage [--luna-tier TIER]
-```
-
-Never pass `--approve-conflicts`, `--approve-agents-refresh`, or
-`--refresh-usage-pointer` without separately identifying the affected file or
-setting, explaining what would be replaced, and receiving explicit user
-approval. Never remove old role aliases as part of a tier switch.
-
-Stop on malformed state, source-integrity failure, symlink/path rejection,
-verification failure, or rollback warning. Preserve and report the recovery
-path without attempting an improvised repair.
-
-## Verify and report
-
-Require the applied installer receipt to report successful active-root
-verification. For a verification-only request, run the equivalent of:
-
-```text
-PYTHON KIT_ROOT/scripts/routing_policy.py active-root --profile TIER --active-root CODEX_HOME --active-config CODEX_HOME/config.toml --root KIT_ROOT --format json
-```
-
-Report:
-
-- installed or retained tier;
-- whether files changed;
-- verification status;
-- backup and receipt paths when files changed;
-- any conflict or unresolved risk; and
-- the need to restart Codex and begin a new task after a changed install.
-
-Keep the final response concise. Lead with the outcome, not the internal
-command sequence.
-
-Installing or updating never grants standing permission to create Codex app
-tasks. The orchestration skill requests lane-scoped authorization only after
-an eligible native Luna transport failure, unless the user explicitly included
-that authorization in the current task.
-
-## Uninstall and legacy recovery boundary
-
-Do not automatically uninstall, convert a full install to workflow-only, or
-restore legacy files in V0.6.1. Install-state v2 does not retain the durable
-pre-install baseline needed for lossless restoration. If asked to uninstall,
-inspect the installation read-only, explain this boundary for that installation,
-and point to its existing backup/install receipt and manual recovery procedure.
-Do not delete or rewrite anything. A reversible automatic uninstall belongs to
-a separate future install-state-v3 milestone.
+For old-state diagnosis only, see [legacy setup](references/legacy-setup.md).
+Do not present its Fast/Standard role profiles as current runtime controls.

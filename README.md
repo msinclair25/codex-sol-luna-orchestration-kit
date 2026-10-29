@@ -4,301 +4,141 @@
 [![Latest release](https://img.shields.io/github/v/release/msinclair25/codex-sol-luna-orchestration-kit)](https://github.com/msinclair25/codex-sol-luna-orchestration-kit/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-![Sol/Luna Orchestration Kit: Sol routes to Fast or Standard Luna roles with verified project-local outcomes](assets/sol-luna-orchestration-system-v0.6.svg)
+![Chat-controlled teams: your selected orchestrator, your subagent models and roles, verified results](assets/chat-controlled-teams-v0.7.svg)
 
-**Put Sol in charge. Give Luna the right jobs.**
+**Keep your orchestrator. Change your team in chat.**
 
-Codex Sol/Luna is a released, installable orchestration kit that turns Codex
-multi-agent work into a disciplined team workflow. Sol owns the requirements,
-architecture, integration, and final decision. Five specialized Luna roles take
-on substantial, bounded work only when it passes a deny-by-default routing gate.
+V0.7 lets your selected Codex model coordinate a team whose models, roles, and
+concurrency you control conversationally. Choose supported GPT-5.6, GPT-6, or
+GPT-6.1 models independently of the orchestrator—or inherit its model.
+Exact availability and reasoning levels come from your active Codex runtime,
+not a hardcoded promise that every family has every variant.
 
-V0.6.1 is the current release and is ready for cross-platform testing.
-It includes guided setup and updates, Fast/Standard Luna profiles,
-conflict-safe managed configuration, drift checks, resumable operations,
-privacy-safe project metrics that can reveal usage-efficiency signals without
-pretending to prove savings, and first-class native Windows support.
+The kit adds selective delegation, clear ownership, acceptance checks, and
+small local evidence records around Codex's native subagents. It does not
+replace Codex's model picker or require a routing dashboard.
 
 ## Quick Start
 
-Choose a Luna tier before setup:
-
-| Tier | Best fit | Tradeoff |
-| --- | --- | --- |
-| **Fast** | Lower-latency Luna work when Fast is available | Requires Fast availability and uses higher weighted usage |
-| **Standard** | Normal service with broader compatibility | Potentially slower |
-
-Requirements: a current Codex build with plugin support; custom-agent support
-for the full-role profile; and Python 3.11 or newer for setup and verification.
-Fast access is optional—the Standard profile uses normal service. Native
-Windows 11, macOS, Linux, and WSL2 are supported; recent Windows 10 is best
-effort because Codex itself has a less reliable Windows 10 baseline.
-
-Paste this six-line prompt into one Codex task. Replace `Fast` with `Standard`
-if preferred:
+Requires Python 3.11+ and a Codex build/account with plugins, skills, and native
+cross-model subagents. Paste into Codex:
 
 ```text
-Install and fully configure the Sol/Luna Orchestration Kit with Fast Luna.
-Use https://github.com/msinclair25/codex-sol-luna-orchestration-kit, marketplace sol-luna, and plugin sol-luna-orchestration-kit@sol-luna.
-Verify `codex plugin list --json` and use only the matching installed `source.path`.
-Read its setup skill and finish preview, install, backup, and verification in this task.
-Preserve my settings; stop and explain conflicts; require no intermediate restart.
-Tell me when one final restart is required after verification.
+Install and fully configure the Sol/Luna Orchestration Kit.
+Use https://github.com/msinclair25/codex-sol-luna-orchestration-kit, marketplace sol-luna, plugin sol-luna-orchestration-kit@sol-luna.
+Verify codex plugin list --json and the matching source.path, then read its setup skill.
+Preview, apply, and verify; preserve my root model and unrelated settings.
+Require no intermediate restart; tell me if one final restart is needed.
 ```
 
-The setup skill verifies the installed source, previews every managed change,
-preserves unrelated settings, creates a recovery receipt, applies the selected
-profile transactionally, and verifies the result. Restart only when it reports
-a verified changed install.
+Then configure it in the same chat:
 
-### One-command direct checkout
+| Want to… | Say… |
+| --- | --- |
+| Choose a model | “Use GPT-6 Luna for subagents.” |
+| Try another model | “Use GPT-6.1 Sol subagents for this chat.” |
+| Match the orchestrator | “Have subagents inherit my model.” |
+| Simplify the team | “Only use a worker and a critic, at most two at once.” |
+| Customize a role | “Add a security reviewer; use GPT-6 Astra for that role.” |
+| Save for a project | “Save this team for this project.” |
+| Save personal defaults | “Make this my default team.” |
+| Inspect | “Show my team and which settings are saved.” |
 
-The checkout also has one guarded setup command. It previews internally, stops
-on conflicts, applies transactionally, and verifies before requesting one Codex
-restart:
+Unqualified changes are **chat-only**. Saved precedence is chat → project →
+personal → kit defaults. Changes apply to subsequent launches, not children
+already running. No restart is needed for team-setting changes after the skill
+is loaded; installing or updating plugin code may require one.
 
-```sh
-# macOS or Linux
-python3 scripts/setup.py --tier fast
-```
+Fresh defaults: GPT-6 Luna, its advertised default reasoning, five available
+roles (scout, worker, critic, tester, analyst), and at most three concurrent
+children—also bounded by the host's actual capacity. Available roles are not
+automatically launched. Small or tightly coupled tasks stay with the root.
+Migration preserves GPT-5.6 Luna as the initial team model for existing installs.
 
-```powershell
-# Windows
-py -3 scripts\setup.py --tier fast
-```
+## Setup from a checkout
 
-Use `standard` instead of `fast` when preferred. Add `--preview-only` for a
-non-mutating preview, `--update` to preserve and refresh the installed tier, or
-`--doctor` for a read-only health check. The command is standard-library-only
-and never installs Python or approves a conflict automatically.
-
-### Native Windows
-
-The same conversational setup prompt works in Codex on Windows—no WSL or Unix
-shell is required. The bundled hook uses the Windows `py -3` launcher, setup
-resolves Python automatically, and the installer, status, receipts, and local
-usage metrics use Windows-safe filesystem operations.
-
-PowerShell users can alternatively let the wrapper find `py`, `python`, or
-`python3` automatically:
-
-```powershell
-pwsh -NoProfile -File .\scripts\windows_setup.ps1 -Tier fast
-```
-
-Use `-Tier standard`, `-Update`, or `-PreviewOnly` as needed. An update with no
-`-Tier` keeps the installed tier. Python 3.11+ must already be installed; the
-wrapper does not install a runtime silently. See the
-[Windows setup details](docs/INSTALLING_AND_UPDATING.md#native-windows).
-
-### Workflow-only alternative
-
-Want to try the workflow before enabling custom global roles? Install the
-Git-backed plugin by itself:
+Install the plugin for the conversational skills:
 
 ```sh
 codex plugin marketplace add msinclair25/codex-sol-luna-orchestration-kit
 codex plugin add sol-luna-orchestration-kit@sol-luna
 ```
 
-Restart Codex once so it loads the plugin. You will get the skills, routing
-workflow, status, and optional spawn guard without global instructions, config
-keys, or role TOMLs. Status clearly identifies this as **Workflow-only** and
-offers the full role profile as an optional upgrade.
-
-## What the kit gives you
-
-- **Focused delegation.** Sol keeps small or tightly coupled work and sends
-  only independently separable, provable, substantial work to Luna.
-- **Five purpose-built roles.** Scout maps, Worker implements, Critic challenges,
-  Tester validates, and Max handles explicitly justified exceptional analysis.
-- **Fast or Standard routing.** Pick lower latency or broader compatibility;
-  switch later through the same guided workflow.
-- **Trustworthy handoffs.** Every lane has bounded scope, non-overlapping
-  ownership, acceptance checks, and a compact evidence packet for Sol to verify.
-- **Safe lifecycle operations.** Previewed installation, conflict detection,
-  backups, resumable updates, source verification, and drift reporting are built
-  into the kit.
-- **Useful local metrics.** See delegation volume, usefulness, failures, and
-  attributable token trends for the active project—without hosted telemetry or
-  a scan of every workspace.
-
-## Help test V0.6.1
-
-The release is finished; the next job is learning how it behaves across more
-real codebases, Codex configurations, and workloads. A useful test session can
-be as simple as:
-
-1. Install the full profile or the workflow-only alternative.
-2. Run `$sol-luna-status Show my status.` and confirm the reported mode and tier.
-3. Give Codex one substantial task with separable implementation, review, or
-   validation work.
-4. Check whether routing felt selective, ownership stayed clear, and the final
-   answer included evidence you could trust.
-5. Return to status after several delegated outcomes to inspect project-local
-   usage and usefulness signals.
-
-Use the [V0.6.1 tester guide](CONTRIBUTING.md#test-v061), then
-[open a structured tester feedback report](https://github.com/msinclair25/codex-sol-luna-orchestration-kit/issues/new?template=tester-feedback.yml)
-with your Codex version, operating system, selected tier, install mode, what you
-expected, and what happened. Sanitized status output is helpful. Never include
-credentials, customer data, private prompts, production logs, or sensitive
-source code.
-
-## Conversational command card
-
-| Action | Say in Codex |
-| --- | --- |
-| Setup | `$sol-luna-setup Set me up using Fast.` |
-| Status | `$sol-luna-status Show my status.` |
-| Update | `$sol-luna-setup Update.` |
-| Continue | `$sol-luna-setup Continue.` |
-| Switch | `$sol-luna-setup Use Standard.` or `Use Fast.` |
-| Verify | `$sol-luna-setup Verify.` |
-| Settings | `$sol-luna-setup Show my settings.` |
-
-Updates are resumable. If an operation stops, the setup Doctor identifies the
-current phase and tells you whether to retry, restart, or continue in a new task.
-
-## How routing stays disciplined
-
-Sol delegates only when a task is independently separable, provable, large
-enough, ownership-isolated, and tier-appropriate. Small questions, status,
-Git-only work, one-command diagnostics, localized edits, formatting, and
-straightforward test reruns stay with Sol.
-
-| Role kind | Fast role | Standard role | Reasoning | Sandbox |
-| --- | --- | --- | --- | --- |
-| Scout | `luna_scout_fast` | `luna_scout_standard` | Medium | Read-only |
-| Worker | `luna_worker_fast` | `luna_worker_standard` | High | Workspace-write |
-| Critic | `luna_critic_fast` | `luna_critic_standard` | High | Read-only |
-| Tester | `luna_tester_fast` | `luna_tester_standard` | Medium | Workspace-write |
-| Max | `luna_max_fast` | `luna_max_standard` | Max | Read-only |
-
-Both profiles keep Sol on `gpt-5.6-sol`, preserve the user's selected reasoning
-level, and leave Sol's global service tier unset. Standard Luna roles inherit
-normal service; Fast roles pin Fast. Native Luna is the default transport. The
-documented Codex app fallback is limited to eligible pre-start transport
-failures and requires explicit authorization for the exact lane and checkout.
-
-See the [routing policy](docs/ROUTING_POLICY.md) and
-[plugin guardrails](docs/M5_PLUGIN_GUARDRAILS.md) for the closed enums,
-ownership rules, and transport boundary.
-
-## Project-local usage and outcome metrics
-
-V0.6.1 ships the complete project-local metrics layer for attributable Sol/Luna
-work. The default status stays compact; `--detail` adds installation, metrics,
-drift, and provenance detail.
-
-Healthy full install:
-
-```text
-Health: Healthy
-Version: 0.6.1 · Fast
-Metrics: 12 delegated outcomes in the last 30 days
-Delegation: 9/12 accepted as useful · 1 failed
-Trend: Not enough comparable evidence yet.
-Next: No lifecycle action needed; no policy change suggested.
-```
-
-Normal low-sample result:
-
-```text
-Metrics: Ready; no dated delegated outcomes in the last 30 days
-Delegation: No current outcomes to evaluate yet
-Trend: Not enough comparable evidence yet.
-```
-
-The metrics are designed to help answer practical questions: Are useful
-delegated outcomes increasing? Are failures clustering by role or task kind?
-When tokens are attributable, is token use per accepted outcome moving in the
-right direction within the same policy cohort?
-
-Records stay under the active project's `.sol-luna` directory. They use closed
-routing fields, usefulness, terminal outcome, bounded generic checks, and
-optional attributable total tokens. They exclude paths, project names,
-task/thread IDs, prompts, commands, evidence prose, credentials, customer data,
-and production logs. Unsafe or ambiguous workspace resolution makes metrics
-**unavailable**, never zero.
-
-Advice requires minimum sample sizes and compares bounded 30-day windows only
-within the same routing-policy cohort. These are operational signals, not a
-billing meter or a controlled proof of token, cost, quality, or latency savings.
-The advisor reports evidence; it never changes policy, thresholds, or tiers.
-
-“Automatic” collection means the orchestration workflow attempts to close one
-local record after Sol accepts delegated routine work. It is not a guaranteed
-runtime hook, and missing collection remains unknown rather than becoming zero.
-
-See [status](docs/STATUS_SKILL.md), [receipts](docs/RECEIPTS.md), and
-[usage metrics](docs/USAGE_METRICS.md).
-
-## Safety without ceremony
-
-A full-role install manages one bounded Sol instruction block, owned
-multi-agent/config keys, five Luna role files, an optional global status copy,
-and a small versioned install-state record. It never adds a global default
-subagent model. Unrelated instructions and config stay untouched; existing
-conflicts stop the install unless you separately approve the named replacement.
-
-The installer uses strict JSON, previewed atomic writes, recoverable backups,
-source hashes, active-root verification, and fail-closed path, link, state, and
-drift checks. Unix preserves and validates POSIX modes. Native Windows rejects
-symlinks, junctions, and other reparse points while using the account's normal
-Windows ACL inheritance instead of pretending POSIX mode bits are ACLs. Run it
-from a Windows account whose profile and project directories are already
-private: the kit does not rewrite or audit custom Windows DACLs, and replacing
-a managed file can replace a file-specific DACL with the parent directory's
-inherited ACL. It
-installs no dependencies or services and performs no commit, push, deployment,
-migration, or destructive cleanup. Test direct-checkout procedures only in
-isolated homes and workspaces, never against a live Codex home.
-
-Detailed diagnostics, updates, conflict handling, tier switching, and recovery
-live in [Installing and updating](docs/INSTALLING_AND_UPDATING.md).
-
-## Clear product boundaries
-
-- This is an independent community project, not an official OpenAI product.
-- Metrics are deliberately local and bounded; there is no hosted dashboard,
-  global project scan, billing integration, or telemetry service.
-- The plugin hook is a partial admission guard, not a security boundary. Sol
-  still verifies ownership, the diff, acceptance checks, and the final outcome.
-- V0.6 uses recorded backups and the documented manual recovery path for full
-  role removal; it does not attempt an unsafe automatic reconstruction of an
-  unknown pre-install state.
-- Compatibility depends on Codex surfaces that support custom roles, skills,
-  and plugin hooks.
-
-These limits are intentional and fail closed: uncertain state is reported for
-human review instead of being guessed or silently rewritten.
-
-## Release confidence
-
-The V0.6.1 release gate runs the complete suite on Windows, macOS, and Linux
-with Python 3.11 through 3.14. Every OS exercises a direct-checkout setup in an
-isolated home. Windows additionally exercises the PowerShell wrapper and native
-reparse-point behavior. The integration coverage includes full install, state-
-tracked updates, tier preservation and switching, Doctor, receipts and routine
-metrics, status reporting, plugin synchronization, and bundled hooks.
-
-Maintainers can reproduce the repository checks from the project root:
+The plugin alone supplies the workflow. To install or migrate managed root
+instructions from this checkout:
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 python3 scripts/routing_policy.py verify --profile fast --format json
-PYTHONDONTWRITEBYTECODE=1 python3 scripts/routing_policy.py verify --profile standard --format json
-PYTHONDONTWRITEBYTECODE=1 python3 scripts/sync_plugin.py
-PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
+python3 scripts/setup.py --preview-only
+python3 scripts/setup.py
+python3 scripts/setup.py --doctor
+```
+
+On Windows use `py -3` instead of `python3`, or
+`pwsh -NoProfile -File .\scripts\windows_setup.ps1`. Add `-PreviewOnly` for a
+preview. No WSL, runtime installation, or third-party Python package is needed.
+
+Setup preserves `config.toml`, including the selected root model, reasoning,
+speed, provider, and permissions. Known managed legacy role files become
+unpinned compatibility aliases. Edited managed files stop migration for review;
+existing files receive backups. `--update` is idempotent. Historical Fast/Standard
+installation remains explicitly available through `--legacy`, not by default.
+Untracked old fixed-model instructions also stop setup for manual review; the
+installer will not guess ownership or layer contradictory policies over them.
+
+## How it works
+
+The root resolves settings, selects independently useful work, assigns bounded
+ownership, launches fresh-context generic agents with the exact supported
+model/effort, and verifies the results. A role is instructions plus optional
+model/effort overrides—not a hardcoded model-pinned custom agent.
+
+Unsupported selections are reported, never silently substituted. `inherit`
+omits both model and reasoning overrides. If the user's generic `default` role
+has conflicting pins, the workflow reports that conflict and works directly.
+Custom roles and current settings do not depend on hot-reloading agent TOMLs.
+
+Read-only roles are behavioral instructions, not separate sandboxes. Children
+inherit actual host permissions and service tier. The hook is a partial
+admission guard on supported `Agent` surfaces, not universal enforcement or a
+security boundary. The root still checks ownership and acceptance.
+
+## Settings and evidence
+
+Project settings live in `.codex/sol-luna-team.json`; personal settings live in
+`CODEX_HOME/sol-luna-team.json` (normally `~/.codex`). These are kit preferences,
+not native Codex configuration keys. Explicit saves create recoverable backups;
+chat-only overrides write nothing. Role sets replace the previous set at the
+selected scope, so removing a role is unambiguous.
+
+`$sol-luna-status` shows the current team and bounded project-local records.
+Receipts under `.sol-luna/team-receipts` distinguish requested models from
+runtime-observed execution. Missing telemetry stays unknown. Token totals cover
+recorded lanes only, never whole-workflow usage or billed cost. No savings
+claim, private session scan, or hosted telemetry is included.
+
+Historical policies, receipts, and rate cards remain readable but do not govern
+current teams. See [Technical history](docs/TECHNICAL_HISTORY.md). The old
+`AGENTS.md` is frozen evidence; `AGENTS.override.md` is the active repository
+guidance. Historical reference documents are not current setup instructions.
+
+## Verification and feedback
+
+```sh
+python3 scripts/sync_plugin.py
+python3 -m unittest discover -s tests -v
 git diff --check
 ```
 
-The repository map, version chronology, frozen benchmark material, and retired
-policy/receipt formats live in [Technical history](docs/TECHNICAL_HISTORY.md).
-Provenance details are in [PROVENANCE.md](docs/PROVENANCE.md).
+CI runs Python 3.11–3.14 on Windows, macOS, and Linux, including isolated setup
+and migration tests. See the [V0.7 plan and acceptance checklist](docs/V0.7_PLAN.md)
+for release validation. Runtime availability still depends on your Codex host.
+Report your Codex version, OS, requested team, expected behavior, and sanitized
+result in [an issue](https://github.com/msinclair25/codex-sol-luna-orchestration-kit/issues).
+Never include credentials, private prompts, customer data, or production logs.
 
-## License and security
+This is an independent community project, not an official OpenAI product.
+Native delegation behavior is documented in
+[Codex subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents);
+model availability is described in [Codex models](https://learn.chatgpt.com/docs/models).
 
-Licensed under [MIT](LICENSE). Report security concerns through
-[SECURITY.md](SECURITY.md); do not put credentials, private logs, customer data,
-production data, or sensitive source in an issue or receipt.
+Licensed under [MIT](LICENSE). See [SECURITY.md](SECURITY.md) for security reports.

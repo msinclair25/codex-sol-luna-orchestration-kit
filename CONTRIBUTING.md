@@ -5,6 +5,12 @@ real Codex workflow. You do not need to modify code to help.
 
 ## Test V0.6.1
 
+> Historical checklist. For V0.7, follow the current README and test chat-only
+> changes, explicit project/personal saves, role changes, per-role model choices,
+> inheritance, unsupported selections, and concurrency limits. Confirm that
+> running children and the root model are unchanged. Include the Codex version,
+> operating system, requested team, and sanitized outcome in feedback.
+
 Use a non-sensitive project or a synthetic fixture. Before testing, confirm:
 
 - your Codex build supports plugins;

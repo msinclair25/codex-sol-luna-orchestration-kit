@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">Your orchestrator. Your team.</title>
+  <desc id="desc">Change models, roles, and concurrency in Codex chat. Your selected orchestrator delegates to your chosen subagents and verifies the results. Chat-only by default; save project or personal defaults explicitly.</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#111827"/><stop offset="1" stop-color="#172c38"/></linearGradient>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="none" stroke="#7e9eae" stroke-width="1.3"/></marker>
+  </defs>
+  <rect width="1200" height="630" rx="24" fill="url(#bg)"/>
+  <g font-family="Arial, Helvetica, sans-serif">
+    <text x="56" y="55" fill="#63e6a6" font-size="16" font-weight="700" letter-spacing="2">CODEX SOL/LUNA KIT · V0.7</text>
+    <text x="56" y="119" fill="#f6f8fb" font-size="48" font-weight="700">Your orchestrator. Your team.</text>
+    <text x="56" y="158" fill="#b1c4d2" font-size="22">Change models, roles, and concurrency right in chat.</text>
+    <rect x="56" y="195" width="1088" height="68" rx="14" fill="#263a49" stroke="#3e596a"/>
+    <circle cx="89" cy="229" r="8" fill="#63e6a6"/>
+    <text x="112" y="237" fill="#edf6fc" font-size="22">“Use GPT-6 Luna. Only a worker and critic. At most two at once.”</text>
+    <g fill="none" stroke="#7e9eae" stroke-width="2" marker-end="url(#arrow)">
+      <path d="M350 390H445"/>
+      <path d="M756 390H847"/>
+    </g>
+    <rect x="56" y="307" width="294" height="164" rx="18" fill="#263446" stroke="#f6c85f" stroke-width="2"/>
+    <text x="80" y="344" fill="#f6c85f" font-size="15" font-weight="700" letter-spacing="1">ORCHESTRATOR</text>
+    <text x="80" y="387" fill="#fff" font-size="25" font-weight="700">Your selected model</text>
+    <text x="80" y="423" fill="#c1cedc" font-size="18">Plan · delegate · integrate</text>
+    <text x="80" y="449" fill="#c1cedc" font-size="18">Root settings stay yours</text>
+    <rect x="450" y="307" width="306" height="164" rx="18" fill="#183c48" stroke="#41d8ee" stroke-width="2"/>
+    <text x="474" y="344" fill="#41d8ee" font-size="15" font-weight="700" letter-spacing="1">SUBAGENT TEAM</text>
+    <text x="474" y="387" fill="#fff" font-size="25" font-weight="700">Your chosen models</text>
+    <text x="474" y="423" fill="#c1cedc" font-size="18">5.6 · 6 · 6.1 · inherit</text>
+    <text x="474" y="449" fill="#c1cedc" font-size="18">Supported runtime choices</text>
+    <rect x="852" y="307" width="292" height="164" rx="18" fill="#1c3c37" stroke="#63e6a6" stroke-width="2"/>
+    <text x="876" y="344" fill="#63e6a6" font-size="15" font-weight="700" letter-spacing="1">ACCEPTANCE</text>
+    <text x="876" y="387" fill="#fff" font-size="25" font-weight="700">Verified by the root</text>
+    <text x="876" y="423" fill="#c1cedc" font-size="18">Ownership · tests · evidence</text>
+    <text x="876" y="449" fill="#c1cedc" font-size="18">No silent model substitution</text>
+    <path d="M56 514H1144" stroke="#3e596a"/>
+    <text x="56" y="550" fill="#edf6fc" font-size="21" font-weight="700">Chat-only by default.</text>
+    <text x="288" y="550" fill="#b1c4d2" font-size="21">Save project or personal defaults when you choose.</text>
+    <text x="56" y="589" fill="#8fa9bb" font-size="17">Changes affect new launches. Running children keep their settings. Host limits and permissions still apply.</text>
+  </g>
+</svg>

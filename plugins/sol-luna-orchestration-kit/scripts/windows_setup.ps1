@@ -5,6 +5,7 @@ param(
 
     [switch]$Update,
     [switch]$PreviewOnly,
+    [switch]$Legacy,
 
     [ValidateSet("auto", "with-usage", "without-usage")]
     [string]$Usage = "auto",
@@ -47,8 +48,14 @@ function Resolve-Python311 {
 
 $Python = Resolve-Python311
 $PythonPrefix = @($Python.Prefix)
-$SetupArgs = @($Setup, "--usage", $Usage)
-if ($PSBoundParameters.ContainsKey("Tier") -or -not $Update) {
+$SetupArgs = @($Setup)
+if (-not $Legacy -and ($PSBoundParameters.ContainsKey("Tier") -or $PSBoundParameters.ContainsKey("Usage"))) {
+    throw "Tier and Usage are historical options. Use -Legacy explicitly or configure your team in chat."
+}
+if ($Legacy) {
+    $SetupArgs += @("--legacy", "--usage", $Usage)
+}
+if ($Legacy -and ($PSBoundParameters.ContainsKey("Tier") -or -not $Update)) {
     $SetupArgs += @("--tier", $Tier)
 }
 if ($CodexHome) {

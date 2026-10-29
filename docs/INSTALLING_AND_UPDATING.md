@@ -1,5 +1,10 @@
 # Installing and updating
 
+> Historical V0.6 guide. For V0.7, use the [current README](../README.md#quick-start)
+> and loaded setup skill. The tier-based commands below describe the retired
+> fixed-model workflow and require explicit `--legacy` with scripts/setup.py.
+> Current setup preserves root configuration; team changes happen in chat.
+
 Users normally operate Sol/Luna conversationally. A checkout also includes a
 small cross-platform setup command; lower-level installer flags are maintainer
 diagnostics.

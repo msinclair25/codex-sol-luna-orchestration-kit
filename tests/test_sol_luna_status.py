@@ -1,4 +1,5 @@
 import copy
+import datetime as dt
 import importlib.util
 import json
 import os
@@ -34,6 +35,12 @@ STATUS = _load_status_module()
 
 
 class SolLunaStatusTests(unittest.TestCase):
+    def test_rate_card_expiry_uses_declared_report_date(self):
+        _, historical = STATUS._rate_card(ROOT, dt.date(2026, 8, 4))
+        _, expired = STATUS._rate_card(ROOT, dt.date(2026, 10, 28))
+        self.assertNotIn("rate_card_expired", historical)
+        self.assertIn("rate_card_expired", expired)
+
     def _routine_record(
         self,
         *,
@@ -156,7 +163,7 @@ class SolLunaStatusTests(unittest.TestCase):
         environment["USERPROFILE"] = str(base / "home")
         environment["PYTHONDONTWRITEBYTECODE"] = "1"
         return subprocess.run(
-            [sys.executable, str(script), "--root", str(ROOT), "--workspace-root", str(base), "--receipts-dir", str(receipts), "--session-root", str(sessions), *extra],
+            [sys.executable, str(script), "--root", str(ROOT), "--workspace-root", str(base), "--receipts-dir", str(receipts), "--session-root", str(sessions), "--as-of", "2026-08-04", *extra],
             cwd=ROOT,
             env=environment,
             text=True,
@@ -338,6 +345,7 @@ class SolLunaStatusTests(unittest.TestCase):
             checks=[{"name": "acceptance-1", "status": "pass"}],
         )
         path = records / "record.json"
+        record["recorded_on"] = "2026-08-04"
         path.write_text(json.dumps(record))
         os.chmod(path, 0o600)
         report, _ = self._json(
@@ -556,7 +564,7 @@ class SolLunaStatusTests(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
             self.assertIn("Health: Workflow-only", completed.stdout)
-            self.assertIn("Version: 0.6.1 · Workflow-only · Fast workflow routing default", completed.stdout)
+            self.assertIn("Version: 0.7.0 · Workflow-only · Fast workflow routing default", completed.stdout)
             self.assertIn("1 delegated outcome in the last 30 days", completed.stdout)
             self.assertIn("Full roles are not installed", completed.stdout)
 

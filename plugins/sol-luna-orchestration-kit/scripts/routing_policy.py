@@ -35,7 +35,7 @@ SCHEMA_VERSION = 1
 POLICY_VERSION = "routing-policy.v1.5"
 DEFAULT_ROOT = Path(__file__).resolve().parents[1]
 POLICY_RELATIVE = "config/routing-policy.v1.5.json"
-POLICY_AGENTS_RELATIVE = "AGENTS.override.md"
+POLICY_AGENTS_RELATIVE = "config/legacy-fast-instructions.md"
 AGENTS_RELATIVE = "AGENTS.md"
 MANAGED_AGENTS_START = "# >>> sol-luna-orchestration-kit managed block >>>\n"
 MANAGED_AGENTS_END = "# <<< sol-luna-orchestration-kit managed block <<<\n"
@@ -761,7 +761,10 @@ def _contract_shape(contract: Any, spec: Mapping[str, Any]) -> List[str]:
     else:
         if set(runtime) != {"agents_path", "agents_sha256", "config_snippet_path", "config_snippet_sha256"}:
             errors.append("unknown_runtime_key")
-        if runtime.get("agents_path") != spec["agents_relative"] or not isinstance(runtime.get("agents_sha256"), str) or not SHA256.fullmatch(runtime.get("agents_sha256", "")):
+        # Historical contract bytes and hashes stay immutable. Only the source
+        # location moved, so it no longer overrides current repository guidance.
+        contract_agents_path = "AGENTS.override.md" if spec["name"] == "fast" else spec["agents_relative"]
+        if runtime.get("agents_path") != contract_agents_path or not isinstance(runtime.get("agents_sha256"), str) or not SHA256.fullmatch(runtime.get("agents_sha256", "")):
             errors.append("runtime_agents_contract")
         if runtime.get("config_snippet_path") != spec["snippet_relative"] or not isinstance(runtime.get("config_snippet_sha256"), str) or not SHA256.fullmatch(runtime.get("config_snippet_sha256", "")):
             errors.append("runtime_config_contract")
@@ -959,7 +962,6 @@ def _validate_active_config(path: Optional[Path]) -> bool:
         and features.get("multi_agent") is True
         and isinstance(agents, dict)
         and agents.get("max_concurrent_threads_per_session") == MAX_LANES
-        and "default_subagent_model" not in agents
     )
 
 

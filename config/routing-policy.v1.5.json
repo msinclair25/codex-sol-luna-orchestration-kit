@@ -9,7 +9,7 @@
   },
   "runtime": {
     "agents_path": "AGENTS.override.md",
-    "agents_sha256": "5686359ad47ffce7fbcbbb44395aad043fed32c31449aa9b4a84a2bb4839b98d",
+    "agents_sha256": "c281cc5f4860ee3169c76b45d1d80c1df77e82b83dded07fa60eac6d84c164d7",
     "config_snippet_path": "config-snippet.toml",
     "config_snippet_sha256": "021b9ed7b0ee52eb6c7930497816314694ceff1b1dd0e4d58a1fc86eb61f410c"
   },

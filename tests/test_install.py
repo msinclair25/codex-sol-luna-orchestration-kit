@@ -355,7 +355,7 @@ class InstallerTests(unittest.TestCase):
         self.assertTrue(parsed["features"]["fast_mode"])
         self.assertEqual(parsed["agents"]["max_concurrent_threads_per_session"], 3)
 
-    def test_forbidden_owned_config_keys_require_approval_and_are_removed(self):
+    def test_global_service_tier_is_removed_but_subagent_default_is_preserved(self):
         self.codex.mkdir()
         (self.codex / "config.toml").write_text(
             "service_tier = \"fast\"\n\n"
@@ -375,7 +375,7 @@ class InstallerTests(unittest.TestCase):
         with (self.codex / "config.toml").open("rb") as handle:
             parsed = tomllib.load(handle)
         self.assertNotIn("service_tier", parsed)
-        self.assertNotIn("default_subagent_model", parsed["agents"])
+        self.assertEqual(parsed["agents"]["default_subagent_model"], "gpt-5.6-luna")
 
     def test_symlink_parent_is_refused_before_outside_write(self):
         outside = self.base / "outside"
@@ -634,7 +634,7 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(workflow["mode"], "workflow-only")
         self.assertIsNone(workflow["luna_tier"])
         self.assertEqual(workflow["workflow_default_tier"], "fast")
-        self.assertEqual(workflow["kit_version"], "0.6.1")
+        self.assertEqual(workflow["kit_version"], "0.7.0")
 
         malformed_plugin = self.base / "malformed-plugin"
         shutil.copytree(

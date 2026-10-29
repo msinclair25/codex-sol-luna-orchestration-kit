@@ -955,7 +955,7 @@ def _empty_receipt_summary() -> Dict[str, Any]:
     }
 
 
-def _rate_card(root: Path) -> Tuple[Dict[str, Any], List[str]]:
+def _rate_card(root: Path, as_of: Optional[dt.date] = None) -> Tuple[Dict[str, Any], List[str]]:
     card = _read_json(root / "config" / "rate-card.v1.json")
     warnings: List[str] = []
     top_level_keys = {
@@ -1011,7 +1011,7 @@ def _rate_card(root: Path) -> Tuple[Dict[str, Any], List[str]]:
         ):
             return {}, ["rate_card_drift"]
     try:
-        now = dt.datetime.now(dt.timezone.utc)
+        now = dt.datetime.combine(as_of, dt.time.min, tzinfo=dt.timezone.utc) if as_of else dt.datetime.now(dt.timezone.utc)
         stale = dt.datetime.fromisoformat(str(card.get("stale_after", "")).replace("Z", "+00:00"))
         expires = dt.datetime.fromisoformat(str(card.get("expires_at", "")).replace("Z", "+00:00"))
         if stale > expires:
@@ -1023,7 +1023,7 @@ def _rate_card(root: Path) -> Tuple[Dict[str, Any], List[str]]:
     return card, warnings
 
 
-def _drift(root: Path, active_root: Optional[Path], active_config: Optional[Path], luna_tier: str) -> Tuple[Dict[str, Any], List[str]]:
+def _drift(root: Path, active_root: Optional[Path], active_config: Optional[Path], luna_tier: str, as_of: Optional[dt.date] = None) -> Tuple[Dict[str, Any], List[str]]:
     errors: List[str] = []
     try: policy = routing_policy.verify_contract(root, luna_tier)
     except Exception: policy = {"ok": False, "errors": ["routing_contract_error"]}
@@ -1034,7 +1034,7 @@ def _drift(root: Path, active_root: Optional[Path], active_config: Optional[Path
     bundle = root / "control-bundles" / "all-max-v1"
     try: frozen = verify_bundle.verify(bundle)
     except Exception: frozen = {"ok": False, "errors": ["bundle_error"]}
-    card, card_warnings = _rate_card(root)
+    card, card_warnings = _rate_card(root, as_of)
     try: receipt_policy = receipt_tool.verify_receipt_policy(root)
     except Exception: receipt_policy = {"ok": False}
     if not policy.get("ok"): errors.append("routing_contract_drift")
@@ -1444,7 +1444,7 @@ def _report(args: argparse.Namespace) -> Dict[str, Any]:
     if active_path is not None and config_path is None:
         active_path = None
         warnings.append("active_runtime_not_checked")
-    drift, drift_warnings = _drift(root, active_path, config_path, luna_tier)
+    drift, drift_warnings = _drift(root, active_path, config_path, luna_tier, _as_of_date(args.as_of))
     warnings.extend(drift_warnings)
 
     usage: Dict[str, Any] = {
@@ -1479,7 +1479,7 @@ def _report(args: argparse.Namespace) -> Dict[str, Any]:
             _mark_probe_failed(probe, "analyzer_coverage_unknown")
 
     if analysis is not None:
-        card, card_warnings = _rate_card(root)
+        card, card_warnings = _rate_card(root, _as_of_date(args.as_of))
         weighting_ok = bool(card) and not card_warnings
         weights = card.get("weights", {}) if card else {}
         weighted = 0.0
