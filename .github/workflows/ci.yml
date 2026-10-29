@@ -63,7 +63,8 @@ jobs:
         run: |
           SolLunaTestHome="$RUNNER_TEMP/sol-luna-direct-home"
           mkdir -p "$SolLunaTestHome"
-          python3 scripts/setup.py --tier fast --usage without-usage --home "$SolLunaTestHome" --codex-home "$SolLunaTestHome/.codex"
+          python3 scripts/setup.py --preview-only --home "$SolLunaTestHome" --codex-home "$SolLunaTestHome/.codex"
+          python3 scripts/setup.py --home "$SolLunaTestHome" --codex-home "$SolLunaTestHome/.codex"
           python3 scripts/setup.py --doctor --home "$SolLunaTestHome" --codex-home "$SolLunaTestHome/.codex"
 
       - name: Check patch formatting
@@ -108,13 +109,14 @@ jobs:
           PYTHONDONTWRITEBYTECODE: "1"
         run: python -m unittest discover -s tests -v
 
-      - name: Exercise PowerShell setup, tier-preserving update, and Doctor
+      - name: Exercise PowerShell team setup, update, and Doctor
         shell: pwsh
         run: |
           $TestHome = Join-Path $env:RUNNER_TEMP "sol-luna-windows-home"
           New-Item -ItemType Directory -Force -Path $TestHome | Out-Null
           $TestCodexHome = Join-Path $TestHome ".codex"
-          ./scripts/windows_setup.ps1 -Tier standard -Usage without-usage -CodexHome $TestCodexHome -HomePath $TestHome
+          ./scripts/windows_setup.ps1 -PreviewOnly -CodexHome $TestCodexHome -HomePath $TestHome
+          ./scripts/windows_setup.ps1 -CodexHome $TestCodexHome -HomePath $TestHome
           ./scripts/windows_setup.ps1 -Update -CodexHome $TestCodexHome -HomePath $TestHome
           python scripts/setup.py --doctor --home $TestHome --codex-home $TestCodexHome
 

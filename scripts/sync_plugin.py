@@ -29,6 +29,9 @@ MIRRORED_DIRECTORIES = (
     "schemas",
 )
 MIRRORED_SCRIPTS = (
+    "team_settings.py",
+    "team_install.py",
+    "team_receipts.py",
     "install.py",
     "lifecycle.py",
     "platform_fs.py",
@@ -48,7 +51,7 @@ STATUS_ASSETS = (
 )
 GENERATED_MIRROR_PATHS = {"config/install-assets.v1.json"}
 VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$")
-KIT_VERSION_LINE_RE = re.compile(r'^KIT_VERSION = "([^"]+)"$', re.MULTILINE)
+KIT_VERSION_LINE_RE = re.compile(r'^VERSION = "([^"]+)"$', re.MULTILINE)
 
 
 class SyncError(RuntimeError):
@@ -127,7 +130,7 @@ def _asset_manifest() -> bytes:
 
 
 def _kit_version() -> str:
-    match = KIT_VERSION_LINE_RE.search((ROOT / "scripts" / "install.py").read_text(encoding="utf-8"))
+    match = KIT_VERSION_LINE_RE.search((ROOT / "scripts" / "team_install.py").read_text(encoding="utf-8"))
     if match is None or VERSION_RE.fullmatch(match.group(1)) is None:
         raise SyncError("kit_version_invalid")
     return match.group(1)

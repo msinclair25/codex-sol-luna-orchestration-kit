@@ -14,8 +14,10 @@ from typing import List, Optional
 
 try:
     import install as installer
+    import team_install
 except ImportError:  # pragma: no cover - package import in tests
     from scripts import install as installer  # type: ignore[no-redef]
+    from scripts import team_install
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -32,6 +34,7 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--tier", choices=installer.LUNA_TIERS, help="Luna tier; fresh installs default to fast")
+    parser.add_argument("--legacy", action="store_true", help="explicitly use the historical fixed-model installer")
     parser.add_argument("--update", action="store_true", help="update an existing state-tracked install")
     parser.add_argument("--preview-only", action="store_true", help="show the complete plan without changing files")
     parser.add_argument("--doctor", action="store_true", help="verify installation and lifecycle state without changing files")
@@ -43,7 +46,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--codex-home", help="Codex configuration root; defaults to CODEX_HOME or HOME/.codex")
     parser.add_argument("--home", help="home containing the Codex root and recoverable backups")
-    parser.add_argument("--version", action="version", version=f"Sol/Luna {installer.KIT_VERSION}")
+    parser.add_argument("--version", action="version", version=f"Sol/Luna {team_install.VERSION}")
     return parser
 
 
@@ -65,6 +68,19 @@ def main(argv: Optional[List[str]] = None) -> int:
         parser.error("--doctor cannot be combined with setup, update, tier, preview, or usage options")
 
     home, codex_home = _paths(args.home, args.codex_home)
+    if not args.legacy:
+        if args.tier or args.usage != "auto":
+            parser.error("--tier and --usage are historical options; use --legacy explicitly, or configure your team in chat")
+        try:
+            report = team_install.install(KIT_ROOT, codex_home, apply=not (args.preview_only or args.doctor))
+            if args.doctor:
+                report["ok"] = not report["changes"]
+                report["mode"] = "doctor"
+            print(json.dumps(report, sort_keys=True))
+            return 0 if report["ok"] else 1
+        except (OSError, ValueError, installer.InstallError) as exc:
+            print(json.dumps({"ok": False, "error": str(exc) if isinstance(exc, installer.InstallError) else "team_setup_failed"}))
+            return 1
     backend_args = [
         "--repo-root",
         str(KIT_ROOT),

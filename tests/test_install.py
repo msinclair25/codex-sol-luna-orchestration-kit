@@ -634,7 +634,7 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(workflow["mode"], "workflow-only")
         self.assertIsNone(workflow["luna_tier"])
         self.assertEqual(workflow["workflow_default_tier"], "fast")
-        self.assertEqual(workflow["kit_version"], "0.6.1")
+        self.assertEqual(workflow["kit_version"], "0.7.0")
 
         malformed_plugin = self.base / "malformed-plugin"
         shutil.copytree(

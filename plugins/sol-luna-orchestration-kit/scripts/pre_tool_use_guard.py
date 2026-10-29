@@ -230,6 +230,9 @@ def _validate_event(event: Any) -> None:
         raise GuardError("history_fork_denied")
 
     envelope = _strict_loads(spawn.get("message"))
+    if isinstance(envelope, dict) and envelope.get("schema_version") == 2:
+        _validate_team_event(event, spawn, envelope)
+        return
     if (
         not isinstance(envelope, dict)
         or not ENVELOPE_REQUIRED_FIELDS.issubset(envelope)
@@ -271,6 +274,41 @@ def _validate_event(event: Any) -> None:
         raise GuardError("assignment_ownership_mismatch")
     project_root = _safe_project_root(event.get("cwd"))
     if not _ownership_safe_in_project(project_root, ownership):
+        raise GuardError("project_ownership_path_unsafe")
+
+
+def _validate_team_event(event, spawn, envelope):
+    import team_settings
+    if set(envelope) != {"schema_version", "team", "role", "ownership", "assignment"}:
+        raise GuardError("team_envelope_shape")
+    team = envelope["team"]
+    if not isinstance(team, dict) or set(team) != {"settings", "catalog", "runtime_limit", "active"}:
+        raise GuardError("team_shape")
+    if not isinstance(team["catalog"], list) or len(team["catalog"]) > 32 or not all(isinstance(x, dict) for x in team["catalog"]):
+        raise GuardError("team_catalog_shape")
+    try:
+        resolved = team_settings.launch(team["settings"], envelope["role"], catalog=team["catalog"],
+                                        runtime_limit=team["runtime_limit"], active=team["active"])
+    except (ValueError, TypeError, KeyError):
+        raise GuardError("team_launch_invalid")
+    actual = {key: value for key, value in spawn.items() if key not in {"message", "task_name"}}
+    if actual != resolved["spawn"]:
+        raise GuardError("team_spawn_mismatch")
+    assignment = _validate_assignment(envelope["assignment"])
+    ownership = envelope["ownership"]
+    if not isinstance(ownership, dict) or not ownership or len(ownership) > resolved["effective_max_concurrent"]:
+        raise GuardError("team_ownership_shape")
+    if team["active"] + len(ownership) > resolved["effective_max_concurrent"]:
+        raise GuardError("team_wave_concurrency_limit")
+    for lane, paths in ownership.items():
+        if not isinstance(lane, str) or not SAFE_LANE_ID.fullmatch(lane) or not _bounded_text_list(paths):
+            raise GuardError("team_ownership_shape")
+        if any(routing_policy._safe_ownership_relative(path) is None for path in paths):
+            raise GuardError("team_ownership_path_unsafe")
+    lane = assignment["lane_id"]
+    if spawn["task_name"] != lane or lane not in ownership or sorted(assignment["scope_or_owned_files"]) != sorted(ownership[lane]):
+        raise GuardError("assignment_ownership_mismatch")
+    if not _ownership_safe_in_project(_safe_project_root(event.get("cwd")), ownership):
         raise GuardError("project_ownership_path_unsafe")
 
 

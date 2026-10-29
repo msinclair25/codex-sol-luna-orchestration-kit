@@ -102,7 +102,7 @@ class M5PluginTests(unittest.TestCase):
     def test_manifest_and_default_hook_discovery_are_valid(self):
         manifest = json.loads((PLUGIN / ".codex-plugin" / "plugin.json").read_text())
         self.assertEqual(manifest["name"], PLUGIN.name)
-        self.assertEqual(manifest["version"], "0.6.1")
+        self.assertEqual(manifest["version"], "0.7.0")
         self.assertEqual(manifest["skills"], "./skills/")
         self.assertNotIn("hooks", manifest)
         self.assertIsInstance(manifest["interface"]["defaultPrompt"], list)
@@ -116,7 +116,9 @@ class M5PluginTests(unittest.TestCase):
         self.assertTrue((PLUGIN / "skills" / "sol-luna-orchestration" / "SKILL.md").is_file())
         self.assertTrue((PLUGIN / "skills" / "sol-luna-setup" / "SKILL.md").is_file())
         self.assertTrue((PLUGIN / "skills" / "sol-luna-status" / "SKILL.md").is_file())
-        setup = (PLUGIN / "skills" / "sol-luna-setup" / "SKILL.md").read_text()
+        # Keep the historical recovery reference usable; current team behavior
+        # is covered by test_team_settings, test_team_install and test_team_guard.
+        setup = (PLUGIN / "skills" / "sol-luna-setup" / "references" / "legacy-setup.md").read_text()
         self.assertIn("without manually operating the installer", setup)
         self.assertIn("--dry-run --update", setup)
         self.assertIn("Never pass `--approve-conflicts`", setup)
@@ -125,8 +127,8 @@ class M5PluginTests(unittest.TestCase):
         self.assertIn("$sol-luna-setup Continue.", setup)
         self.assertIn("--mark-update-pending", setup)
         self.assertIn("Do not require an intermediate restart", setup)
-        orchestration = (PLUGIN / "skills" / "sol-luna-orchestration" / "SKILL.md").read_text()
-        status = (PLUGIN / "skills" / "sol-luna-status" / "SKILL.md").read_text()
+        orchestration = (PLUGIN / "skills" / "sol-luna-orchestration" / "references" / "legacy-orchestration.md").read_text()
+        status = (PLUGIN / "skills" / "sol-luna-status" / "references" / "legacy-status.md").read_text()
         self.assertIn(".sol-luna-install-state.json", orchestration)
         self.assertIn("Native transport fallback", orchestration)
         self.assertIn("May I create one visible", orchestration)
@@ -192,7 +194,7 @@ class M5PluginTests(unittest.TestCase):
         report = json.loads(result.stdout)
         self.assertTrue(report["ok"])
         self.assertEqual(report["mismatches"], [])
-        self.assertEqual(report["version"], "0.6.1")
+        self.assertEqual(report["version"], "0.7.0")
 
     def test_bundled_setup_installer_applies_standard_profile(self):
         previous_dont_write_bytecode = sys.dont_write_bytecode
@@ -463,7 +465,7 @@ class M5PluginTests(unittest.TestCase):
         ):
             self.assertIn(phrase, text)
 
-    def test_primary_onboarding_is_one_prompt_and_one_final_restart(self):
+    def test_primary_onboarding_is_chat_controlled_and_concise(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         installing = (ROOT / "docs" / "INSTALLING_AND_UPDATING.md").read_text(encoding="utf-8")
         for text in (readme, installing):
@@ -480,26 +482,22 @@ class M5PluginTests(unittest.TestCase):
         self.assertLessEqual(len(lines), 400)
         quick_start = next(index for index, line in enumerate(lines, 1) if line == "## Quick Start")
         self.assertLessEqual(quick_start, 40)
-        self.assertLess(readme.index("| **Fast**"), readme.index("Install and fully configure"))
         prompt = readme.split("```text", 1)[1].split("```", 1)[0].strip().splitlines()
         self.assertLessEqual(len(prompt), 6)
-        for label in ("Setup", "Status", "Update", "Continue", "Switch", "Verify", "Settings"):
-            self.assertIn(f"| {label} |", readme)
-        self.assertIn("Healthy full install", readme)
-        self.assertIn("Not enough comparable evidence yet.", readme)
-        self.assertIn("Workflow-only alternative", readme)
+        for phrase in ("chat-only", "subsequent launches", "inherit", "Save for a project", "Save personal defaults", "No savings"):
+            self.assertIn(phrase, readme)
         self.assertIn("Technical history", readme)
-        visual = (ROOT / "assets" / "sol-luna-orchestration-system-v0.6.svg").read_text(
+        visual = (ROOT / "assets" / "chat-controlled-teams-v0.7.svg").read_text(
             encoding="utf-8"
         )
-        self.assertIn("LUNA · FAST", visual)
-        self.assertIn("LUNA · STANDARD", visual)
+        self.assertIn("Your selected model", visual)
+        self.assertIn("Your chosen models", visual)
         self.assertIn("#f6c85f", visual)
         self.assertIn("#41d8ee", visual)
         self.assertIn("#63e6a6", visual)
 
-    def test_settings_guidance_is_read_only_and_maintainer_help_is_explicit(self):
-        setup = (ROOT / ".agents" / "skills" / "sol-luna-setup" / "SKILL.md").read_text()
+    def test_legacy_settings_reference_and_maintainer_help_remain_available(self):
+        setup = (ROOT / ".agents" / "skills" / "sol-luna-setup" / "references" / "legacy-setup.md").read_text()
         settings = setup.split("## Read-only settings overview", 1)[1].split("## Update the plugin package", 1)[0]
         for phrase in (
             "workflow-only or full-role mode",

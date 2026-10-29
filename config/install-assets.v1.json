@@ -1,8 +1,8 @@
 {
   "assets": {
-    ".agents/skills/sol-luna-status/SKILL.md": "2a04244fcffc30017f77326a0e64a510daec46e056df910f5efe45481025aab3",
+    ".agents/skills/sol-luna-status/SKILL.md": "b694e6c5c87264635a14bc00134acca2aa4c6261a3fea73954303e049d54ccb3",
     ".agents/skills/sol-luna-status/agents/openai.yaml": "fbc0dfa10203e19ce9b07d0ed322a42a79ba801d5e4aab825ad81bf773b5b748",
-    ".agents/skills/sol-luna-status/scripts/sol_luna_status.py": "939d5128fdad6d582397bcc41e85688073e3dbe584bec2576de022d62bd7af88"
+    ".agents/skills/sol-luna-status/scripts/sol_luna_status.py": "36026d810fb46642cc2508ba41b3b5dc9a3b59d13faf8a45ff68eda04601b4ff"
   },
   "schema_version": 1
 }

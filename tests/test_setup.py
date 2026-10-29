@@ -14,7 +14,7 @@ PLUGIN_SETUP = ROOT / "plugins" / "sol-luna-orchestration-kit" / "scripts" / "se
 
 def _run(setup: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, str(setup), *arguments],
+        [sys.executable, str(setup), "--legacy", *arguments],
         cwd=setup.parents[1],
         env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
         text=True,
